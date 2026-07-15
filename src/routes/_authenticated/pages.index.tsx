@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
-import { generateBriefs, runImageWorker } from "@/lib/briefs.functions";
+import { generateBriefs, runImageWorker, renderImagesForPage } from "@/lib/briefs.functions";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
