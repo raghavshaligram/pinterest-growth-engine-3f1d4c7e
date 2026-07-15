@@ -147,6 +147,7 @@ function PagesPage() {
 
   const analyzedCount = active.filter((p) => p.last_analyzed_at).length;
   const pendingCount = active.filter((p) => !p.last_analyzed_at).length;
+  const briefsNeededCount = active.filter((p) => p.last_analyzed_at && p.briefs_total === 0).length;
 
   return (
     <div className="space-y-6">
