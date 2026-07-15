@@ -101,27 +101,71 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
     onSuccess: () => { toast.success("Re-rendered"); qc.invalidateQueries(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
+  const [open, setOpen] = useState(false);
   return (
-    <Card className="overflow-hidden">
-      <div className="relative aspect-[2/3] w-full bg-muted">
-        {url ? <img src={url} alt="" className="h-full w-full object-cover" /> :
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            {b.status === "image_pending" ? "Waiting to render…" : "No image"}
-          </div>}
-        <Button
-          size="sm" variant="secondary"
-          className="absolute right-2 top-2 h-8 gap-1"
-          onClick={() => reMut.mutate()} disabled={reMut.isPending}
+    <>
+      <Card className="overflow-hidden">
+        <div className="relative aspect-[2/3] w-full bg-muted">
+          {url ? (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="group block h-full w-full cursor-zoom-in"
+              aria-label="Enlarge pin"
+            >
+              <img src={url} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
+            </button>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              {b.status === "image_pending" ? "Waiting to render…" : "No image"}
+            </div>
+          )}
+          <Button
+            size="sm" variant="secondary"
+            className="absolute right-2 top-2 h-8 gap-1"
+            onClick={(e) => { e.stopPropagation(); reMut.mutate(); }} disabled={reMut.isPending}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
+            Rerender
+          </Button>
+        </div>
+        <div className="space-y-1 p-3">
+          <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
+          <div className="line-clamp-2 text-sm font-medium">{b.title}</div>
+          <Badge variant="outline">{b.status}</Badge>
+        </div>
+      </Card>
+
+      {open && url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 p-6 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
-          Rerender
-        </Button>
-      </div>
-      <div className="space-y-1 p-3">
-        <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
-        <div className="line-clamp-2 text-sm font-medium">{b.title}</div>
-        <Badge variant="outline">{b.status}</Badge>
-      </div>
-    </Card>
+          <img
+            src={url}
+            alt={b.title}
+            className="max-h-full max-w-full rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="absolute right-4 top-4 rounded-full bg-background/80 px-3 py-1 text-sm hover:bg-background"
+          >
+            Close ✕
+          </button>
+          <a
+            href={url}
+            download
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-4 right-4 rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
+          >
+            Download
+          </a>
+        </div>
+      )}
+    </>
   );
 }
