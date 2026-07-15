@@ -5,6 +5,7 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { getIntegration, markIntegration } = await import("./integrations.server");
   const { replicatePredict } = await import("./replicate.server");
+  const { buildThemedPinPrompt } = await import("./briefs.functions");
 
   const cfg = await getIntegration(userId, "replicate");
   if (!cfg) return { processed: 0, note: "Replicate not configured" };
@@ -28,10 +29,29 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
     if (!briefId) continue;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
-      const { data: brief } = await supabaseAdmin.from("pin_briefs").select("*").eq("id", briefId).single();
+      const { data: brief } = await supabaseAdmin
+        .from("pin_briefs")
+        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors))")
+        .eq("id", briefId)
+        .single();
       if (!brief) throw new Error("brief missing");
+      const page = (brief as { pages?: { url?: string; title?: string | null; analysis?: unknown; sites?: { url?: string; brand_colors?: unknown } } }).pages;
+      const siteUrl = page?.sites?.url ?? page?.url ?? "";
+      const brandHost = siteUrl ? new URL(siteUrl).hostname.replace(/^www\./, "") : "";
+      const brandColors = Array.isArray(page?.sites?.brand_colors) ? page!.sites!.brand_colors as string[] : [];
+      const analysis = (page?.analysis ?? {}) as { topic?: string; primary_keyword?: string };
+      const themedPrompt = buildThemedPinPrompt({
+        title: brief.title,
+        cta: brief.cta,
+        style: brief.style,
+        topic: analysis.topic,
+        primaryKeyword: analysis.primary_keyword,
+        brandHost,
+        brandColors,
+        middlePrompt: brief.image_prompt,
+      });
 
-      const promptHash = createHash("sha1").update(brief.image_prompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
+      const promptHash = createHash("sha1").update(themedPrompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
       if (!payload.force) {
         const { data: existing } = await supabaseAdmin
           .from("pin_images").select("id").eq("prompt_hash", promptHash).maybeSingle();
@@ -46,7 +66,7 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
         token: cfg.api_token,
         model: "google/nano-banana-2",
         input: {
-          prompt: brief.image_prompt,
+          prompt: themedPrompt,
           aspect_ratio: "2:3",
         },
       });

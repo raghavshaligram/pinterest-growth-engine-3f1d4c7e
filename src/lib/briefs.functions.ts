@@ -8,6 +8,53 @@ const PIN_STYLES = [
   "infographic", "photo", "illustration", "minimal", "seasonal",
 ] as const;
 
+export function buildThemedPinPrompt(input: {
+  title: string;
+  cta?: string | null;
+  style?: string | null;
+  topic?: string | null;
+  primaryKeyword?: string | null;
+  brandHost: string;
+  brandColors?: string[];
+  middlePrompt?: string | null;
+}) {
+  const colors = input.brandColors?.filter(Boolean) ?? [];
+  const palette = colors.length
+    ? colors.join(", ")
+    : "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C";
+  const cta = input.cta || "Read More →";
+  const title = input.title.replace(/\s+/g, " ").trim();
+  const topic = input.topic || input.primaryKeyword || title;
+  const isTipTheme = /quick-tip|checklist|how-to|faq|infographic|listicle|mistakes/i.test(input.style ?? "");
+  const theme = isTipTheme
+    ? `THEME FAMILY: CLEAN ILLUSTRATED QUICK-TIP CARD GRID, matching the uploaded rainwater example. Light airy background, rounded white cards in a neat 2-column educational grid, thin teal/blue line icons, small leaf/water decorative accents at edges, crisp hierarchy, no photorealism.`
+    : `THEME FAMILY: EDITORIAL PHOTO BEFORE/AFTER PIN, matching the uploaded soil calculator example. Cream top title band, large dark-green elegant serif title, two vertical photo panels separated by a thin cream gutter, natural garden realism, refined magazine look.`;
+  const middle = input.middlePrompt?.trim() || (isTipTheme
+    ? `Create 4-6 compact visual tips about ${topic}, each with one simple icon and one short phrase. Keep text minimal and legible.`
+    : `Show a compelling garden transformation related to ${topic}: left side problem/unfinished/dry, right side lush/finished/healthy.`);
+
+  return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
+
+${theme}
+
+GLOBAL BRAND RULES:
+- Palette only: ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
+- Typography: headline is bold elegant editorial serif for photo/comparison pins; rounded friendly bold sans for quick-tip card-grid pins. Text must be large, correctly spelled, fully inside the canvas.
+- Keep the entire design clean, bright, Pinterest-native, gardening/home-improvement friendly.
+
+LOCKED LAYOUT:
+- Top 16-18% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
+- Middle 72-76% is the main themed visual: ${middle}
+- CTA appears as a small tasteful accent near the lower third only if it fits, exact text: "${cta}".
+- Bottom 5% is a full-width solid dark green/brand-color URL bar, flush to bottom, containing only centered cream small sans text: "${input.brandHost}".
+- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
+
+QUALITY CONTROL:
+- Must look like the same brand/template as the uploaded references.
+- Must not crop title, CTA, URL, card text, or panel images.
+- No misspelled words. No extra paragraphs. No unrelated objects.`;
+}
+
 export const generateBriefs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { pageId: string; count?: number }) =>
@@ -32,9 +79,6 @@ export const generateBriefs = createServerFn({ method: "POST" })
     const brandColors = Array.isArray(site?.brand_colors) ? (site!.brand_colors as string[]) : [];
     const brandFont = site?.brand_font ?? "";
     const brandNotes = site?.brand_notes ?? "";
-    const paletteLine = brandColors.length
-      ? `brand palette: ${brandColors.join(", ")}`
-      : `cohesive palette derived from the page's topic (keep identical across the batch)`;
     // Intent detection drives the CTA pool so a tips pin gets "Read the Guide →",
     // not "Try It Free". Model can override per-brief in its returned intent.
     const haystack = `${page.url} ${page.title ?? ""} ${analysis.topic ?? ""} ${analysis.category ?? ""}`.toLowerCase();
@@ -55,13 +99,15 @@ export const generateBriefs = createServerFn({ method: "POST" })
 - list: ${JSON.stringify(ctaPools.list)}
 - commercial: ${JSON.stringify(ctaPools.commercial)}
 Never mix pools. Never invent CTAs outside the pools. Vary CTAs across the batch.`;
-    const brandBlock = `UNIVERSAL PIN TEMPLATE — identical frame on every pin. Only the middle illustration, the title text, and the CTA label change.
+    const brandBlock = `LOCKED PIN THEME — every image must belong to one of these two reusable families, matching the user's uploaded references:
+1) EDITORIAL PHOTO BEFORE/AFTER PIN: cream top title band, huge dark-green elegant serif title, two vertical photo panels with a thin cream divider, realistic gardening/home-improvement transformation.
+2) CLEAN ILLUSTRATED QUICK-TIP CARD GRID: pale blue/cream airy background, big rounded blue title, 2-column grid of white rounded cards, teal/blue line icons, short tip text, subtle leaf/water accents.
+
+Global rules for both families:
 - Aspect ratio 2:3, 1000x1500.
-- TOP AREA: The pin title in an elegant serif display font, cream/off-white color, set against a solid brand-color band OR over the illustration with a translucent brand overlay for legibility. Title is the largest element on the pin.
-- MIDDLE AREA: Illustration or photograph. Use ONLY the ${paletteLine}. Deep/dark brand color for backgrounds, warm accent for highlights, cream for negative space. No stray colors outside the palette.
-- CTA BUTTON (mandatory, lower third ~72-78% down from top): Pill/rounded-rectangle button in the brand's warm accent color (mustard/gold/orange if present in palette, otherwise the lightest palette accent). Dark text on it, bold clean sans, trailing arrow "→". Button label = this brief's cta value verbatim. Must be visibly clickable and high contrast.
-- BOTTOM BAR (mandatory, ~5% tall, full width, flush to the bottom edge): Solid dark brand-color band containing ONLY the website URL in cream/off-white, small clean sans, centered horizontally: "${brandHost}". NO brand name wordmark above or below. NO tagline. NO logo. URL only.
-- Do NOT invent a different URL. No fake logos. No stock-photo watermarks. No social handles.
+- Palette only: ${brandColors.join(", ") || "deep garden green, clear blue, soft sky, cream, leaf green"}. No random colors, no purple gradients, no dark tech UI.
+- Bottom bar is mandatory: full-width dark green/brand-color bar, flush to bottom, ~5% tall, containing ONLY the centered URL "${brandHost}" in cream small sans. No logo, no wordmark, no tagline, no social handle.
+- Text must be correctly spelled, large, clean, and never cropped.
 ${brandFont ? `- Typography direction (title): ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}`;
 
     const stylesSubset = [...PIN_STYLES].sort(() => Math.random() - 0.5).slice(0, Math.min(data.count, PIN_STYLES.length));
@@ -124,7 +170,16 @@ Category: ${analysis.category ?? ""}`,
         hashtags: b.hashtags ?? [],
         alt_text: b.alt_text ?? null,
         cta: b.cta ?? null,
-        image_prompt: b.image_prompt,
+        image_prompt: buildThemedPinPrompt({
+          title: b.title,
+          cta: b.cta,
+          style: b.style,
+          topic: analysis.topic,
+          primaryKeyword: analysis.primary_keyword,
+          brandHost,
+          brandColors,
+          middlePrompt: b.image_prompt,
+        }),
         status: "image_pending" as const,
       }));
       const { data: inserted, error: insErr } = await supabaseAdmin.from("pin_briefs").insert(rows).select("id");
