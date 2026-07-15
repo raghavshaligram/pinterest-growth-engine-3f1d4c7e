@@ -98,7 +98,13 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
   }, [path]);
   const reMut = useMutation({
     mutationFn: () => rerender({ data: { briefId: b.id } }),
-    onSuccess: () => { toast.success("Re-rendered"); qc.invalidateQueries(); },
+    onSuccess: () => {
+      toast.success("Re-rendered");
+      setUrl(null); // force <img> to reload the new signed URL
+      qc.invalidateQueries({ queryKey: ["page"] });
+      qc.invalidateQueries({ queryKey: ["briefs"] });
+      qc.invalidateQueries();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
   const [open, setOpen] = useState(false);
