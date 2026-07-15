@@ -238,6 +238,7 @@ export type Database = {
           hashtags: string[]
           id: string
           image_prompt: string
+          intent: string
           page_id: string
           status: Database["public"]["Enums"]["brief_status"]
           style: string
@@ -254,6 +255,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt: string
+          intent?: string
           page_id: string
           status?: Database["public"]["Enums"]["brief_status"]
           style: string
@@ -270,6 +272,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt?: string
+          intent?: string
           page_id?: string
           status?: Database["public"]["Enums"]["brief_status"]
           style?: string
