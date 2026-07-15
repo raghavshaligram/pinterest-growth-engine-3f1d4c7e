@@ -5,13 +5,17 @@ import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullP
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CalendarClock, Send, Wand2, X, Zap } from "lucide-react";
+import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon } from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   head: () => ({ meta: [{ title: "Schedule — PinForge" }] }),
   component: SchedulePage,
 });
+
+type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
 
 function SchedulePage() {
   const qc = useQueryClient();
@@ -22,26 +26,26 @@ function SchedulePage() {
   const pipeline = useServerFn(runFullPipeline);
 
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
+  const [open, setOpen] = useState<ScheduledRow | null>(null);
 
-  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 6, hoursStart: 8, hoursEnd: 22 } }),
+  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 15, hoursStart: 8, hoursEnd: 22 } }),
     onSuccess: (r) => { toast.success(r.reason ?? `Scheduled ${r.scheduled} pins`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pubMut = useMutation({ mutationFn: () => pub(),
     onSuccess: (r) => { toast.success(JSON.stringify(r)); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
-  const cancelMut = useMutation({ mutationFn: (id: string) => resched({ data: { id, cancel: true } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["scheduled"] }); toast.success("Canceled"); } });
+  const delMut = useMutation({ mutationFn: (id: string) => resched({ data: { id, cancel: true } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); toast.success("Deleted"); } });
   const pipeMut = useMutation({ mutationFn: () => pipeline({ data: {} }),
     onSuccess: (r) => { toast.success(`Analyzed ${r.analyzed} · Briefs for ${r.briefsFor} pages · Queued ${r.imagesQueued} images${r.errors.length ? ` · ${r.errors.length} errors` : ""}`); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
 
-  // Group by day
-  const groups = new Map<string, typeof data>();
+  const groups = new Map<string, ScheduledRow[]>();
   (data ?? []).forEach((p) => {
     const d = new Date(p.scheduled_at).toISOString().slice(0, 10);
     const arr = groups.get(d) ?? [];
     arr.push(p);
-    groups.set(d, arr as never);
+    groups.set(d, arr);
   });
 
   return (
@@ -61,21 +65,37 @@ function SchedulePage() {
       <div className="space-y-6">
         {[...groups.entries()].map(([day, pins]) => (
           <div key={day}>
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground"><CalendarClock className="h-4 w-4" />{day}</h3>
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+              <CalendarClock className="h-4 w-4" />{day}
+              <span className="ml-1 text-xs font-normal">· {pins.length} pin{pins.length === 1 ? "" : "s"}</span>
+            </h3>
             <div className="grid gap-2">
-              {pins!.map((p) => (
-                <Card key={p.id} className="flex items-center justify-between p-3">
+              {pins.map((p) => (
+                <Card
+                  key={p.id}
+                  className="flex cursor-pointer items-center justify-between p-3 transition hover:bg-muted/40"
+                  onClick={() => setOpen(p)}
+                >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="text-xs text-muted-foreground w-16">{new Date(p.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    <div className="text-xs text-muted-foreground w-16 tabular-nums">
+                      {new Date(p.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                    {p.image_url ? (
+                      <img src={p.image_url} alt="" className="h-12 w-9 rounded object-cover" />
+                    ) : (
+                      <div className="flex h-12 w-9 items-center justify-center rounded bg-muted"><ImageIcon className="h-4 w-4 text-muted-foreground" /></div>
+                    )}
                     <div className="min-w-0">
                       <div className="line-clamp-1 text-sm font-medium">{p.pin_briefs?.title ?? "Untitled"}</div>
                       <div className="text-xs text-muted-foreground">{p.boards?.name ?? "no board"}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     <Badge variant={p.status === "published" ? "default" : p.status === "failed" ? "destructive" : "outline"}>{p.status}</Badge>
-                    {p.status === "queued" && (
-                      <Button size="icon" variant="ghost" onClick={() => cancelMut.mutate(p.id)}><X className="h-4 w-4" /></Button>
+                    {p.status !== "published" && p.status !== "publishing" && (
+                      <Button size="icon" variant="ghost" onClick={() => delMut.mutate(p.id)} title="Delete scheduled pin">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     )}
                   </div>
                 </Card>
@@ -85,6 +105,109 @@ function SchedulePage() {
         ))}
         {!data?.length && <p className="text-sm text-muted-foreground">Nothing scheduled yet — auto-fill to spread ready pins across the next two weeks.</p>}
       </div>
+
+      <PinDetail row={open} onOpenChange={(v) => !v && setOpen(null)} onDelete={(id) => delMut.mutate(id)} deleting={delMut.isPending} />
+    </div>
+  );
+}
+
+function PinDetail({ row, onOpenChange, onDelete, deleting }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; deleting: boolean }) {
+  const brief = row?.pin_briefs;
+  const page = brief?.pages;
+  return (
+    <Dialog open={!!row} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl overflow-hidden p-0">
+        {row && (
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr]">
+            <div className="bg-muted/40 p-4">
+              {row.image_url ? (
+                <img src={row.image_url} alt={brief?.alt_text ?? ""} className="aspect-[2/3] w-full rounded-lg object-cover shadow-md" />
+              ) : (
+                <div className="flex aspect-[2/3] w-full items-center justify-center rounded-lg bg-muted"><ImageIcon className="h-8 w-8 text-muted-foreground" /></div>
+              )}
+              <div className="mt-3 text-xs text-muted-foreground">
+                {row.pin_images?.width}×{row.pin_images?.height}
+              </div>
+            </div>
+            <div className="flex max-h-[80vh] flex-col overflow-y-auto p-6">
+              <DialogHeader className="text-left">
+                <div className="mb-2 flex items-center gap-2">
+                  <Badge variant={row.status === "published" ? "default" : row.status === "failed" ? "destructive" : "outline"}>{row.status}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(row.scheduled_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                  </span>
+                </div>
+                <DialogTitle className="text-xl leading-snug">{brief?.title ?? "Untitled"}</DialogTitle>
+                <DialogDescription className="sr-only">Pin details that will publish to Pinterest.</DialogDescription>
+              </DialogHeader>
+
+              <dl className="mt-4 space-y-4 text-sm">
+                <Field label="Description">
+                  <p className="whitespace-pre-wrap text-foreground">{brief?.description}</p>
+                </Field>
+                {!!brief?.hashtags?.length && (
+                  <Field label="Hashtags" icon={<Hash className="h-3.5 w-3.5" />}>
+                    <div className="flex flex-wrap gap-1.5">
+                      {brief.hashtags.map((h) => (
+                        <span key={h} className="rounded-full bg-muted px-2 py-0.5 text-xs">#{h.replace(/^#/, "")}</span>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {brief?.alt_text && (
+                  <Field label="Alt text">
+                    <p className="text-muted-foreground">{brief.alt_text}</p>
+                  </Field>
+                )}
+                {brief?.cta && (
+                  <Field label="Call to action">
+                    <p className="text-foreground">{brief.cta}</p>
+                  </Field>
+                )}
+                <Field label="Destination" icon={<LinkIcon className="h-3.5 w-3.5" />}>
+                  {page?.url ? (
+                    <a href={page.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 break-all text-primary hover:underline">
+                      {page.url}<ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : <span className="text-muted-foreground">—</span>}
+                </Field>
+                <Field label="Board">
+                  <span>{row.boards?.name ?? "—"}</span>
+                </Field>
+                {row.pinterest_pin_id && (
+                  <Field label="Pinterest pin id">
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{row.pinterest_pin_id}</code>
+                  </Field>
+                )}
+                {row.last_error && (
+                  <Field label="Last error">
+                    <p className="whitespace-pre-wrap text-destructive">{row.last_error}</p>
+                  </Field>
+                )}
+              </dl>
+
+              <div className="mt-6 flex justify-end gap-2 border-t pt-4">
+                {row.status !== "published" && row.status !== "publishing" && (
+                  <Button variant="destructive" onClick={() => onDelete(row.id)} disabled={deleting}>
+                    <Trash2 className="mr-2 h-4 w-4" />Delete scheduled pin
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}{label}
+      </dt>
+      <dd>{children}</dd>
     </div>
   );
 }
