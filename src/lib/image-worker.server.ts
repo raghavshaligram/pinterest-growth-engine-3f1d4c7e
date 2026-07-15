@@ -1,7 +1,7 @@
 // Server-only. Image generation worker driving Replicate + Storage.
 import { createHash } from "node:crypto";
 
-export async function processImageQueueForUser(userId: string, limit = 5) {
+export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { getIntegration, markIntegration } = await import("./integrations.server");
   const { replicatePredict } = await import("./replicate.server");
@@ -10,7 +10,15 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
   const cfg = await getIntegration(userId, "replicate");
   if (!cfg) return { processed: 0, note: "Replicate not configured" };
 
-  const { data: jobs, error } = await supabaseAdmin
+  let briefIdFilter: string[] | null = null;
+  if (opts?.pageId) {
+    const { data: pageBriefs } = await supabaseAdmin
+      .from("pin_briefs").select("id").eq("user_id", userId).eq("page_id", opts.pageId);
+    briefIdFilter = (pageBriefs ?? []).map((b) => b.id);
+    if (!briefIdFilter.length) return { processed: 0 };
+  }
+
+  let q = supabaseAdmin
     .from("jobs")
     .select("*")
     .eq("user_id", userId)
@@ -19,8 +27,12 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
     .lte("run_at", new Date().toISOString())
     .order("created_at")
     .limit(limit);
+  const { data: jobs, error } = briefIdFilter
+    ? await q.in("payload->>brief_id", briefIdFilter)
+    : await q;
   if (error) throw error;
   if (!jobs?.length) return { processed: 0 };
+
 
   let ok = 0, fail = 0;
   const runOne = async (job: typeof jobs[number]) => {

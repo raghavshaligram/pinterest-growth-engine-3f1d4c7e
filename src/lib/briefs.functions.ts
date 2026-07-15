@@ -221,6 +221,50 @@ export const runImageWorker = createServerFn({ method: "POST" })
     return await processImageQueueForUser(context.userId, 8);
   });
 
+export const renderImagesForPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { pageId: string; limit?: number }) =>
+    z.object({ pageId: z.string().uuid(), limit: z.number().int().min(1).max(20).default(8) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Ensure image jobs exist for every pending brief on this page
+    const { data: briefs } = await supabaseAdmin
+      .from("pin_briefs")
+      .select("id, status, pin_images(id)")
+      .eq("user_id", context.userId)
+      .eq("page_id", data.pageId);
+    const needQueue = (briefs ?? [])
+      .filter((b) => !((b as { pin_images?: unknown[] }).pin_images?.length))
+      .map((b) => b.id);
+    if (needQueue.length) {
+      const { data: existing } = await supabaseAdmin
+        .from("jobs")
+        .select("payload")
+        .eq("user_id", context.userId)
+        .eq("kind", "generate_image")
+        .in("status", ["queued", "running"]);
+      const already = new Set(
+        (existing ?? []).map((j) => (j.payload as { brief_id?: string } | null)?.brief_id).filter(Boolean) as string[],
+      );
+      const rows = needQueue
+        .filter((id) => !already.has(id))
+        .map((id) => ({
+          user_id: context.userId,
+          kind: "generate_image" as const,
+          status: "queued" as const,
+          payload: { brief_id: id },
+          run_at: new Date().toISOString(),
+          attempts: 0,
+        }));
+      if (rows.length) await supabaseAdmin.from("jobs").insert(rows);
+    }
+    const { processImageQueueForUser } = await import("./image-worker.server");
+    return await processImageQueueForUser(context.userId, data.limit, { pageId: data.pageId });
+  });
+
+
+
 export const rerenderBrief = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))

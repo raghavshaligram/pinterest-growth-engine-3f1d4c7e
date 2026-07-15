@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
-import { generateBriefs, runImageWorker } from "@/lib/briefs.functions";
+import { generateBriefs, runImageWorker, renderImagesForPage } from "@/lib/briefs.functions";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +24,16 @@ function PagesPage() {
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
   const imgFn = useServerFn(runImageWorker);
+  const renderPage = useServerFn(renderImagesForPage);
   const pipeline = useServerFn(runFullPipeline);
   const setExcluded = useServerFn(setPageExcluded);
   const autoExclude = useServerFn(autoExcludePages);
 
   const [showExcluded, setShowExcluded] = useState(false);
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
+  const [renderAllRunning, setRenderAllRunning] = useState(false);
+  const stopRef = useState({ v: false })[0];
+
 
   const { data } = useQuery({ queryKey: ["pages"], queryFn: () => list() });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["pages"] });
@@ -70,10 +75,55 @@ function PagesPage() {
   });
 
   const renderAllM = useMutation({
-    mutationFn: () => imgFn(),
-    onSuccess: (r) => { toast.success(`Image worker: ${JSON.stringify(r)}`); invalidate(); },
+    mutationFn: async () => {
+      setRenderAllRunning(true);
+      stopRef.v = false;
+      let ok = 0, fail = 0, pagesDone = 0;
+      const targets = active.filter((p) => p.briefs_total > 0 && p.images_ready < p.briefs_total);
+      try {
+        for (const p of targets) {
+          if (stopRef.v) break;
+          setCurrentPageId(p.id);
+          // Drain this page's queue
+          while (!stopRef.v) {
+            const r = await renderPage({ data: { pageId: p.id, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
+            ok += r.ok ?? 0; fail += r.fail ?? 0;
+            invalidate();
+            if (!r.processed) break;
+          }
+          pagesDone++;
+        }
+      } finally {
+        setCurrentPageId(null);
+        setRenderAllRunning(false);
+      }
+      return { ok, fail, pagesDone, totalPages: targets.length };
+    },
+    onSuccess: (r) => toast.success(`Rendered ${r.ok} images across ${r.pagesDone}/${r.totalPages} pages${r.fail ? ` (${r.fail} failed)` : ""}`),
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
+
+  const renderOneM = useMutation({
+    mutationFn: async (pageId: string) => {
+      setCurrentPageId(pageId);
+      let ok = 0, fail = 0;
+      try {
+        while (true) {
+          const r = await renderPage({ data: { pageId, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
+          ok += r.ok ?? 0; fail += r.fail ?? 0;
+          invalidate();
+          if (!r.processed) break;
+        }
+      } finally { setCurrentPageId(null); }
+      return { ok, fail };
+    },
+    onSuccess: (r) => toast.success(`Rendered ${r.ok} image${r.ok === 1 ? "" : "s"}${r.fail ? ` (${r.fail} failed)` : ""}`),
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Keep imgFn referenced (fallback global worker button hidden below)
+  void imgFn;
+
 
   const autoExcludeM = useMutation({
     mutationFn: () => autoExclude(),
@@ -112,10 +162,10 @@ function PagesPage() {
             {briefsAllM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
             Generate briefs
           </Button>
-          <Button size="sm" variant="outline" onClick={() => renderAllM.mutate()} disabled={renderAllM.isPending}>
-            {renderAllM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
-            Render pins
+          <Button size="sm" variant="outline" onClick={() => renderAllRunning ? (stopRef.v = true) : renderAllM.mutate()} disabled={!renderAllRunning && active.every((p) => p.images_ready >= p.briefs_total)}>
+            {renderAllRunning ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Stop</> : <><ImageIcon className="mr-2 h-4 w-4" />Render pins</>}
           </Button>
+
           <Button size="sm" variant="ghost" onClick={() => autoExcludeM.mutate()} disabled={autoExcludeM.isPending}>
             {autoExcludeM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}
             Auto-exclude
@@ -133,43 +183,58 @@ function PagesPage() {
       </div>
 
       <div className="space-y-2">
-        {visible.map((p) => (
-          <Card key={p.id} className="flex items-center gap-4 p-3 transition hover:border-primary/50">
-            <Thumb path={p.thumb} />
-            <Link to="/pages/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{p.title ?? p.url}</div>
-              <div className="truncate text-xs text-muted-foreground">{p.url}</div>
-            </Link>
-            <div className="hidden shrink-0 items-center gap-1.5 md:flex">
-              <StatusPill
-                label="Analysis"
-                done={!!p.last_analyzed_at}
-                text={p.last_analyzed_at ? "Analyzed" : "Pending"}
-              />
-              <StatusPill
-                label="Pins"
-                done={p.briefs_total > 0}
-                text={p.briefs_total > 0 ? `${p.briefs_total} briefs` : "None"}
-              />
-              <StatusPill
-                label="Images"
-                done={p.briefs_total > 0 && p.images_ready === p.briefs_total}
-                partial={p.images_ready > 0 && p.images_ready < p.briefs_total}
-                text={p.briefs_total > 0 ? `${p.images_ready}/${p.briefs_total}` : "—"}
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {p.excluded && <Badge variant="secondary">Excluded</Badge>}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => { e.preventDefault(); toggleM.mutate({ pageId: p.id, excluded: !p.excluded }); }}
-              >
-                {p.excluded ? <><Eye className="mr-1 h-3 w-3" />Include</> : <><EyeOff className="mr-1 h-3 w-3" />Exclude</>}
-              </Button>
-            </div>
-          </Card>
-        ))}
+        {visible.map((p) => {
+          const isRendering = currentPageId === p.id;
+          const pendingImgs = p.briefs_total - p.images_ready;
+          return (
+            <Card key={p.id} className={`flex items-center gap-4 p-3 transition ${isRendering ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
+              <Thumb path={p.thumb} />
+              <Link to="/pages/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="truncate text-sm font-medium">{p.title ?? p.url}</div>
+                  {isRendering && (
+                    <span className="inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      <Loader2 className="h-3 w-3 animate-spin" />Rendering
+                    </span>
+                  )}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">{p.url}</div>
+              </Link>
+              <div className="hidden shrink-0 items-center gap-1.5 md:flex">
+                <StatusPill label="Analysis" done={!!p.last_analyzed_at} text={p.last_analyzed_at ? "Analyzed" : "Pending"} />
+                <StatusPill label="Pins" done={p.briefs_total > 0} text={p.briefs_total > 0 ? `${p.briefs_total} briefs` : "None"} />
+                <StatusPill
+                  label="Images"
+                  done={p.briefs_total > 0 && p.images_ready === p.briefs_total}
+                  partial={p.images_ready > 0 && p.images_ready < p.briefs_total}
+                  text={p.briefs_total > 0 ? `${p.images_ready}/${p.briefs_total}` : "—"}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {p.excluded && <Badge variant="secondary">Excluded</Badge>}
+                {pendingImgs > 0 && !p.excluded && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={renderOneM.isPending || renderAllRunning}
+                    onClick={(e) => { e.preventDefault(); renderOneM.mutate(p.id); }}
+                  >
+                    {isRendering ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ImageIcon className="mr-1 h-3 w-3" />}
+                    Render {pendingImgs}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => { e.preventDefault(); toggleM.mutate({ pageId: p.id, excluded: !p.excluded }); }}
+                >
+                  {p.excluded ? <><Eye className="mr-1 h-3 w-3" />Include</> : <><EyeOff className="mr-1 h-3 w-3" />Exclude</>}
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
+
         {!visible.length && (
           <p className="text-sm text-muted-foreground">
             {showExcluded ? "Nothing excluded." : "Add a site and crawl it."}
