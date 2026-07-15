@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon } from "lucide-react";
+import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon, Check, CheckCheck } from "lucide-react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
