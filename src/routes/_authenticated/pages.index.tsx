@@ -75,10 +75,55 @@ function PagesPage() {
   });
 
   const renderAllM = useMutation({
-    mutationFn: () => imgFn(),
-    onSuccess: (r) => { toast.success(`Image worker: ${JSON.stringify(r)}`); invalidate(); },
+    mutationFn: async () => {
+      setRenderAllRunning(true);
+      stopRef.v = false;
+      let ok = 0, fail = 0, pagesDone = 0;
+      const targets = active.filter((p) => p.briefs_total > 0 && p.images_ready < p.briefs_total);
+      try {
+        for (const p of targets) {
+          if (stopRef.v) break;
+          setCurrentPageId(p.id);
+          // Drain this page's queue
+          while (!stopRef.v) {
+            const r = await renderPage({ data: { pageId: p.id, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
+            ok += r.ok ?? 0; fail += r.fail ?? 0;
+            invalidate();
+            if (!r.processed) break;
+          }
+          pagesDone++;
+        }
+      } finally {
+        setCurrentPageId(null);
+        setRenderAllRunning(false);
+      }
+      return { ok, fail, pagesDone, totalPages: targets.length };
+    },
+    onSuccess: (r) => toast.success(`Rendered ${r.ok} images across ${r.pagesDone}/${r.totalPages} pages${r.fail ? ` (${r.fail} failed)` : ""}`),
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
+
+  const renderOneM = useMutation({
+    mutationFn: async (pageId: string) => {
+      setCurrentPageId(pageId);
+      let ok = 0, fail = 0;
+      try {
+        while (true) {
+          const r = await renderPage({ data: { pageId, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
+          ok += r.ok ?? 0; fail += r.fail ?? 0;
+          invalidate();
+          if (!r.processed) break;
+        }
+      } finally { setCurrentPageId(null); }
+      return { ok, fail };
+    },
+    onSuccess: (r) => toast.success(`Rendered ${r.ok} image${r.ok === 1 ? "" : "s"}${r.fail ? ` (${r.fail} failed)` : ""}`),
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+
+  // Keep imgFn referenced (fallback global worker button hidden below)
+  void imgFn;
+
 
   const autoExcludeM = useMutation({
     mutationFn: () => autoExclude(),
