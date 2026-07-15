@@ -73,19 +73,21 @@ export const autoSchedule = createServerFn({ method: "POST" })
 
     type Existing = {
       when: number; boardId: string | null;
-      url: string; imageId: string | null;
+      url: string; imageId: string | null; pageId: string | null;
     };
     const history: Existing[] = (existing ?? []).map((e) => ({
       when: new Date(e.scheduled_at).getTime(),
       boardId: e.board_id,
       url: ((e as { pin_briefs?: { pages?: { url?: string } } }).pin_briefs?.pages?.url) ?? "",
       imageId: e.image_id,
+      pageId: ((e as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id) ?? null,
     }));
     const usedImageIds = new Set(history.map((h) => h.imageId).filter(Boolean) as string[]);
 
     const dayKey = (t: number) => new Date(t).toISOString().slice(0, 10);
     const perDayAccount = new Map<string, number>();
     const perDayBoard = new Map<string, number>();          // key: `${day}|${boardId}`
+    const perDayPage = new Map<string, number>();           // key: `${day}|${pageId}`
     const perDayUrl = new Map<string, number>();            // key: `${day}|${url}`
     const lastByUrlBoard = new Map<string, number>();       // key: `${url}|${boardId}` -> ts
     const lastByUrl = new Map<string, number>();            // key: url -> ts
@@ -95,6 +97,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
       const dk = dayKey(h.when);
       perDayAccount.set(dk, (perDayAccount.get(dk) ?? 0) + 1);
       if (h.boardId) perDayBoard.set(`${dk}|${h.boardId}`, (perDayBoard.get(`${dk}|${h.boardId}`) ?? 0) + 1);
+      if (h.pageId) perDayPage.set(`${dk}|${h.pageId}`, (perDayPage.get(`${dk}|${h.pageId}`) ?? 0) + 1);
       if (h.url) {
         perDayUrl.set(`${dk}|${h.url}`, (perDayUrl.get(`${dk}|${h.url}`) ?? 0) + 1);
         const prevUrl = lastByUrl.get(h.url) ?? 0;
