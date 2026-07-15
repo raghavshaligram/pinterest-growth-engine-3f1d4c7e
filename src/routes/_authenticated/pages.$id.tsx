@@ -108,6 +108,11 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
+  const delMut = useMutation({
+    mutationFn: () => del({ data: { briefId: b.id } }),
+    onSuccess: () => { toast.success("Pin deleted"); qc.invalidateQueries(); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
   const [open, setOpen] = useState(false);
   return (
     <>
