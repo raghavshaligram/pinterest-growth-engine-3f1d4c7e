@@ -18,30 +18,48 @@ export type Database = {
         Row: {
           category: string | null
           created_at: string
+          description: string | null
           id: string
+          image_url: string | null
           keywords: string[]
           name: string
+          pin_count: number
           pinterest_board_id: string | null
+          site_ids: string[]
+          synced_at: string | null
+          topics: string[]
           updated_at: string
           user_id: string
         }
         Insert: {
           category?: string | null
           created_at?: string
+          description?: string | null
           id?: string
+          image_url?: string | null
           keywords?: string[]
           name: string
+          pin_count?: number
           pinterest_board_id?: string | null
+          site_ids?: string[]
+          synced_at?: string | null
+          topics?: string[]
           updated_at?: string
           user_id: string
         }
         Update: {
           category?: string | null
           created_at?: string
+          description?: string | null
           id?: string
+          image_url?: string | null
           keywords?: string[]
           name?: string
+          pin_count?: number
           pinterest_board_id?: string | null
+          site_ids?: string[]
+          synced_at?: string | null
+          topics?: string[]
           updated_at?: string
           user_id?: string
         }
