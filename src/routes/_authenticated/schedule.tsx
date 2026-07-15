@@ -28,10 +28,19 @@ function SchedulePage() {
   const pipeline = useServerFn(runFullPipeline);
 
   const queue = useServerFn(queuePins);
+  const wipe = useServerFn(deleteAllScheduled);
 
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [open, setOpen] = useState<ScheduledRow | null>(null);
+  // Persist the per-day cadence across visits — read on mount, save on change.
   const [perDay, setPerDay] = useState(5);
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("pf:perDay") : null;
+    if (saved) setPerDay(Math.max(1, Math.min(25, parseInt(saved, 10) || 5)));
+  }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("pf:perDay", String(perDay));
+  }, [perDay]);
 
   const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay, hoursStart: 9, hoursEnd: 21 } }),
     onSuccess: (r) => { toast.success(r.reason ?? `Drafted ${r.scheduled} pins — review, then queue`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
@@ -43,6 +52,9 @@ function SchedulePage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); toast.success("Deleted"); } });
   const queueMut = useMutation({ mutationFn: (ids?: string[]) => queue({ data: ids ? { ids } : { all: true } }),
     onSuccess: (r) => { toast.success(`Queued ${r.queued} pin${r.queued === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+  const wipeMut = useMutation({ mutationFn: () => wipe({ data: {} }),
+    onSuccess: (r) => { toast.success(`Deleted ${r.deleted} scheduled pin${r.deleted === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pipeMut = useMutation({ mutationFn: () => pipeline({ data: {} }),
     onSuccess: (r) => { toast.success(`Analyzed ${r.analyzed} · Briefs for ${r.briefsFor} pages · Queued ${r.imagesQueued} images${r.errors.length ? ` · ${r.errors.length} errors` : ""}`); },
