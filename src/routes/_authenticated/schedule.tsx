@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel } from "@/lib/schedule.functions";
+import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CalendarClock, Send, Wand2, X } from "lucide-react";
+import { CalendarClock, Send, Wand2, X, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
   head: () => ({ meta: [{ title: "Schedule — PinForge" }] }),
@@ -19,6 +19,7 @@ function SchedulePage() {
   const auto = useServerFn(autoSchedule);
   const pub = useServerFn(runPublisher);
   const resched = useServerFn(rescheduleOrCancel);
+  const pipeline = useServerFn(runFullPipeline);
 
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
 
@@ -30,6 +31,9 @@ function SchedulePage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const cancelMut = useMutation({ mutationFn: (id: string) => resched({ data: { id, cancel: true } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["scheduled"] }); toast.success("Canceled"); } });
+  const pipeMut = useMutation({ mutationFn: () => pipeline({ data: {} }),
+    onSuccess: (r) => { toast.success(`Analyzed ${r.analyzed} · Briefs for ${r.briefsFor} pages · Queued ${r.imagesQueued} images${r.errors.length ? ` · ${r.errors.length} errors` : ""}`); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
 
   // Group by day
   const groups = new Map<string, typeof data>();
@@ -48,6 +52,7 @@ function SchedulePage() {
           <p className="text-sm text-muted-foreground">Auto-fill the next two weeks and publish due pins on demand or via cron.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => pipeMut.mutate()} disabled={pipeMut.isPending}><Zap className="mr-2 h-4 w-4" />Run pipeline</Button>
           <Button variant="outline" onClick={() => autoMut.mutate()} disabled={autoMut.isPending}><Wand2 className="mr-2 h-4 w-4" />Auto-fill 14 days</Button>
           <Button onClick={() => pubMut.mutate()} disabled={pubMut.isPending}><Send className="mr-2 h-4 w-4" />Publish due</Button>
         </div>
