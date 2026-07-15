@@ -130,3 +130,29 @@ export const runImageWorker = createServerFn({ method: "POST" })
     const { processImageQueueForUser } = await import("./image-worker.server");
     return await processImageQueueForUser(context.userId, 5);
   });
+
+export const rerenderBrief = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: brief } = await context.supabase.from("pin_briefs").select("id, user_id").eq("id", data.briefId).single();
+    if (!brief || brief.user_id !== context.userId) throw new Error("Brief not found");
+    // Remove any existing images for this brief (both DB row and storage object)
+    const { data: imgs } = await supabaseAdmin.from("pin_images").select("id, storage_path").eq("brief_id", data.briefId);
+    if (imgs?.length) {
+      const paths = imgs.map((i) => i.storage_path).filter(Boolean) as string[];
+      if (paths.length) await supabaseAdmin.storage.from("pins").remove(paths);
+      await supabaseAdmin.from("pin_images").delete().eq("brief_id", data.briefId);
+    }
+    await supabaseAdmin.from("pin_briefs").update({ status: "image_pending" }).eq("id", data.briefId);
+    await supabaseAdmin.from("jobs").insert({
+      user_id: context.userId,
+      kind: "generate_image" as const,
+      payload: { brief_id: data.briefId, force: true },
+    });
+    // Kick the worker inline so the user sees it render immediately
+    const { processImageQueueForUser } = await import("./image-worker.server");
+    await processImageQueueForUser(context.userId, 1);
+    return { ok: true };
+  });
