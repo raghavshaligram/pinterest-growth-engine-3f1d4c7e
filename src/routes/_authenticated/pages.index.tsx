@@ -5,7 +5,7 @@ import { listPages } from "@/lib/pages.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-export const Route = createFileRoute("/_authenticated/pages")({
+export const Route = createFileRoute("/_authenticated/pages/")({
   head: () => ({ meta: [{ title: "Pages — PinForge" }] }),
   component: PagesPage,
 });
