@@ -7,12 +7,12 @@ export const dashboardStats = createServerFn({ method: "GET" })
     const s = context.supabase;
     const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
     const [pages, briefs, scheduled, published, failed, queuedJobs, integrations] = await Promise.all([
-      s.from("pages").select("id", { count: "exact", head: true }),
-      s.from("pin_briefs").select("id", { count: "exact", head: true }),
-      s.from("scheduled_pins").select("id", { count: "exact", head: true }).eq("status", "queued"),
-      s.from("scheduled_pins").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", dayStart.toISOString()),
-      s.from("scheduled_pins").select("id", { count: "exact", head: true }).eq("status", "failed"),
-      s.from("jobs").select("id", { count: "exact", head: true }).eq("status", "queued"),
+      s.from("pages").select("id", { count: "estimated", head: true }),
+      s.from("pin_briefs").select("id", { count: "estimated", head: true }),
+      s.from("scheduled_pins").select("id", { count: "estimated", head: true }).eq("status", "queued"),
+      s.from("scheduled_pins").select("id", { count: "estimated", head: true }).eq("status", "published").gte("published_at", dayStart.toISOString()),
+      s.from("scheduled_pins").select("id", { count: "estimated", head: true }).eq("status", "failed"),
+      s.from("jobs").select("id", { count: "estimated", head: true }).eq("status", "queued"),
       s.from("integrations").select("provider, status"),
     ]);
     const { data: recentLogs } = await s.from("publish_logs").select("at, level, message").order("at", { ascending: false }).limit(10);

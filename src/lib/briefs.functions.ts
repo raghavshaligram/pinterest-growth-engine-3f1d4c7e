@@ -209,7 +209,7 @@ export const listBriefs = createServerFn({ method: "GET" })
       .from("pin_briefs")
       .select("id, style, title, status, page_id, created_at, pin_images(storage_path)")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(60);
     if (error) throw error;
     return data ?? [];
   });

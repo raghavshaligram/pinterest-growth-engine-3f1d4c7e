@@ -5,11 +5,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const listPages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    // Drop the heavy `analysis` JSON from the list view — only needed on detail page.
     const { data, error } = await context.supabase
       .from("pages")
-      .select("id, url, title, status, last_crawled_at, last_analyzed_at, analysis")
+      .select("id, url, title, status, last_crawled_at, last_analyzed_at")
       .order("last_crawled_at", { ascending: false })
-      .limit(500);
+      .limit(200);
     if (error) throw error;
     return data ?? [];
   });
