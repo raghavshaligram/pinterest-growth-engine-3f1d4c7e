@@ -66,7 +66,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
       .from("scheduled_pins")
       .select("scheduled_at, board_id, brief_id, image_id, pin_briefs(page_id, pages(url))")
       .eq("user_id", context.userId)
-      .in("status", ["queued", "publishing", "published", "exported"])
+      .in("status", ["draft", "queued", "publishing", "published", "exported"])
       .gte("scheduled_at", new Date(Date.now() - SAFETY.sameUrlBoardGapDays * 86400_000).toISOString())
       .lte("scheduled_at", windowEnd.toISOString());
 
@@ -107,7 +107,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
       accountTimestamps.push(h.when);
     }
 
-    const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "queued" }[] = [];
+    const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "draft" }[] = [];
 
     // Candidate slot generator: iterates days/hours in order, jittering minute.
     const totalHours = Math.max(1, data.hoursEnd - data.hoursStart);
@@ -180,7 +180,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
           image_id: img.id,
           board_id: chosenBoard,
           user_id: context.userId,
-          status: "queued",
+          status: "draft",
         });
         perDayAccount.set(dk, (perDayAccount.get(dk) ?? 0) + 1);
         perDayBoard.set(`${dk}|${chosenBoard}`, (perDayBoard.get(`${dk}|${chosenBoard}`) ?? 0) + 1);
@@ -332,4 +332,18 @@ export const rescheduleOrCancel = createServerFn({ method: "POST" })
       if (error) throw error;
     }
     return { ok: true };
+  });
+
+export const queuePins = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { ids?: string[]; all?: boolean }) =>
+    z.object({ ids: z.array(z.string().uuid()).optional(), all: z.boolean().optional() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    let q = context.supabase.from("scheduled_pins").update({ status: "queued" }).eq("status", "draft");
+    if (data.ids?.length) q = q.in("id", data.ids);
+    else if (!data.all) return { queued: 0 };
+    const { data: rows, error } = await q.select("id");
+    if (error) throw error;
+    return { queued: rows?.length ?? 0 };
   });

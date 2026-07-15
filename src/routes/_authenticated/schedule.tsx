@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline } from "@/lib/schedule.functions";
+import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline, queuePins } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon } from "lucide-react";
+import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon, Check, CheckCheck } from "lucide-react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
@@ -25,17 +25,23 @@ function SchedulePage() {
   const resched = useServerFn(rescheduleOrCancel);
   const pipeline = useServerFn(runFullPipeline);
 
+  const queue = useServerFn(queuePins);
+
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [open, setOpen] = useState<ScheduledRow | null>(null);
 
-  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 15, hoursStart: 8, hoursEnd: 22 } }),
-    onSuccess: (r) => { toast.success(r.reason ?? `Scheduled ${r.scheduled} pins`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
+  // Daily posting cadence — one draft per day, spread across 14 days for review.
+  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 1, hoursStart: 9, hoursEnd: 21 } }),
+    onSuccess: (r) => { toast.success(r.reason ?? `Drafted ${r.scheduled} pins — review, then queue`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pubMut = useMutation({ mutationFn: () => pub(),
     onSuccess: (r) => { toast.success(JSON.stringify(r)); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const delMut = useMutation({ mutationFn: (id: string) => resched({ data: { id, cancel: true } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); toast.success("Deleted"); } });
+  const queueMut = useMutation({ mutationFn: (ids?: string[]) => queue({ data: ids ? { ids } : { all: true } }),
+    onSuccess: (r) => { toast.success(`Queued ${r.queued} pin${r.queued === 1 ? "" : "s"}`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pipeMut = useMutation({ mutationFn: () => pipeline({ data: {} }),
     onSuccess: (r) => { toast.success(`Analyzed ${r.analyzed} · Briefs for ${r.briefsFor} pages · Queued ${r.imagesQueued} images${r.errors.length ? ` · ${r.errors.length} errors` : ""}`); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
@@ -48,16 +54,21 @@ function SchedulePage() {
     groups.set(d, arr);
   });
 
+  const draftCount = (data ?? []).filter((p) => p.status === "draft").length;
+
   return (
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-4xl">Schedule</h1>
-          <p className="text-sm text-muted-foreground">Auto-fill the next two weeks and publish due pins on demand or via cron.</p>
+          <p className="text-sm text-muted-foreground">Auto-fill drafts one per day. Review each pin, then queue it — the publisher only picks up queued pins.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => pipeMut.mutate()} disabled={pipeMut.isPending}><Zap className="mr-2 h-4 w-4" />Run pipeline</Button>
           <Button variant="outline" onClick={() => autoMut.mutate()} disabled={autoMut.isPending}><Wand2 className="mr-2 h-4 w-4" />Auto-fill 14 days</Button>
+          <Button variant="outline" onClick={() => queueMut.mutate(undefined)} disabled={queueMut.isPending || draftCount === 0}>
+            <CheckCheck className="mr-2 h-4 w-4" />Queue all drafts{draftCount ? ` (${draftCount})` : ""}
+          </Button>
           <Button onClick={() => pubMut.mutate()} disabled={pubMut.isPending}><Send className="mr-2 h-4 w-4" />Publish due</Button>
         </div>
       </header>
@@ -91,7 +102,12 @@ function SchedulePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Badge variant={p.status === "published" ? "default" : p.status === "failed" ? "destructive" : "outline"}>{p.status}</Badge>
+                    <StatusBadge status={p.status} />
+                    {p.status === "draft" && (
+                      <Button size="sm" variant="secondary" onClick={() => queueMut.mutate([p.id])} disabled={queueMut.isPending} title="Queue for publishing">
+                        <Check className="mr-1 h-3.5 w-3.5" />Queue
+                      </Button>
+                    )}
                     {p.status !== "published" && p.status !== "publishing" && (
                       <Button size="icon" variant="ghost" onClick={() => delMut.mutate(p.id)} title="Delete scheduled pin">
                         <Trash2 className="h-4 w-4" />
@@ -106,12 +122,25 @@ function SchedulePage() {
         {!data?.length && <p className="text-sm text-muted-foreground">Nothing scheduled yet — auto-fill to spread ready pins across the next two weeks.</p>}
       </div>
 
-      <PinDetail row={open} onOpenChange={(v) => !v && setOpen(null)} onDelete={(id) => delMut.mutate(id)} deleting={delMut.isPending} />
+      <PinDetail
+        row={open}
+        onOpenChange={(v) => !v && setOpen(null)}
+        onDelete={(id) => delMut.mutate(id)}
+        onQueue={(id) => queueMut.mutate([id])}
+        deleting={delMut.isPending}
+        queuing={queueMut.isPending}
+      />
     </div>
   );
 }
 
-function PinDetail({ row, onOpenChange, onDelete, deleting }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; deleting: boolean }) {
+function StatusBadge({ status }: { status: ScheduledRow["status"] }) {
+  const v = status === "published" ? "default" : status === "failed" ? "destructive" : "outline";
+  const label = status === "draft" ? "draft — review" : status;
+  return <Badge variant={v}>{label}</Badge>;
+}
+
+function PinDetail({ row, onOpenChange, onDelete, onQueue, deleting, queuing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; deleting: boolean; queuing: boolean }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
   return (
@@ -189,7 +218,12 @@ function PinDetail({ row, onOpenChange, onDelete, deleting }: { row: ScheduledRo
               <div className="mt-6 flex justify-end gap-2 border-t pt-4">
                 {row.status !== "published" && row.status !== "publishing" && (
                   <Button variant="destructive" onClick={() => onDelete(row.id)} disabled={deleting}>
-                    <Trash2 className="mr-2 h-4 w-4" />Delete scheduled pin
+                    <Trash2 className="mr-2 h-4 w-4" />Delete
+                  </Button>
+                )}
+                {row.status === "draft" && (
+                  <Button onClick={() => onQueue(row.id)} disabled={queuing}>
+                    <Check className="mr-2 h-4 w-4" />Queue for publishing
                   </Button>
                 )}
               </div>

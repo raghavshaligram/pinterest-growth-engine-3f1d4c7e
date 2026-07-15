@@ -607,6 +607,7 @@ export type Database = {
       job_status: "queued" | "running" | "done" | "failed"
       page_status: "active" | "inactive" | "error"
       pin_status:
+        | "draft"
         | "queued"
         | "publishing"
         | "published"
@@ -761,6 +762,7 @@ export const Constants = {
       job_status: ["queued", "running", "done", "failed"],
       page_status: ["active", "inactive", "error"],
       pin_status: [
+        "draft",
         "queued",
         "publishing",
         "published",
