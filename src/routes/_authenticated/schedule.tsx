@@ -54,16 +54,21 @@ function SchedulePage() {
     groups.set(d, arr);
   });
 
+  const draftCount = (data ?? []).filter((p) => p.status === "draft").length;
+
   return (
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-4xl">Schedule</h1>
-          <p className="text-sm text-muted-foreground">Auto-fill the next two weeks and publish due pins on demand or via cron.</p>
+          <p className="text-sm text-muted-foreground">Auto-fill drafts one per day. Review each pin, then queue it — the publisher only picks up queued pins.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => pipeMut.mutate()} disabled={pipeMut.isPending}><Zap className="mr-2 h-4 w-4" />Run pipeline</Button>
           <Button variant="outline" onClick={() => autoMut.mutate()} disabled={autoMut.isPending}><Wand2 className="mr-2 h-4 w-4" />Auto-fill 14 days</Button>
+          <Button variant="outline" onClick={() => queueMut.mutate(undefined)} disabled={queueMut.isPending || draftCount === 0}>
+            <CheckCheck className="mr-2 h-4 w-4" />Queue all drafts{draftCount ? ` (${draftCount})` : ""}
+          </Button>
           <Button onClick={() => pubMut.mutate()} disabled={pubMut.isPending}><Send className="mr-2 h-4 w-4" />Publish due</Button>
         </div>
       </header>
@@ -97,7 +102,12 @@ function SchedulePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Badge variant={p.status === "published" ? "default" : p.status === "failed" ? "destructive" : "outline"}>{p.status}</Badge>
+                    <StatusBadge status={p.status} />
+                    {p.status === "draft" && (
+                      <Button size="sm" variant="secondary" onClick={() => queueMut.mutate([p.id])} disabled={queueMut.isPending} title="Queue for publishing">
+                        <Check className="mr-1 h-3.5 w-3.5" />Queue
+                      </Button>
+                    )}
                     {p.status !== "published" && p.status !== "publishing" && (
                       <Button size="icon" variant="ghost" onClick={() => delMut.mutate(p.id)} title="Delete scheduled pin">
                         <Trash2 className="h-4 w-4" />
@@ -112,7 +122,14 @@ function SchedulePage() {
         {!data?.length && <p className="text-sm text-muted-foreground">Nothing scheduled yet — auto-fill to spread ready pins across the next two weeks.</p>}
       </div>
 
-      <PinDetail row={open} onOpenChange={(v) => !v && setOpen(null)} onDelete={(id) => delMut.mutate(id)} deleting={delMut.isPending} />
+      <PinDetail
+        row={open}
+        onOpenChange={(v) => !v && setOpen(null)}
+        onDelete={(id) => delMut.mutate(id)}
+        onQueue={(id) => queueMut.mutate([id])}
+        deleting={delMut.isPending}
+        queuing={queueMut.isPending}
+      />
     </div>
   );
 }
