@@ -152,6 +152,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
     for (const brief of ordered) {
       const img = brief.pin_images?.[0];
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
+      const pageId = (brief as { page_id?: string }).page_id ?? "";
       if (!img || !pageUrl) continue;
       // Never repost the exact same rendered image
       if (usedImageIds.has(img.id)) continue;
@@ -171,6 +172,9 @@ export const autoSchedule = createServerFn({ method: "POST" })
 
         // Account daily cap
         if ((perDayAccount.get(dk) ?? 0) >= SAFETY.maxPerAccountPerDay) continue;
+
+        // Per-page daily cap — never schedule the same source page twice on one day
+        if (pageId && (perDayPage.get(`${dk}|${pageId}`) ?? 0) >= SAFETY.maxPerPagePerDay) continue;
 
         // Account-wide min-gap between any two pins
         if (accountTimestamps.some((t) => Math.abs(t - when) < SAFETY.minMinutesBetweenPins * 60_000)) continue;
@@ -205,6 +209,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
         });
         perDayAccount.set(dk, (perDayAccount.get(dk) ?? 0) + 1);
         perDayBoard.set(`${dk}|${chosenBoard}`, (perDayBoard.get(`${dk}|${chosenBoard}`) ?? 0) + 1);
+        if (pageId) perDayPage.set(`${dk}|${pageId}`, (perDayPage.get(`${dk}|${pageId}`) ?? 0) + 1);
         perDayUrl.set(`${dk}|${pageUrl}`, (perDayUrl.get(`${dk}|${pageUrl}`) ?? 0) + 1);
         lastByUrl.set(pageUrl, when);
         lastByUrlBoard.set(`${pageUrl}|${chosenBoard}`, when);
