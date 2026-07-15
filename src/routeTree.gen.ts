@@ -23,6 +23,10 @@ import { Route as AuthenticatedBoardsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedPagesIndexRouteImport } from './routes/_authenticated/pages.index'
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedPagesIdRouteImport } from './routes/_authenticated/pages.$id'
+import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
+import { Route as ApiPublicCronPublishRouteImport } from './routes/api/public/cron/publish'
+import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
+import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -94,6 +98,26 @@ const AuthenticatedPagesIdRoute = AuthenticatedPagesIdRouteImport.update({
   path: '/pages/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicCronSerpRoute = ApiPublicCronSerpRouteImport.update({
+  id: '/api/public/cron/serp',
+  path: '/api/public/cron/serp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronPublishRoute = ApiPublicCronPublishRouteImport.update({
+  id: '/api/public/cron/publish',
+  path: '/api/public/cron/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronImagesRoute = ApiPublicCronImagesRouteImport.update({
+  id: '/api/public/cron/images',
+  path: '/api/public/cron/images',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
+  id: '/api/public/cron/crawl',
+  path: '/api/public/cron/crawl',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -109,6 +133,10 @@ export interface FileRoutesByFullPath {
   '/pages/$id': typeof AuthenticatedPagesIdRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/pages/': typeof AuthenticatedPagesIndexRoute
+  '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
+  '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
+  '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,6 +152,10 @@ export interface FileRoutesByTo {
   '/pages/$id': typeof AuthenticatedPagesIdRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/pages': typeof AuthenticatedPagesIndexRoute
+  '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
+  '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
+  '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -141,6 +173,10 @@ export interface FileRoutesById {
   '/_authenticated/pages/$id': typeof AuthenticatedPagesIdRoute
   '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/_authenticated/pages/': typeof AuthenticatedPagesIndexRoute
+  '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
+  '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
+  '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -158,6 +194,10 @@ export interface FileRouteTypes {
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages/'
+    | '/api/public/cron/crawl'
+    | '/api/public/cron/images'
+    | '/api/public/cron/publish'
+    | '/api/public/cron/serp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -173,6 +213,10 @@ export interface FileRouteTypes {
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages'
+    | '/api/public/cron/crawl'
+    | '/api/public/cron/images'
+    | '/api/public/cron/publish'
+    | '/api/public/cron/serp'
   id:
     | '__root__'
     | '/'
@@ -189,12 +233,20 @@ export interface FileRouteTypes {
     | '/_authenticated/pages/$id'
     | '/_authenticated/settings/integrations'
     | '/_authenticated/pages/'
+    | '/api/public/cron/crawl'
+    | '/api/public/cron/images'
+    | '/api/public/cron/publish'
+    | '/api/public/cron/serp'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
+  ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
+  ApiPublicCronPublishRoute: typeof ApiPublicCronPublishRoute
+  ApiPublicCronSerpRoute: typeof ApiPublicCronSerpRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -297,6 +349,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPagesIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/cron/serp': {
+      id: '/api/public/cron/serp'
+      path: '/api/public/cron/serp'
+      fullPath: '/api/public/cron/serp'
+      preLoaderRoute: typeof ApiPublicCronSerpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/publish': {
+      id: '/api/public/cron/publish'
+      path: '/api/public/cron/publish'
+      fullPath: '/api/public/cron/publish'
+      preLoaderRoute: typeof ApiPublicCronPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/images': {
+      id: '/api/public/cron/images'
+      path: '/api/public/cron/images'
+      fullPath: '/api/public/cron/images'
+      preLoaderRoute: typeof ApiPublicCronImagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/crawl': {
+      id: '/api/public/cron/crawl'
+      path: '/api/public/cron/crawl'
+      fullPath: '/api/public/cron/crawl'
+      preLoaderRoute: typeof ApiPublicCronCrawlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -347,6 +427,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
+  ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
+  ApiPublicCronPublishRoute: ApiPublicCronPublishRoute,
+  ApiPublicCronSerpRoute: ApiPublicCronSerpRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
