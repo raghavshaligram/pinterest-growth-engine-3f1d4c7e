@@ -113,25 +113,6 @@ export const autoSchedule = createServerFn({ method: "POST" })
 
     const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "draft" }[] = [];
 
-    // Candidate slot generator: iterates days/hours in order, jittering minute.
-    const totalHours = Math.max(1, data.hoursEnd - data.hoursStart);
-    const slotsPerDay = Math.min(data.perDay, SAFETY.maxPerAccountPerDay);
-    const gapH = Math.max(1, Math.floor(totalHours / slotsPerDay));
-
-    function nextSlot(day: number, slot: number): { when: number; day: number; slot: number } | null {
-      let d = day, s = slot;
-      while (d < data.days) {
-        const at = new Date();
-        at.setUTCDate(at.getUTCDate() + d);
-        at.setUTCHours(data.hoursStart + s * gapH, Math.floor(Math.random() * 60), 0, 0);
-        return { when: at.getTime(), day: d, slot: s };
-      }
-      return null;
-    }
-
-    let boardIdx = 0;
-    let day = 0, slot = 0;
-
     // Round-robin by page so early days pull from every page instead of
     // draining one page's briefs before moving to the next.
     const byPage = new Map<string, typeof readyBriefs>();
@@ -141,6 +122,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
       byPage.get(pid)!.push(b);
     }
     const queues = [...byPage.values()];
+    const pageCount = Math.max(1, queues.length);
     const ordered: typeof readyBriefs = [] as unknown as typeof readyBriefs;
     while (queues.some((q) => q.length)) {
       for (const q of queues) {
@@ -148,6 +130,28 @@ export const autoSchedule = createServerFn({ method: "POST" })
         if (next) ordered.push(next);
       }
     }
+
+    // Candidate slot generator: spread `perDay` slots evenly (in minutes) across
+    // the daily window so cadences like 20/day don't stack into a single hour.
+    const totalMinutes = Math.max(60, (data.hoursEnd - data.hoursStart) * 60);
+    const slotsPerDay = Math.min(data.perDay, SAFETY.maxPerAccountPerDay);
+    const gapMin = Math.max(SAFETY.minMinutesBetweenPins, Math.floor(totalMinutes / slotsPerDay));
+    // If the caller wants more pins/day than the account cap allows per-page (1),
+    // widen the per-page/day cap just enough that the target is reachable.
+    // Example: 20/day across 15 pages -> allow up to 2 per page per day.
+    const perPageCap = Math.max(SAFETY.maxPerPagePerDay, Math.ceil(slotsPerDay / pageCount));
+
+    function nextSlot(day: number, slot: number): { when: number; day: number; slot: number } | null {
+      if (day >= data.days) return null;
+      const minuteOffset = slot * gapMin + Math.floor(Math.random() * Math.min(15, gapMin));
+      const at = new Date();
+      at.setUTCDate(at.getUTCDate() + day);
+      at.setUTCHours(data.hoursStart, minuteOffset, 0, 0);
+      return { when: at.getTime(), day, slot };
+    }
+
+    let boardIdx = 0;
+    let day = 0, slot = 0;
 
     for (const brief of ordered) {
       const img = brief.pin_images?.[0];
@@ -174,7 +178,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
         if ((perDayAccount.get(dk) ?? 0) >= SAFETY.maxPerAccountPerDay) continue;
 
         // Per-page daily cap — never schedule the same source page twice on one day
-        if (pageId && (perDayPage.get(`${dk}|${pageId}`) ?? 0) >= SAFETY.maxPerPagePerDay) continue;
+        if (pageId && (perDayPage.get(`${dk}|${pageId}`) ?? 0) >= perPageCap) continue;
 
         // Account-wide min-gap between any two pins
         if (accountTimestamps.some((t) => Math.abs(t - when) < SAFETY.minMinutesBetweenPins * 60_000)) continue;
