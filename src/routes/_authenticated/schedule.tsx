@@ -63,9 +63,13 @@ function SchedulePage() {
       <header className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-4xl">Schedule</h1>
-          <p className="text-sm text-muted-foreground">Auto-fill drafts one per day. Review each pin, then queue it — the publisher only picks up queued pins.</p>
+          <p className="text-sm text-muted-foreground">Auto-fill drafts across the next 14 days. Review each pin, then queue it — the publisher only picks up queued pins.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="per-day" className="text-xs text-muted-foreground">Per day</Label>
+            <Input id="per-day" type="number" min={1} max={25} value={perDay} onChange={(e) => setPerDay(Math.max(1, Math.min(25, parseInt(e.target.value || "1", 10))))} className="h-9 w-20 text-sm" />
+          </div>
           <Button variant="outline" onClick={() => pipeMut.mutate()} disabled={pipeMut.isPending}><Zap className="mr-2 h-4 w-4" />Run pipeline</Button>
           <Button variant="outline" onClick={() => autoMut.mutate()} disabled={autoMut.isPending}><Wand2 className="mr-2 h-4 w-4" />Auto-fill 14 days</Button>
           <Button variant="outline" onClick={() => queueMut.mutate(undefined)} disabled={queueMut.isPending || draftCount === 0}>
