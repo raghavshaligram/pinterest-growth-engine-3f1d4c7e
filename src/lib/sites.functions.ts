@@ -60,9 +60,9 @@ export const crawlSite = createServerFn({ method: "POST" })
           h1: page.h1,
           meta_description: page.meta_description,
           content_hash: page.content_hash,
-          headings: page.headings,
-          images: page.images,
-          jsonld: page.jsonld,
+          headings: page.headings as unknown as never,
+          images: page.images as unknown as never,
+          jsonld: page.jsonld as unknown as never,
           status: "active" as const,
           last_crawled_at: new Date().toISOString(),
         };

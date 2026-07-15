@@ -62,7 +62,7 @@ URL: ${page.url}
 Title: ${page.title ?? ""}
 H1: ${page.h1 ?? ""}
 Meta: ${page.meta_description ?? ""}
-Headings: ${JSON.stringify((page.headings ?? []).slice(0, 12))}`,
+Headings: ${JSON.stringify(((page.headings as unknown as unknown[]) ?? []).slice(0, 12))}`,
       });
 
       await supabaseAdmin.from("pages").update({
