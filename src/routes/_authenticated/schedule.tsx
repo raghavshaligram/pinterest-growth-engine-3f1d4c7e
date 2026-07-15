@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline, queuePins, deleteAllScheduled } from "@/lib/schedule.functions";
+import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline, queuePins, deleteAllScheduled, replaceScheduledPin } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon, Check, CheckCheck } from "lucide-react";
+import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon, Hash, ImageIcon, Check, CheckCheck, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
@@ -29,6 +29,7 @@ function SchedulePage() {
 
   const queue = useServerFn(queuePins);
   const wipe = useServerFn(deleteAllScheduled);
+  const replace = useServerFn(replaceScheduledPin);
 
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [open, setOpen] = useState<ScheduledRow | null>(null);
@@ -61,6 +62,9 @@ function SchedulePage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pipeMut = useMutation({ mutationFn: () => pipeline({ data: {} }),
     onSuccess: (r) => { toast.success(`Analyzed ${r.analyzed} · Briefs for ${r.briefsFor} pages · Queued ${r.imagesQueued} images${r.errors.length ? ` · ${r.errors.length} errors` : ""}`); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+  const replaceMut = useMutation({ mutationFn: (id: string) => replace({ data: { id } }),
+    onSuccess: async () => { toast.success("Pin replaced"); await qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
 
   const groups = new Map<string, ScheduledRow[]>();
@@ -155,8 +159,10 @@ function SchedulePage() {
         onOpenChange={(v) => !v && setOpen(null)}
         onDelete={(id) => delMut.mutate(id)}
         onQueue={(id) => queueMut.mutate([id])}
+        onReplace={(id) => replaceMut.mutate(id)}
         deleting={delMut.isPending}
         queuing={queueMut.isPending}
+        replacing={replaceMut.isPending}
       />
     </div>
   );
@@ -168,7 +174,7 @@ function StatusBadge({ status }: { status: ScheduledRow["status"] }) {
   return <Badge variant={v}>{label}</Badge>;
 }
 
-function PinDetail({ row, onOpenChange, onDelete, onQueue, deleting, queuing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; deleting: boolean; queuing: boolean }) {
+function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, deleting, queuing, replacing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; onReplace: (id: string) => void; deleting: boolean; queuing: boolean; replacing: boolean }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
   return (
@@ -247,6 +253,11 @@ function PinDetail({ row, onOpenChange, onDelete, onQueue, deleting, queuing }: 
                 {row.status !== "published" && row.status !== "publishing" && (
                   <Button variant="destructive" onClick={() => onDelete(row.id)} disabled={deleting}>
                     <Trash2 className="mr-2 h-4 w-4" />Delete
+                  </Button>
+                )}
+                {row.status !== "published" && row.status !== "publishing" && (
+                  <Button variant="outline" onClick={() => onReplace(row.id)} disabled={replacing} title="Swap in another ready pin, keeping this slot">
+                    <RefreshCw className={`mr-2 h-4 w-4 ${replacing ? "animate-spin" : ""}`} />Replace pin
                   </Button>
                 )}
                 {row.status === "draft" && (

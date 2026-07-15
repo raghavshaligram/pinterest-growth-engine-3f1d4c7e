@@ -404,3 +404,65 @@ export const deleteAllScheduled = createServerFn({ method: "POST" })
     }
     return { deleted: ids.length };
   });
+
+// Swap the brief/image on a scheduled_pin to another ready brief.
+// Keeps the same slot (scheduled_at, board, status) but points at a fresh pin.
+export const replaceScheduledPin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: row, error: rowErr } = await supabaseAdmin
+      .from("scheduled_pins")
+      .select("id, status, brief_id, image_id, pin_briefs(page_id)")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (rowErr) throw rowErr;
+    if (!row) throw new Error("Scheduled pin not found");
+    if (row.status === "published" || row.status === "publishing") {
+      throw new Error("Cannot replace a pin that has already published");
+    }
+
+    const currentPageId = (row as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id ?? null;
+
+    // Images already used anywhere in the schedule — don't pick a duplicate.
+    const { data: usedRows } = await supabaseAdmin
+      .from("scheduled_pins")
+      .select("image_id, brief_id")
+      .eq("user_id", context.userId);
+    const usedImages = new Set((usedRows ?? []).map((r) => r.image_id).filter(Boolean) as string[]);
+    const usedBriefs = new Set((usedRows ?? []).map((r) => r.brief_id).filter(Boolean) as string[]);
+
+    // Candidate: any ready brief with a rendered image that isn't in the schedule.
+    const { data: candidates, error: candErr } = await supabaseAdmin
+      .from("pin_briefs")
+      .select("id, page_id, pin_images(id)")
+      .eq("user_id", context.userId)
+      .eq("status", "ready")
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (candErr) throw candErr;
+
+    const eligible = (candidates ?? [])
+      .map((c) => ({ id: c.id, page_id: (c as { page_id?: string }).page_id ?? null, image_id: (c.pin_images?.[0]?.id) as string | undefined }))
+      .filter((c) => c.image_id && !usedImages.has(c.image_id) && !usedBriefs.has(c.id) && c.id !== row.brief_id);
+
+    // Prefer a brief from a different page than the current one.
+    const pick = eligible.find((c) => c.page_id && c.page_id !== currentPageId) ?? eligible[0];
+    if (!pick || !pick.image_id) throw new Error("No other ready pin available to swap in");
+
+    const { error: updErr } = await supabaseAdmin
+      .from("scheduled_pins")
+      .update({ brief_id: pick.id, image_id: pick.image_id, last_error: null })
+      .eq("id", row.id);
+    if (updErr) throw updErr;
+
+    await supabaseAdmin.from("pin_briefs").update({ status: "scheduled" }).eq("id", pick.id);
+    if (row.brief_id) {
+      await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", row.brief_id);
+    }
+
+    return { ok: true, briefId: pick.id };
+  });
