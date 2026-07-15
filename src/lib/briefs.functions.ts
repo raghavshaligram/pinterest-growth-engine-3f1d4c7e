@@ -291,3 +291,32 @@ export const rerenderBrief = createServerFn({ method: "POST" })
     await processImageQueueForUser(context.userId, 1, { briefId: data.briefId });
     return { ok: true };
   });
+
+// Fully delete a pin brief: removes generated image (storage + row), any
+// scheduled publish entries, queued render jobs, then the brief itself.
+export const deleteBrief = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: brief } = await context.supabase
+      .from("pin_briefs").select("id, user_id").eq("id", data.briefId).single();
+    if (!brief || brief.user_id !== context.userId) throw new Error("Brief not found");
+
+    const { data: imgs } = await supabaseAdmin
+      .from("pin_images").select("storage_path").eq("brief_id", data.briefId);
+    const paths = (imgs ?? []).map((i) => i.storage_path).filter(Boolean) as string[];
+    if (paths.length) await supabaseAdmin.storage.from("pins").remove(paths);
+
+    // Only remove pins that haven't already gone out to Pinterest.
+    await supabaseAdmin.from("scheduled_pins")
+      .delete().eq("brief_id", data.briefId)
+      .in("status", ["draft", "queued", "failed", "canceled", "exported"]);
+    await supabaseAdmin.from("pin_images").delete().eq("brief_id", data.briefId);
+    await supabaseAdmin.from("jobs")
+      .delete().eq("kind", "generate_image").eq("user_id", context.userId)
+      .in("status", ["queued", "failed"])
+      .filter("payload->>brief_id", "eq", data.briefId);
+    await supabaseAdmin.from("pin_briefs").delete().eq("id", data.briefId);
+    return { ok: true };
+  });

@@ -31,7 +31,7 @@ function SchedulePage() {
   const [open, setOpen] = useState<ScheduledRow | null>(null);
 
   // Daily posting cadence — one draft per day, spread across 14 days for review.
-  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 1, hoursStart: 9, hoursEnd: 21 } }),
+  const autoMut = useMutation({ mutationFn: () => auto({ data: { days: 14, perDay: 5, hoursStart: 9, hoursEnd: 21 } }),
     onSuccess: (r) => { toast.success(r.reason ?? `Drafted ${r.scheduled} pins — review, then queue`); qc.invalidateQueries({ queryKey: ["scheduled"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const pubMut = useMutation({ mutationFn: () => pub(),

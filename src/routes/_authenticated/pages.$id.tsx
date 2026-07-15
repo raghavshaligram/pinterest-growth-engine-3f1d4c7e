@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, runImageWorker, rerenderBrief } from "@/lib/briefs.functions";
+import { generateBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Sparkles, Wand2, ImageIcon, RefreshCw } from "lucide-react";
+import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 
@@ -85,6 +85,7 @@ function PageDetail() {
 function BriefCard({ b }: { b: { id: string; title: string; style: string; status: string; pin_images: { storage_path: string }[] } }) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
+  const del = useServerFn(deleteBrief);
   const [url, setUrl] = useState<string | null>(null);
   const path = b.pin_images?.[0]?.storage_path;
   useEffect(() => {
@@ -98,7 +99,18 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
   }, [path]);
   const reMut = useMutation({
     mutationFn: () => rerender({ data: { briefId: b.id } }),
-    onSuccess: () => { toast.success("Re-rendered"); qc.invalidateQueries(); },
+    onSuccess: () => {
+      toast.success("Re-rendered");
+      setUrl(null); // force <img> to reload the new signed URL
+      qc.invalidateQueries({ queryKey: ["page"] });
+      qc.invalidateQueries({ queryKey: ["briefs"] });
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+  const delMut = useMutation({
+    mutationFn: () => del({ data: { briefId: b.id } }),
+    onSuccess: () => { toast.success("Pin deleted"); qc.invalidateQueries(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
   const [open, setOpen] = useState(false);
@@ -120,14 +132,26 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
               {b.status === "image_pending" ? "Waiting to render…" : "No image"}
             </div>
           )}
-          <Button
-            size="sm" variant="secondary"
-            className="absolute right-2 top-2 h-8 gap-1"
-            onClick={(e) => { e.stopPropagation(); reMut.mutate(); }} disabled={reMut.isPending}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
-            Rerender
-          </Button>
+          <div className="absolute right-2 top-2 flex gap-1">
+            <Button
+              size="sm" variant="secondary" className="h-8 gap-1"
+              onClick={(e) => { e.stopPropagation(); reMut.mutate(); }} disabled={reMut.isPending}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
+              Rerender
+            </Button>
+            <Button
+              size="icon" variant="destructive" className="h-8 w-8"
+              title="Delete pin"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm("Delete this pin? This removes the brief, image, and any scheduled entries.")) delMut.mutate();
+              }}
+              disabled={delMut.isPending}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
         <div className="space-y-1 p-3">
           <div className="text-xs uppercase text-muted-foreground">{b.style}</div>

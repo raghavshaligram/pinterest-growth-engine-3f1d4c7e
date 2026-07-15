@@ -128,7 +128,24 @@ export const autoSchedule = createServerFn({ method: "POST" })
     let boardIdx = 0;
     let day = 0, slot = 0;
 
-    for (const brief of readyBriefs) {
+    // Round-robin by page so early days pull from every page instead of
+    // draining one page's briefs before moving to the next.
+    const byPage = new Map<string, typeof readyBriefs>();
+    for (const b of readyBriefs) {
+      const pid = (b as { page_id?: string }).page_id ?? "";
+      if (!byPage.has(pid)) byPage.set(pid, [] as unknown as typeof readyBriefs);
+      byPage.get(pid)!.push(b);
+    }
+    const queues = [...byPage.values()];
+    const ordered: typeof readyBriefs = [] as unknown as typeof readyBriefs;
+    while (queues.some((q) => q.length)) {
+      for (const q of queues) {
+        const next = q.shift();
+        if (next) ordered.push(next);
+      }
+    }
+
+    for (const brief of ordered) {
       const img = brief.pin_images?.[0];
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
       if (!img || !pageUrl) continue;
