@@ -5,15 +5,28 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const listPages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    // Drop the heavy `analysis` JSON from the list view — only needed on detail page.
     const { data, error } = await context.supabase
       .from("pages")
-      .select("id, url, title, status, last_crawled_at, last_analyzed_at, excluded")
+      .select("id, url, title, status, last_crawled_at, last_analyzed_at, excluded, pin_briefs(id, status, pin_images(storage_path))")
       .order("last_crawled_at", { ascending: false })
       .limit(200);
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map((p) => {
+      const briefs = (p as { pin_briefs?: { id: string; status: string; pin_images?: { storage_path: string }[] }[] }).pin_briefs ?? [];
+      const briefsTotal = briefs.length;
+      const imagesReady = briefs.filter((b) => b.pin_images?.length).length;
+      const thumb = briefs.find((b) => b.pin_images?.[0]?.storage_path)?.pin_images?.[0]?.storage_path ?? null;
+      return {
+        id: p.id, url: p.url, title: p.title, status: p.status,
+        last_crawled_at: p.last_crawled_at, last_analyzed_at: p.last_analyzed_at, excluded: p.excluded,
+        briefs_total: briefsTotal,
+        images_ready: imagesReady,
+        images_pending: briefsTotal - imagesReady,
+        thumb,
+      };
+    });
   });
+
 
 export const setPageExcluded = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

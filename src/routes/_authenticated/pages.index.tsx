@@ -7,9 +7,11 @@ import { runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Sparkles, ImageIcon, Zap, Loader2, EyeOff, Eye, Filter } from "lucide-react";
-import { useState } from "react";
+import { Sparkles, ImageIcon, Zap, Loader2, EyeOff, Eye, Filter, Check, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+
 
 export const Route = createFileRoute("/_authenticated/pages/")({
   head: () => ({ meta: [{ title: "Pages — PinForge" }] }),
@@ -132,15 +134,32 @@ function PagesPage() {
 
       <div className="space-y-2">
         {visible.map((p) => (
-          <Card key={p.id} className="flex items-center justify-between gap-3 p-4 transition hover:border-primary/50">
+          <Card key={p.id} className="flex items-center gap-4 p-3 transition hover:border-primary/50">
+            <Thumb path={p.thumb} />
             <Link to="/pages/$id" params={{ id: p.id }} className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{p.title ?? p.url}</div>
               <div className="truncate text-xs text-muted-foreground">{p.url}</div>
             </Link>
+            <div className="hidden shrink-0 items-center gap-1.5 md:flex">
+              <StatusPill
+                label="Analysis"
+                done={!!p.last_analyzed_at}
+                text={p.last_analyzed_at ? "Analyzed" : "Pending"}
+              />
+              <StatusPill
+                label="Pins"
+                done={p.briefs_total > 0}
+                text={p.briefs_total > 0 ? `${p.briefs_total} briefs` : "None"}
+              />
+              <StatusPill
+                label="Images"
+                done={p.briefs_total > 0 && p.images_ready === p.briefs_total}
+                partial={p.images_ready > 0 && p.images_ready < p.briefs_total}
+                text={p.briefs_total > 0 ? `${p.images_ready}/${p.briefs_total}` : "—"}
+              />
+            </div>
             <div className="flex shrink-0 items-center gap-2">
-              {p.excluded
-                ? <Badge variant="secondary">Excluded</Badge>
-                : p.last_analyzed_at ? <Badge variant="outline">Analyzed</Badge> : <Badge variant="secondary">Not analyzed</Badge>}
+              {p.excluded && <Badge variant="secondary">Excluded</Badge>}
               <Button
                 size="sm"
                 variant="ghost"
@@ -160,3 +179,38 @@ function PagesPage() {
     </div>
   );
 }
+
+function StatusPill({ label, done, partial, text }: { label: string; done: boolean; partial?: boolean; text: string }) {
+  const cls = done
+    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+    : partial
+    ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+    : "border-border bg-muted/40 text-muted-foreground";
+  const Icon = done ? Check : Clock;
+  return (
+    <div className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${cls}`}>
+      <Icon className="h-3 w-3" />
+      <span className="font-medium">{label}</span>
+      <span className="opacity-80">{text}</span>
+    </div>
+  );
+}
+
+function Thumb({ path }: { path: string | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let ok = true;
+    if (path) {
+      supabase.storage.from("pins").createSignedUrl(path, 3600).then((r) => { if (ok) setUrl(r.data?.signedUrl ?? null); });
+    } else {
+      setUrl(null);
+    }
+    return () => { ok = false; };
+  }, [path]);
+  return (
+    <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-muted">
+      {url ? <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" /> : null}
+    </div>
+  );
+}
+
