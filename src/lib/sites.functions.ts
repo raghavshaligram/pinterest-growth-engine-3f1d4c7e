@@ -12,12 +12,19 @@ export const listSites = createServerFn({ method: "GET" })
 
 export const upsertSite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: { id?: string; url: string; sitemap_url?: string; timezone?: string }) =>
+  .inputValidator((i: {
+    id?: string; url: string; sitemap_url?: string; timezone?: string;
+    brand_name?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
+  }) =>
     z.object({
       id: z.string().uuid().optional(),
       url: z.string().url(),
       sitemap_url: z.string().url().optional(),
       timezone: z.string().default("UTC"),
+      brand_name: z.string().optional(),
+      brand_colors: z.array(z.string()).optional(),
+      brand_font: z.string().optional(),
+      brand_notes: z.string().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

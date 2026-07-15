@@ -513,6 +513,10 @@ export type Database = {
       }
       sites: {
         Row: {
+          brand_colors: Json
+          brand_font: string | null
+          brand_name: string | null
+          brand_notes: string | null
           created_at: string
           id: string
           settings: Json
@@ -523,6 +527,10 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          brand_colors?: Json
+          brand_font?: string | null
+          brand_name?: string | null
+          brand_notes?: string | null
           created_at?: string
           id?: string
           settings?: Json
@@ -533,6 +541,10 @@ export type Database = {
           user_id: string
         }
         Update: {
+          brand_colors?: Json
+          brand_font?: string | null
+          brand_name?: string | null
+          brand_notes?: string | null
           created_at?: string
           id?: string
           settings?: Json

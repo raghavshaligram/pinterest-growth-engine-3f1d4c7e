@@ -26,6 +26,21 @@ export const generateBriefs = createServerFn({ method: "POST" })
     };
     if (!analysis.primary_keyword) throw new Error("Analyze the page first.");
 
+    const { data: site } = await context.supabase.from("sites").select("*").eq("id", page.site_id).single();
+    const brandName = site?.brand_name ?? (site ? new URL(site.url).hostname.replace(/^www\./, "") : "");
+    const brandHost = site ? new URL(site.url).hostname.replace(/^www\./, "") : "";
+    const brandColors = Array.isArray(site?.brand_colors) ? (site!.brand_colors as string[]) : [];
+    const brandFont = site?.brand_font ?? "";
+    const brandNotes = site?.brand_notes ?? "";
+    const paletteLine = brandColors.length
+      ? `Use ONLY this brand color palette: ${brandColors.join(", ")}. Backgrounds, accents, and overlay text must come from this palette.`
+      : `Use a cohesive palette derived from the page's topic; keep it consistent across all 10 pins for this batch.`;
+    const brandBlock = `BRAND LOCK (must appear on every image):
+- Brand name overlay near the top or as a small wordmark: "${brandName}".
+- Website URL centered at the BOTTOM of the pin (bottom center, ~6% margin, small caps or clean sans, high contrast, no box): "${brandHost}".
+- ${paletteLine}
+${brandFont ? `- Typography direction: ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}- Do NOT invent a different URL or brand name. No fake logos.`;
+
     const stylesSubset = [...PIN_STYLES].sort(() => Math.random() - 0.5).slice(0, Math.min(data.count, PIN_STYLES.length));
     const chosenStyles = stylesSubset.length >= data.count
       ? stylesSubset.slice(0, data.count)
@@ -51,7 +66,11 @@ export const generateBriefs = createServerFn({ method: "POST" })
 
 Return JSON: { briefs: [{ style, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
 
-The image_prompt is for a text-to-image model producing a vertical 2:3 Pinterest pin at 1000x1500. Include composition, style (photography/illustration/flat/vintage/infographic/split/minimal etc), color palette, and any overlay text WITH exact typography direction. Be different for each brief.
+The image_prompt is for a text-to-image model producing a vertical 2:3 Pinterest pin at 1000x1500. Include composition, style (photography/illustration/flat/vintage/infographic/split/minimal etc), and any overlay text WITH exact typography direction. Vary composition/style per brief, but keep the brand lock IDENTICAL on every pin.
+
+${brandBlock}
+
+Every image_prompt MUST end with this exact line: "Bottom-center footer text: ${brandHost}. Small wordmark: ${brandName}. Palette: ${brandColors.join(", ") || "cohesive brand palette"}."
 
 Page: ${page.url}
 Topic: ${analysis.topic ?? ""}
@@ -110,4 +129,30 @@ export const runImageWorker = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const { processImageQueueForUser } = await import("./image-worker.server");
     return await processImageQueueForUser(context.userId, 5);
+  });
+
+export const rerenderBrief = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: brief } = await context.supabase.from("pin_briefs").select("id, user_id").eq("id", data.briefId).single();
+    if (!brief || brief.user_id !== context.userId) throw new Error("Brief not found");
+    // Remove any existing images for this brief (both DB row and storage object)
+    const { data: imgs } = await supabaseAdmin.from("pin_images").select("id, storage_path").eq("brief_id", data.briefId);
+    if (imgs?.length) {
+      const paths = imgs.map((i) => i.storage_path).filter(Boolean) as string[];
+      if (paths.length) await supabaseAdmin.storage.from("pins").remove(paths);
+      await supabaseAdmin.from("pin_images").delete().eq("brief_id", data.briefId);
+    }
+    await supabaseAdmin.from("pin_briefs").update({ status: "image_pending" }).eq("id", data.briefId);
+    await supabaseAdmin.from("jobs").insert({
+      user_id: context.userId,
+      kind: "generate_image" as const,
+      payload: { brief_id: data.briefId, force: true },
+    });
+    // Kick the worker inline so the user sees it render immediately
+    const { processImageQueueForUser } = await import("./image-worker.server");
+    await processImageQueueForUser(context.userId, 1);
+    return { ok: true };
   });

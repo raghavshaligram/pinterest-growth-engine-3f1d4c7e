@@ -23,20 +23,23 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
 
   let ok = 0, fail = 0;
   for (const job of jobs) {
-    const briefId = (job.payload as { brief_id?: string }).brief_id;
+    const payload = (job.payload ?? {}) as { brief_id?: string; force?: boolean };
+    const briefId = payload.brief_id;
     if (!briefId) continue;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
       const { data: brief } = await supabaseAdmin.from("pin_briefs").select("*").eq("id", briefId).single();
       if (!brief) throw new Error("brief missing");
 
-      const promptHash = createHash("sha1").update(brief.image_prompt).digest("hex");
-      const { data: existing } = await supabaseAdmin
-        .from("pin_images").select("id").eq("prompt_hash", promptHash).maybeSingle();
-      if (existing) {
-        await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
-        await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);
-        ok++; continue;
+      const promptHash = createHash("sha1").update(brief.image_prompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
+      if (!payload.force) {
+        const { data: existing } = await supabaseAdmin
+          .from("pin_images").select("id").eq("prompt_hash", promptHash).maybeSingle();
+        if (existing) {
+          await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
+          await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);
+          ok++; continue;
+        }
       }
 
       const pred = await replicatePredict({

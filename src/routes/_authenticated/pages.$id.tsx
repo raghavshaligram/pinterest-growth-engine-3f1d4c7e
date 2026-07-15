@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, runImageWorker } from "@/lib/briefs.functions";
+import { generateBriefs, runImageWorker, rerenderBrief } from "@/lib/briefs.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Sparkles, Wand2, ImageIcon } from "lucide-react";
+import { Sparkles, Wand2, ImageIcon, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 
@@ -83,22 +83,39 @@ function PageDetail() {
 }
 
 function BriefCard({ b }: { b: { id: string; title: string; style: string; status: string; pin_images: { storage_path: string }[] } }) {
+  const qc = useQueryClient();
+  const rerender = useServerFn(rerenderBrief);
   const [url, setUrl] = useState<string | null>(null);
   const path = b.pin_images?.[0]?.storage_path;
   useEffect(() => {
     let ok = true;
     if (path) {
       supabase.storage.from("pins").createSignedUrl(path, 60 * 60).then((r) => { if (ok) setUrl(r.data?.signedUrl ?? null); });
+    } else {
+      setUrl(null);
     }
     return () => { ok = false; };
   }, [path]);
+  const reMut = useMutation({
+    mutationFn: () => rerender({ data: { briefId: b.id } }),
+    onSuccess: () => { toast.success("Re-rendered"); qc.invalidateQueries(); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
   return (
     <Card className="overflow-hidden">
-      <div className="aspect-[2/3] w-full bg-muted">
+      <div className="relative aspect-[2/3] w-full bg-muted">
         {url ? <img src={url} alt="" className="h-full w-full object-cover" /> :
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             {b.status === "image_pending" ? "Waiting to render…" : "No image"}
           </div>}
+        <Button
+          size="sm" variant="secondary"
+          className="absolute right-2 top-2 h-8 gap-1"
+          onClick={() => reMut.mutate()} disabled={reMut.isPending}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
+          Rerender
+        </Button>
       </div>
       <div className="space-y-1 p-3">
         <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
