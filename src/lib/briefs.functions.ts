@@ -8,6 +8,53 @@ const PIN_STYLES = [
   "infographic", "photo", "illustration", "minimal", "seasonal",
 ] as const;
 
+export function buildThemedPinPrompt(input: {
+  title: string;
+  cta?: string | null;
+  style?: string | null;
+  topic?: string | null;
+  primaryKeyword?: string | null;
+  brandHost: string;
+  brandColors?: string[];
+  middlePrompt?: string | null;
+}) {
+  const colors = input.brandColors?.filter(Boolean) ?? [];
+  const palette = colors.length
+    ? colors.join(", ")
+    : "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C";
+  const cta = input.cta || "Read More →";
+  const title = input.title.replace(/\s+/g, " ").trim();
+  const topic = input.topic || input.primaryKeyword || title;
+  const isTipTheme = /quick-tip|checklist|how-to|faq|infographic|listicle|mistakes/i.test(input.style ?? "");
+  const theme = isTipTheme
+    ? `THEME FAMILY: CLEAN ILLUSTRATED QUICK-TIP CARD GRID, matching the uploaded rainwater example. Light airy background, rounded white cards in a neat 2-column educational grid, thin teal/blue line icons, small leaf/water decorative accents at edges, crisp hierarchy, no photorealism.`
+    : `THEME FAMILY: EDITORIAL PHOTO BEFORE/AFTER PIN, matching the uploaded soil calculator example. Cream top title band, large dark-green elegant serif title, two vertical photo panels separated by a thin cream gutter, natural garden realism, refined magazine look.`;
+  const middle = input.middlePrompt?.trim() || (isTipTheme
+    ? `Create 4-6 compact visual tips about ${topic}, each with one simple icon and one short phrase. Keep text minimal and legible.`
+    : `Show a compelling garden transformation related to ${topic}: left side problem/unfinished/dry, right side lush/finished/healthy.`);
+
+  return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
+
+${theme}
+
+GLOBAL BRAND RULES:
+- Palette only: ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
+- Typography: headline is bold elegant editorial serif for photo/comparison pins; rounded friendly bold sans for quick-tip card-grid pins. Text must be large, correctly spelled, fully inside the canvas.
+- Keep the entire design clean, bright, Pinterest-native, gardening/home-improvement friendly.
+
+LOCKED LAYOUT:
+- Top 16-18% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
+- Middle 72-76% is the main themed visual: ${middle}
+- CTA appears as a small tasteful accent near the lower third only if it fits, exact text: "${cta}".
+- Bottom 5% is a full-width solid dark green/brand-color URL bar, flush to bottom, containing only centered cream small sans text: "${input.brandHost}".
+- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
+
+QUALITY CONTROL:
+- Must look like the same brand/template as the uploaded references.
+- Must not crop title, CTA, URL, card text, or panel images.
+- No misspelled words. No extra paragraphs. No unrelated objects.`;
+}
+
 export const generateBriefs = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { pageId: string; count?: number }) =>
