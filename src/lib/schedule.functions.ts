@@ -107,7 +107,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
       accountTimestamps.push(h.when);
     }
 
-    const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "queued" }[] = [];
+    const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "draft" }[] = [];
 
     // Candidate slot generator: iterates days/hours in order, jittering minute.
     const totalHours = Math.max(1, data.hoursEnd - data.hoursStart);
