@@ -63,14 +63,22 @@ function PagesPage() {
 
   const briefsAllM = useMutation({
     mutationFn: async () => {
-      const targets = active.filter((p) => p.last_analyzed_at).slice(0, 25);
+      const targets = active.filter((p) => p.last_analyzed_at && p.briefs_total === 0).slice(0, 25);
+      if (!targets.length) return { ok: 0, fail: 0, total: 0, skipped: true as const };
       let ok = 0, fail = 0;
+      const errors: string[] = [];
       for (const p of targets) {
-        try { await gen({ data: { pageId: p.id, count: 10 } }); ok++; } catch { fail++; }
+        try { await gen({ data: { pageId: p.id, count: 10 } }); ok++; invalidate(); }
+        catch (e) { fail++; errors.push(e instanceof Error ? e.message : String(e)); }
       }
-      return { ok, fail, total: targets.length };
+      return { ok, fail, total: targets.length, skipped: false as const, errors };
     },
-    onSuccess: (r) => { toast.success(`Briefs for ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`); invalidate(); },
+    onSuccess: (r) => {
+      if (r.skipped) { toast.info("No pages need briefs. Analyze pages first, or all analyzed pages already have briefs."); return; }
+      if (r.fail && r.errors?.length) toast.error(r.errors[0]);
+      toast.success(`Briefs for ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`);
+      invalidate();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
 
