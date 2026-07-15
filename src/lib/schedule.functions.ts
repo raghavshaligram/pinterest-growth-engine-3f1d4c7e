@@ -373,3 +373,30 @@ export const queuePins = createServerFn({ method: "POST" })
     if (error) throw error;
     return { queued: rows?.length ?? 0 };
   });
+
+// Wipe every scheduled pin the user hasn't already sent to Pinterest, and flip
+// the underlying briefs back to "ready" so auto-fill can pick them up again.
+export const deleteAllScheduled = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { includePublished?: boolean }) =>
+    z.object({ includePublished: z.boolean().optional() }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const statuses = data.includePublished
+      ? ["draft", "queued", "publishing", "failed", "canceled", "exported", "published"]
+      : ["draft", "queued", "failed", "canceled", "exported"];
+    const { data: rows } = await context.supabase
+      .from("scheduled_pins").select("id, brief_id, status")
+      .in("status", statuses);
+    const ids = (rows ?? []).map((r) => r.id);
+    if (!ids.length) return { deleted: 0 };
+    const briefIds = Array.from(new Set((rows ?? [])
+      .filter((r) => r.status !== "published")
+      .map((r) => r.brief_id).filter(Boolean) as string[]));
+    const { error } = await context.supabase.from("scheduled_pins").delete().in("id", ids);
+    if (error) throw error;
+    if (briefIds.length) {
+      await context.supabase.from("pin_briefs").update({ status: "ready" }).in("id", briefIds);
+    }
+    return { deleted: ids.length };
+  });
