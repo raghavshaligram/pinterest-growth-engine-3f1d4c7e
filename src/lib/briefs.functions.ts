@@ -284,9 +284,10 @@ export const rerenderBrief = createServerFn({ method: "POST" })
       user_id: context.userId,
       kind: "generate_image" as const,
       payload: { brief_id: data.briefId, force: true },
+      run_at: new Date().toISOString(),
     });
-    // Kick the worker inline so the user sees it render immediately
+    // Kick the worker inline for THIS brief only, so other queued jobs don't steal the slot
     const { processImageQueueForUser } = await import("./image-worker.server");
-    await processImageQueueForUser(context.userId, 1);
+    await processImageQueueForUser(context.userId, 1, { briefId: data.briefId });
     return { ok: true };
   });

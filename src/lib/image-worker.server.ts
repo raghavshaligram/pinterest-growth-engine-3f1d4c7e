@@ -1,7 +1,7 @@
 // Server-only. Image generation worker driving Replicate + Storage.
 import { createHash } from "node:crypto";
 
-export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string }) {
+export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { getIntegration, markIntegration } = await import("./integrations.server");
   const { replicatePredict } = await import("./replicate.server");
@@ -11,14 +11,16 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
   if (!cfg) return { processed: 0, note: "Replicate not configured" };
 
   let briefIdFilter: string[] | null = null;
-  if (opts?.pageId) {
+  if (opts?.briefId) {
+    briefIdFilter = [opts.briefId];
+  } else if (opts?.pageId) {
     const { data: pageBriefs } = await supabaseAdmin
       .from("pin_briefs").select("id").eq("user_id", userId).eq("page_id", opts.pageId);
     briefIdFilter = (pageBriefs ?? []).map((b) => b.id);
     if (!briefIdFilter.length) return { processed: 0 };
   }
 
-  let q = supabaseAdmin
+  const q = supabaseAdmin
     .from("jobs")
     .select("*")
     .eq("user_id", userId)
