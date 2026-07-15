@@ -218,7 +218,7 @@ export const runImageWorker = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { processImageQueueForUser } = await import("./image-worker.server");
-    return await processImageQueueForUser(context.userId, 5);
+    return await processImageQueueForUser(context.userId, 8);
   });
 
 export const rerenderBrief = createServerFn({ method: "POST" })

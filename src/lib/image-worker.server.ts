@@ -23,10 +23,10 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
   if (!jobs?.length) return { processed: 0 };
 
   let ok = 0, fail = 0;
-  for (const job of jobs) {
+  const runOne = async (job: typeof jobs[number]) => {
     const payload = (job.payload ?? {}) as { brief_id?: string; force?: boolean };
     const briefId = payload.brief_id;
-    if (!briefId) continue;
+    if (!briefId) return;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
       const { data: brief } = await supabaseAdmin
@@ -58,21 +58,18 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
         if (existing) {
           await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
           await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);
-          ok++; continue;
+          ok++; return;
         }
       }
 
       const pred = await replicatePredict({
         token: cfg.api_token,
         model: "google/nano-banana-2",
-        input: {
-          prompt: themedPrompt,
-          aspect_ratio: "2:3",
-        },
+        input: { prompt: themedPrompt, aspect_ratio: "2:3" },
+        maxWaitMs: 90_000,
       });
       const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
 
-      // Download and upload to Storage
       const imgResp = await fetch(outUrl);
       if (!imgResp.ok) throw new Error(`Replicate output download ${imgResp.status}`);
       const bytes = new Uint8Array(await imgResp.arrayBuffer());
@@ -100,6 +97,18 @@ export async function processImageQueueForUser(userId: string, limit = 5) {
       await markIntegration(userId, "replicate", "error", msg);
       fail++;
     }
-  }
+  };
+
+  // Process in parallel with bounded concurrency to stay under worker time budget.
+  const concurrency = 4;
+  let idx = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, jobs.length) }, async () => {
+      while (idx < jobs.length) {
+        const j = jobs[idx++];
+        await runOne(j);
+      }
+    }),
+  );
   return { processed: jobs.length, ok, fail };
 }
