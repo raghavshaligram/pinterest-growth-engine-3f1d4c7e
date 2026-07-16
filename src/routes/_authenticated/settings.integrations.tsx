@@ -36,9 +36,12 @@ function IntegrationsPage() {
     }
   }, [qc]);
 
-  const redirectUri = typeof window !== "undefined"
-    ? `${window.location.origin}/api/public/pinterest/callback`
-    : "";
+  const getRedirect = useServerFn(getPinterestRedirectUri);
+  const { data: redirectData } = useQuery({
+    queryKey: ["pinterest-redirect-uri"],
+    queryFn: () => getRedirect(),
+  });
+  const redirectUri = redirectData?.redirectUri ?? "";
 
   return (
     <div className="space-y-8">
