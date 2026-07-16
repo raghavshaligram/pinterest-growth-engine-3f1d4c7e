@@ -193,6 +193,7 @@ function IntegrationCard(props: {
           <p className="pt-2 text-xs text-destructive">{props.status.last_error}</p>
         )}
       </form>
+      {props.extra}
     </Card>
   );
 }
