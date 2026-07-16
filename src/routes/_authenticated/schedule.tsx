@@ -67,6 +67,9 @@ function SchedulePage() {
   const replaceMut = useMutation({ mutationFn: (id: string) => replace({ data: { id } }),
     onSuccess: async () => { toast.success("Pin replaced"); await qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+  const publishNowMut = useMutation({ mutationFn: (id: string) => publishNowFn({ data: { id } }),
+    onSuccess: async (r) => { toast.success(r.processed ? `Published (${r.ok ?? r.exported ?? 0})` : "Nothing published — check integration"); await qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
 
   const groups = new Map<string, ScheduledRow[]>();
   (data ?? []).forEach((p) => {
