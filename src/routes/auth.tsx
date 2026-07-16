@@ -55,13 +55,24 @@ function AuthPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center gap-2 text-primary">
-          <Sparkles className="h-6 w-6" />
-          <span className="font-display text-3xl text-foreground">PinForge</span>
+    <div className="halo-bg relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
+      <div className="relative w-full max-w-md">
+        <div className="mb-8 flex items-center justify-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
+            <Sparkles className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <span className="font-display text-3xl">PinForge</span>
         </div>
-        <Card className="p-6">
+        <div className="mb-6 text-center">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-[11px] uppercase tracking-widest text-muted-foreground backdrop-blur">
+            <span className="h-1.5 w-1.5 rounded-full bg-gradient-primary" />
+            Pinterest growth engine
+          </div>
+          <h1 className="font-display text-4xl leading-tight">
+            Ship pins <span className="text-gradient-primary">on autopilot</span>
+          </h1>
+        </div>
+        <Card className="card-glow border-border/60 bg-card/70 p-6 backdrop-blur-xl">
           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign in</TabsTrigger>
@@ -71,14 +82,14 @@ function AuthPage() {
               <form onSubmit={signIn} className="space-y-4 pt-4">
                 <div><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
                 <div><Label>Password</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-                <Button type="submit" className="w-full" disabled={busy}>{busy ? "…" : "Sign in"}</Button>
+                <Button type="submit" variant="gradient" className="w-full" disabled={busy}>{busy ? "…" : "Sign in"}</Button>
               </form>
             </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={signUp} className="space-y-4 pt-4">
                 <div><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
                 <div><Label>Password</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} /></div>
-                <Button type="submit" className="w-full" disabled={busy}>{busy ? "…" : "Create account"}</Button>
+                <Button type="submit" variant="gradient" className="w-full" disabled={busy}>{busy ? "…" : "Create account"}</Button>
               </form>
             </TabsContent>
           </Tabs>

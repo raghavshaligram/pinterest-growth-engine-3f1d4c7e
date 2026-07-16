@@ -40,14 +40,14 @@ function DashboardPage() {
   const s = data;
   return (
     <div className="space-y-8">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Your Pinterest growth engine at a glance.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => imgM.mutate()}><ImageIcon className="mr-2 h-4 w-4" />Generate images</Button>
-          <Button variant="outline" size="sm" onClick={() => pubM.mutate()}><Send className="mr-2 h-4 w-4" />Publish due</Button>
+          <Button variant="gradient" size="sm" onClick={() => pubM.mutate()}><Send className="mr-2 h-4 w-4" />Publish due</Button>
           <Button variant="outline" size="sm" onClick={() => serpM.mutate()}><Search className="mr-2 h-4 w-4" />SERP sweep</Button>
         </div>
       </header>
@@ -55,8 +55,8 @@ function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
         <Stat label="Pages" value={s?.pages ?? 0} />
         <Stat label="Pin briefs" value={s?.briefs ?? 0} />
-        <Stat label="Scheduled" value={s?.scheduled ?? 0} />
-        <Stat label="Published today" value={s?.publishedToday ?? 0} accent="text-success" />
+        <Stat label="Scheduled" value={s?.scheduled ?? 0} glow />
+        <Stat label="Published today" value={s?.publishedToday ?? 0} accent="text-success" glow />
         <Stat label="Failed" value={s?.failed ?? 0} accent={s?.failed ? "text-destructive" : undefined} />
         <Stat label="Queue jobs" value={s?.queuedJobs ?? 0} />
       </div>
@@ -104,9 +104,9 @@ function DashboardPage() {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: string }) {
+function Stat({ label, value, accent, glow }: { label: string; value: number; accent?: string; glow?: boolean }) {
   return (
-    <Card className="p-4">
+    <Card className={`p-4 ${glow ? "card-glow" : ""}`}>
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 font-display text-3xl ${accent ?? ""}`}>{value}</div>
     </Card>

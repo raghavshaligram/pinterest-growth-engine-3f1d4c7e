@@ -31,10 +31,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
-        <div className="flex items-center gap-2 px-5 py-6">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <span className="font-display text-xl">PinForge</span>
+      <aside className="relative hidden w-60 shrink-0 flex-col bg-sidebar md:flex">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-primary/40 to-transparent" />
+        <div className="flex items-center gap-2.5 px-5 py-6">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
+            <Sparkles className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <span className="font-display text-xl tracking-tight">PinForge</span>
         </div>
         <nav className="flex-1 space-y-0.5 px-3">
           {NAV.map(({ to, label, icon: Icon }) => {
@@ -44,13 +47,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={to}
                 to={to}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
                   active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                    ? "bg-gradient-primary-soft text-foreground"
+                    : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                 )}
               >
-                <Icon className="h-4 w-4" />
+                {active && (
+                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-gradient-primary" />
+                )}
+                <Icon className={cn("h-4 w-4", active && "text-primary")} />
                 {label}
               </Link>
             );
