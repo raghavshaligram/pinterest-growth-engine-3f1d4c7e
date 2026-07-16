@@ -1,15 +1,17 @@
 // Server-only publisher. Chooses API vs Apify vs export mode per user integrations.
-export async function processDuePinsForUser(userId: string, limit = 25) {
+export async function processDuePinsForUser(userId: string, limit = 25, onlyId?: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { makePinterestClient } = await import("./pinterest.server");
   const nowIso = new Date().toISOString();
-  const { data: due, error } = await supabaseAdmin
+  let q = supabaseAdmin
     .from("scheduled_pins")
     .select("id, brief_id, image_id, board_id, attempts, scheduled_at")
     .eq("user_id", userId)
     .eq("status", "queued")
-    .lte("scheduled_at", nowIso)
     .limit(limit);
+  if (onlyId) q = q.eq("id", onlyId);
+  else q = q.lte("scheduled_at", nowIso);
+  const { data: due, error } = await q;
   if (error) throw error;
   if (!due?.length) return { processed: 0 };
 

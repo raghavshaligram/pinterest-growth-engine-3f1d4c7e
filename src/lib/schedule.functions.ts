@@ -338,6 +338,22 @@ export const runPublisher = createServerFn({ method: "POST" })
     return await processDuePinsForUser(context.userId);
   });
 
+// Publish a single scheduled pin immediately, ignoring its scheduled_at.
+export const publishNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    // Flip to queued and move scheduled_at to now so the publisher picks it up.
+    const { error: upErr } = await context.supabase
+      .from("scheduled_pins")
+      .update({ status: "queued", scheduled_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .in("status", ["draft", "queued", "failed"]);
+    if (upErr) throw upErr;
+    const { processDuePinsForUser } = await import("./publisher.server");
+    return await processDuePinsForUser(context.userId, 1, data.id);
+  });
+
 export const rescheduleOrCancel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string; scheduled_at?: string; cancel?: boolean }) =>

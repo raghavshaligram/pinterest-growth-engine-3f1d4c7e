@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline, queuePins, deleteAllScheduled, replaceScheduledPin } from "@/lib/schedule.functions";
+import { listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, runFullPipeline, queuePins, deleteAllScheduled, replaceScheduledPin, publishNow } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ function SchedulePage() {
   const queue = useServerFn(queuePins);
   const wipe = useServerFn(deleteAllScheduled);
   const replace = useServerFn(replaceScheduledPin);
+  const publishNowFn = useServerFn(publishNow);
 
   const { data, isLoading, isFetching } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [open, setOpen] = useState<ScheduledRow | null>(null);
@@ -65,6 +66,9 @@ function SchedulePage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
   const replaceMut = useMutation({ mutationFn: (id: string) => replace({ data: { id } }),
     onSuccess: async () => { toast.success("Pin replaced"); await qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+  const publishNowMut = useMutation({ mutationFn: (id: string) => publishNowFn({ data: { id } }),
+    onSuccess: async (r) => { toast.success(r.processed ? `Published (${r.ok ?? r.exported ?? 0})` : "Nothing published — check integration"); await qc.invalidateQueries({ queryKey: ["scheduled"] }); setOpen(null); },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
 
   const groups = new Map<string, ScheduledRow[]>();
@@ -165,9 +169,11 @@ function SchedulePage() {
         onDelete={(id) => delMut.mutate(id)}
         onQueue={(id) => queueMut.mutate([id])}
         onReplace={(id) => replaceMut.mutate(id)}
+        onPublishNow={(id) => publishNowMut.mutate(id)}
         deleting={delMut.isPending}
         queuing={queueMut.isPending}
         replacing={replaceMut.isPending}
+        publishing={publishNowMut.isPending}
       />
     </div>
   );
@@ -179,7 +185,7 @@ function StatusBadge({ status }: { status: ScheduledRow["status"] }) {
   return <Badge variant={v}>{label}</Badge>;
 }
 
-function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, deleting, queuing, replacing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; onReplace: (id: string) => void; deleting: boolean; queuing: boolean; replacing: boolean }) {
+function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, onPublishNow, deleting, queuing, replacing, publishing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; onReplace: (id: string) => void; onPublishNow: (id: string) => void; deleting: boolean; queuing: boolean; replacing: boolean; publishing: boolean }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
   return (
@@ -266,8 +272,13 @@ function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, deleting, 
                   </Button>
                 )}
                 {row.status === "draft" && (
-                  <Button size="sm" onClick={() => onQueue(row.id)} disabled={queuing}>
+                  <Button size="sm" variant="secondary" onClick={() => onQueue(row.id)} disabled={queuing}>
                     <Check className="mr-2 h-4 w-4" />Queue for publishing
+                  </Button>
+                )}
+                {row.status !== "published" && row.status !== "publishing" && (
+                  <Button size="sm" onClick={() => onPublishNow(row.id)} disabled={publishing} title="Publish this pin immediately, ignoring the scheduled time">
+                    <Send className={`mr-2 h-4 w-4 ${publishing ? "animate-pulse" : ""}`} />Publish now
                   </Button>
                 )}
               </div>
