@@ -1,6 +1,25 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, getRequest } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+export const startPinterestOAuth = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { getIntegration } = await import("./integrations.server");
+    const cfg = await getIntegration(context.userId, "pinterest");
+    if (!cfg?.app_id || !cfg?.app_secret) {
+      throw new Error("Save your Pinterest App ID and App Secret first, then click Connect.");
+    }
+    const { signState, buildAuthorizeUrl } = await import("./pinterest-oauth.server");
+    const req = getRequest();
+    const origin = new URL(req.url).origin;
+    const redirectUri = `${origin}/api/public/pinterest/callback`;
+    const state = signState(context.userId);
+    return {
+      authorizeUrl: buildAuthorizeUrl({ appId: cfg.app_id, redirectUri, state }),
+      redirectUri,
+    };
+  });
 
 const providerSchema = z.enum(["openai", "replicate", "apify", "pinterest"]);
 
