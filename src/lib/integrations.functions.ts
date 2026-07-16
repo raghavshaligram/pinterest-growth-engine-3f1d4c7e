@@ -22,6 +22,14 @@ export const startPinterestOAuth = createServerFn({ method: "POST" })
     };
   });
 
+export const getPinterestRedirectUri = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const req = getRequest();
+    const origin = new URL(req.url).origin;
+    return { redirectUri: `${origin}/api/public/pinterest/callback` };
+  });
+
 const providerSchema = z.enum(["openai", "replicate", "apify", "pinterest"]);
 
 const configShapes = {
