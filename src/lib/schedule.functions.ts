@@ -394,6 +394,46 @@ export const queuePins = createServerFn({ method: "POST" })
     return { queued: rows?.length ?? 0 };
   });
 
+// Mark a scheduled pin as manually posted (user pinned it themselves).
+export const markPosted = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string; pinterestPinId?: string; unmark?: boolean }) =>
+    z.object({
+      id: z.string().uuid(),
+      pinterestPinId: z.string().trim().max(64).optional(),
+      unmark: z.boolean().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    if (data.unmark) {
+      const { error } = await context.supabase
+        .from("scheduled_pins")
+        .update({ status: "queued", published_at: null, pinterest_pin_id: null })
+        .eq("id", data.id);
+      if (error) throw error;
+      await context.supabase.from("publish_logs").insert({
+        user_id: context.userId, scheduled_pin_id: data.id, level: "info",
+        message: "Manual post mark cleared",
+      });
+      return { ok: true, unmarked: true };
+    }
+    const { error } = await context.supabase
+      .from("scheduled_pins")
+      .update({
+        status: "published",
+        published_at: new Date().toISOString(),
+        pinterest_pin_id: data.pinterestPinId ?? null,
+        last_error: null,
+      })
+      .eq("id", data.id);
+    if (error) throw error;
+    await context.supabase.from("publish_logs").insert({
+      user_id: context.userId, scheduled_pin_id: data.id, level: "info",
+      message: `Marked as manually posted${data.pinterestPinId ? ` (${data.pinterestPinId})` : ""}`,
+    });
+    return { ok: true };
+  });
+
 // Wipe every scheduled pin the user hasn't already sent to Pinterest, and flip
 // the underlying briefs back to "ready" so auto-fill can pick them up again.
 export const deleteAllScheduled = createServerFn({ method: "POST" })
