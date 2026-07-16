@@ -269,6 +269,34 @@ function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, onPublishN
                 )}
               </dl>
 
+              {row.status !== "published" && row.status !== "publishing" && (
+                <div className="mt-6 rounded-lg border border-dashed p-3">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <PinIcon className="h-3.5 w-3.5" />Posted manually?
+                  </div>
+                  <p className="mb-2 text-xs text-muted-foreground">If you pinned this to Pinterest yourself, mark it as posted so it stops appearing in the queue.</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={manualPinId}
+                      onChange={(e) => setManualPinId(e.target.value)}
+                      placeholder="Pinterest pin ID (optional)"
+                      className="h-8 flex-1 min-w-[180px] text-sm"
+                    />
+                    <Button size="sm" variant="secondary" onClick={() => onMarkPosted(row.id, manualPinId.trim() || undefined)} disabled={marking}>
+                      <Check className="mr-2 h-4 w-4" />Mark as posted
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {row.status === "published" && (
+                <div className="mt-6 rounded-lg border border-dashed p-3">
+                  <Button size="sm" variant="outline" onClick={() => onUnmarkPosted(row.id)} disabled={marking} title="Move back to the queue">
+                    <Undo2 className="mr-2 h-4 w-4" />Unmark as posted
+                  </Button>
+                </div>
+              )}
+
               <div className="mt-6 flex flex-wrap justify-end gap-2 border-t pt-4">
                 {row.status !== "published" && row.status !== "publishing" && (
                   <Button size="sm" variant="outline" onClick={() => onReplace(row.id)} disabled={replacing} title="Swap in another ready pin, keeping this slot">
