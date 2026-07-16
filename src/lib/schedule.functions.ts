@@ -351,7 +351,7 @@ export const publishNow = createServerFn({ method: "POST" })
       .in("status", ["draft", "queued", "failed"]);
     if (upErr) throw upErr;
     const { processDuePinsForUser } = await import("./publisher.server");
-    return await processDuePinsForUser(context.userId, 1);
+    return await processDuePinsForUser(context.userId, 1, data.id);
   });
 
 export const rescheduleOrCancel = createServerFn({ method: "POST" })
