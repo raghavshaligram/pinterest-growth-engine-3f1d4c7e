@@ -24,6 +24,7 @@ import { Route as AuthenticatedBoardsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedPagesIndexRouteImport } from './routes/_authenticated/pages.index'
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedPagesIdRouteImport } from './routes/_authenticated/pages.$id'
+import { Route as ApiPublicPinterestCallbackRouteImport } from './routes/api/public/pinterest.callback'
 import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
 import { Route as ApiPublicCronPublishRouteImport } from './routes/api/public/cron/publish'
 import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
@@ -104,6 +105,12 @@ const AuthenticatedPagesIdRoute = AuthenticatedPagesIdRouteImport.update({
   path: '/pages/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicPinterestCallbackRoute =
+  ApiPublicPinterestCallbackRouteImport.update({
+    id: '/api/public/pinterest/callback',
+    path: '/api/public/pinterest/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronSerpRoute = ApiPublicCronSerpRouteImport.update({
   id: '/api/public/cron/serp',
   path: '/api/public/cron/serp',
@@ -144,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -164,6 +172,7 @@ export interface FileRoutesByTo {
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -186,6 +195,7 @@ export interface FileRoutesById {
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/images'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/pinterest/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/images'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/pinterest/callback'
   id:
     | '__root__'
     | '/'
@@ -249,6 +261,7 @@ export interface FileRouteTypes {
     | '/api/public/cron/images'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/pinterest/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -260,6 +273,7 @@ export interface RootRouteChildren {
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
   ApiPublicCronPublishRoute: typeof ApiPublicCronPublishRoute
   ApiPublicCronSerpRoute: typeof ApiPublicCronSerpRoute
+  ApiPublicPinterestCallbackRoute: typeof ApiPublicPinterestCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -369,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPagesIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/pinterest/callback': {
+      id: '/api/public/pinterest/callback'
+      path: '/api/public/pinterest/callback'
+      fullPath: '/api/public/pinterest/callback'
+      preLoaderRoute: typeof ApiPublicPinterestCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/serp': {
       id: '/api/public/cron/serp'
       path: '/api/public/cron/serp'
@@ -452,17 +473,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
   ApiPublicCronPublishRoute: ApiPublicCronPublishRoute,
   ApiPublicCronSerpRoute: ApiPublicCronSerpRoute,
+  ApiPublicPinterestCallbackRoute: ApiPublicPinterestCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
