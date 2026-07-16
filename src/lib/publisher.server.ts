@@ -32,6 +32,7 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
 
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
       const input = {
+        userId,
         boardId: board.pinterest_board_id ?? board.id,
         title: brief.title,
         description: brief.description,
