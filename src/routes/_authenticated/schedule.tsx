@@ -174,10 +174,13 @@ function SchedulePage() {
         onQueue={(id) => queueMut.mutate([id])}
         onReplace={(id) => replaceMut.mutate(id)}
         onPublishNow={(id) => publishNowMut.mutate(id)}
+        onMarkPosted={(id, pinterestPinId) => markPostedMut.mutate({ id, pinterestPinId })}
+        onUnmarkPosted={(id) => markPostedMut.mutate({ id, unmark: true })}
         deleting={delMut.isPending}
         queuing={queueMut.isPending}
         replacing={replaceMut.isPending}
         publishing={publishNowMut.isPending}
+        marking={markPostedMut.isPending}
       />
     </div>
   );
@@ -189,9 +192,11 @@ function StatusBadge({ status }: { status: ScheduledRow["status"] }) {
   return <Badge variant={v}>{label}</Badge>;
 }
 
-function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, onPublishNow, deleting, queuing, replacing, publishing }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; onReplace: (id: string) => void; onPublishNow: (id: string) => void; deleting: boolean; queuing: boolean; replacing: boolean; publishing: boolean }) {
+function PinDetail({ row, onOpenChange, onDelete, onQueue, onReplace, onPublishNow, onMarkPosted, onUnmarkPosted, deleting, queuing, replacing, publishing, marking }: { row: ScheduledRow | null; onOpenChange: (v: boolean) => void; onDelete: (id: string) => void; onQueue: (id: string) => void; onReplace: (id: string) => void; onPublishNow: (id: string) => void; onMarkPosted: (id: string, pinterestPinId?: string) => void; onUnmarkPosted: (id: string) => void; deleting: boolean; queuing: boolean; replacing: boolean; publishing: boolean; marking: boolean }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
+  const [manualPinId, setManualPinId] = useState("");
+  useEffect(() => { setManualPinId(""); }, [row?.id]);
   return (
     <Dialog open={!!row} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl overflow-hidden p-0">
