@@ -81,7 +81,7 @@ function IntegrationsPage() {
         <IntegrationCard
           provider="pinterest"
           title="Pinterest"
-          description="Save App ID + Secret, then click Connect Pinterest to authorize your account (scopes: boards:read, pins:read, pins:write). Access + refresh tokens are stored automatically."
+          description="Save App ID + Secret, then click Connect Pinterest to authorize your account (scopes: boards:read, boards:write, pins:read, pins:write). Access + refresh tokens are stored automatically."
           fields={[
             { name: "app_id", label: "App ID", type: "text" },
             { name: "app_secret", label: "App secret", type: "password" },

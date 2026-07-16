@@ -1,7 +1,7 @@
 // Server-only. Pinterest OAuth helpers (state signing + token exchange).
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-const SCOPES = ["boards:read", "pins:read", "pins:write"];
+const SCOPES = ["boards:read", "boards:write", "pins:read", "pins:write"];
 
 function stateSecret(): string {
   const raw = process.env.INTEGRATIONS_ENC_KEY;
