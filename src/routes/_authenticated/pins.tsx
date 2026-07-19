@@ -72,6 +72,25 @@ function PinsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
 
+  // Batch-sign all image URLs in a single request (avoids N round-trips).
+  const paths = (data ?? []).map((b) => b.pin_images?.[0]?.storage_path).filter(Boolean) as string[];
+  const pathsKey = paths.join("|");
+  const { data: urlMap } = useQuery({
+    queryKey: ["pin-signed-urls", pathsKey],
+    enabled: paths.length > 0,
+    staleTime: 55 * 60 * 1000,
+    queryFn: async () => {
+      const map: Record<string, string> = {};
+      const chunkSize = 100;
+      for (let i = 0; i < paths.length; i += chunkSize) {
+        const chunk = paths.slice(i, i + chunkSize);
+        const { data: signed } = await supabase.storage.from("pins").createSignedUrls(chunk, 3600);
+        signed?.forEach((s) => { if (s.path && s.signedUrl) map[s.path] = s.signedUrl; });
+      }
+      return map;
+    },
+  });
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -91,12 +110,16 @@ function PinsPage() {
         </div>
       </header>
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {data?.map((b) => <PinTile key={b.id} b={b} onOpen={() => setOpen(b)} />)}
+        {data?.map((b) => {
+          const p = b.pin_images?.[0]?.storage_path;
+          return <PinTile key={b.id} b={b} url={p ? urlMap?.[p] ?? null : null} onOpen={() => setOpen(b)} />;
+        })}
         {!data?.length && <p className="text-sm text-muted-foreground">No pins yet.</p>}
       </div>
 
       <PinDetail
         row={open}
+        signedUrl={open?.pin_images?.[0]?.storage_path ? urlMap?.[open.pin_images[0].storage_path] ?? null : null}
         onOpenChange={(v) => !v && setOpen(null)}
         onRerender={(id) => rerenderMut.mutate(id)}
         onDelete={(id) => deleteMut.mutate(id)}
@@ -118,35 +141,14 @@ function pageLabel(b: Brief): string {
   return "unknown page";
 }
 
-function PinTile({ b, onOpen }: { b: Brief; onOpen: () => void }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
-  const [ref, setRef] = useState<HTMLDivElement | null>(null);
+function PinTile({ b, url, onOpen }: { b: Brief; url: string | null; onOpen: () => void }) {
   const path = b.pin_images?.[0]?.storage_path;
-
-  useEffect(() => {
-    if (!ref || visible) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
-    }, { rootMargin: "400px" });
-    io.observe(ref);
-    return () => io.disconnect();
-  }, [ref, visible]);
-
-  useEffect(() => {
-    let ok = true;
-    if (visible && path) {
-      supabase.storage.from("pins").createSignedUrl(path, 3600).then((r) => { if (ok) setUrl(r.data?.signedUrl ?? null); });
-    }
-    return () => { ok = false; };
-  }, [visible, path]);
-
   return (
     <Card
       className="cursor-pointer overflow-hidden transition hover:border-primary/50"
       onClick={onOpen}
     >
-      <div ref={setRef} className="relative aspect-[2/3] bg-muted">
+      <div className="relative aspect-[2/3] bg-muted">
         {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> :
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             {path ? "…" : "pending"}
@@ -168,23 +170,18 @@ function PinTile({ b, onOpen }: { b: Brief; onOpen: () => void }) {
 }
 
 function PinDetail({
-  row, onOpenChange, onRerender, onDelete, rerendering, deleting,
+  row, signedUrl, onOpenChange, onRerender, onDelete, rerendering, deleting,
 }: {
   row: Brief | null;
+  signedUrl: string | null;
   onOpenChange: (v: boolean) => void;
   onRerender: (id: string) => void;
   onDelete: (id: string) => void;
   rerendering: boolean;
   deleting: boolean;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const path = row?.pin_images?.[0]?.storage_path;
-  useEffect(() => {
-    let ok = true;
-    setUrl(null);
-    if (path) supabase.storage.from("pins").createSignedUrl(path, 3600).then((r) => { if (ok) setUrl(r.data?.signedUrl ?? null); });
-    return () => { ok = false; };
-  }, [path]);
+  const url = signedUrl;
+
 
   const page = row ? (row as { pages?: { url?: string; title?: string } }).pages : null;
 
