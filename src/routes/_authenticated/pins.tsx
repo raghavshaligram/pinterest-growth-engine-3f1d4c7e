@@ -141,35 +141,14 @@ function pageLabel(b: Brief): string {
   return "unknown page";
 }
 
-function PinTile({ b, onOpen }: { b: Brief; onOpen: () => void }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
-  const [ref, setRef] = useState<HTMLDivElement | null>(null);
+function PinTile({ b, url, onOpen }: { b: Brief; url: string | null; onOpen: () => void }) {
   const path = b.pin_images?.[0]?.storage_path;
-
-  useEffect(() => {
-    if (!ref || visible) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
-    }, { rootMargin: "400px" });
-    io.observe(ref);
-    return () => io.disconnect();
-  }, [ref, visible]);
-
-  useEffect(() => {
-    let ok = true;
-    if (visible && path) {
-      supabase.storage.from("pins").createSignedUrl(path, 3600).then((r) => { if (ok) setUrl(r.data?.signedUrl ?? null); });
-    }
-    return () => { ok = false; };
-  }, [visible, path]);
-
   return (
     <Card
       className="cursor-pointer overflow-hidden transition hover:border-primary/50"
       onClick={onOpen}
     >
-      <div ref={setRef} className="relative aspect-[2/3] bg-muted">
+      <div className="relative aspect-[2/3] bg-muted">
         {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> :
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             {path ? "…" : "pending"}
