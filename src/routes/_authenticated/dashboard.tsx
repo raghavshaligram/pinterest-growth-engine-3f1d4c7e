@@ -233,7 +233,61 @@ function DashboardPage() {
 
 
 
-      {/* minmax(0, Nfr) so a wide Activity row can't blow the track out. */}
+      {/* Integrations spans full width above the Activity / Pins-by-board row. */}
+      <section
+        className="card-glow flex min-w-0 flex-col rounded-[12px]"
+        style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-3">
+          <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Integrations</h2>
+          <Link to="/settings/integrations" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
+            Manage
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-2 p-3 md:grid-cols-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          {providers.map((p) => {
+            const row = data?.integrations.find((i) => i.provider === p);
+            const ok = row?.status === "ok";
+            const errored = row?.status === "error";
+            return (
+              <div
+                key={p}
+                className="rounded-[10px] p-3"
+                style={{
+                  border: "1px solid var(--border-subtle)",
+                  backgroundImage: ok ? "var(--gradient-primary-soft)" : "none",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor: ok ? "var(--success)" : errored ? "var(--destructive)" : "var(--text-muted)",
+                      boxShadow: ok ? "0 0 8px color-mix(in oklab, var(--success) 60%, transparent)" : undefined,
+                    }}
+                  />
+                  <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
+                </div>
+                <div className="mt-1.5">
+                  {ok ? (
+                    <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>Connected</span>
+                  ) : (
+                    <Link
+                      to="/settings/integrations"
+                      className="text-[11px] hover:underline"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {errored ? "Reconnect →" : "Connect →"}
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Activity + Pins by board sit side by side on their own row. */}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section
           className="card-glow flex min-w-0 flex-col rounded-[12px]"
@@ -254,143 +308,138 @@ function DashboardPage() {
             </Link>
           </div>
           <div className="px-3 pb-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-            {errorLogs.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="error" />
-            ))}
-            {normalLogs.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="normal" />
-            ))}
-            {manualVisible.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="manual" />
-            ))}
-            {manualHiddenCount > 0 && (
-              <div className="flex justify-center pt-2 pb-1">
-                <button
-                  type="button"
-                  onClick={() => setManualExpanded((v) => !v)}
-                  className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
-                  style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
-                >
-                  {manualExpanded ? (
-                    <>Show fewer <ChevronUp className="h-3 w-3" /></>
-                  ) : (
-                    <>{manualHiddenCount} more manually posted <ChevronDown className="h-3 w-3" /></>
+            {(() => {
+              const combined: Array<{ log: LogRow; variant: "error" | "normal" | "manual" }> = [
+                ...errorLogs.map((l) => ({ log: l, variant: "error" as const })),
+                ...normalLogs.map((l) => ({ log: l, variant: "normal" as const })),
+                ...manualVisible.map((l) => ({ log: l, variant: "manual" as const })),
+              ];
+              const shown = activityExpanded ? combined : combined.slice(0, ACTIVITY_COLLAPSED);
+              const hidden = combined.length - shown.length;
+              return (
+                <>
+                  {shown.map(({ log, variant }) => (
+                    <ActivityRow key={log.id} log={log} variant={variant} />
+                  ))}
+                  {manualHiddenCount > 0 && activityExpanded && (
+                    <div className="flex justify-center pt-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => setManualExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {manualExpanded ? (
+                          <>Show fewer manual <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>{manualHiddenCount} more manually posted <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
-            )}
-            {!allLogs.length && (
-              <div className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
-                No activity yet.
+                  {(hidden > 0 || activityExpanded) && combined.length > ACTIVITY_COLLAPSED && (
+                    <div className="flex justify-center pt-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => setActivityExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {activityExpanded ? (
+                          <>Show fewer <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>Show {hidden} more <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {!allLogs.length && (
+                    <div className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                      No activity yet.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </section>
+
+        <section
+          className="card-glow flex min-w-0 flex-col rounded-[12px]"
+          style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+        >
+          <div className="flex items-baseline justify-between px-5 pt-4 pb-3">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Pins by board</h2>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>this week</span>
+            </div>
+            <Link to="/boards" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
+              Manage
+            </Link>
+          </div>
+          <div className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            {(() => {
+              const boards = data?.pinsByBoard ?? [];
+              const max = Math.max(1, ...boards.map((b) => b.count));
+              const shown = boardsExpanded ? boards : boards.slice(0, BOARDS_COLLAPSED);
+              const hidden = boards.length - shown.length;
+              return (
+                <>
+                  {shown.map((b) => (
+                    <div key={b.name} className="flex items-center gap-3">
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm"
+                        style={{ color: "var(--text-primary)" }}
+                        title={b.name}
+                      >
+                        {b.name}
+                      </span>
+                      <div
+                        className="h-1.5 w-24 overflow-hidden rounded-full"
+                        style={{ backgroundColor: "var(--border-subtle)" }}
+                      >
+                        <div
+                          className="h-full rounded-full bg-gradient-primary"
+                          style={{ width: `${(b.count / max) * 100}%` }}
+                        />
+                      </div>
+                      <span
+                        className="w-6 shrink-0 text-right font-mono text-xs"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {b.count}
+                      </span>
+                    </div>
+                  ))}
+                  {boards.length > BOARDS_COLLAPSED && (
+                    <div className="flex justify-center pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setBoardsExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {boardsExpanded ? (
+                          <>Show fewer <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>Show all {boards.length} boards <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {!data?.pinsByBoard?.length && (
+              <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                Nothing published this week yet.{" "}
+                <Link to="/schedule" className="hover:underline" style={{ color: "var(--accent)" }}>
+                  Schedule pins →
+                </Link>
               </div>
             )}
           </div>
         </section>
-
-        <div className="flex min-w-0 flex-col gap-6">
-          <section
-            className="card-glow flex min-w-0 flex-col rounded-[12px]"
-            style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
-          >
-            <div className="flex items-center justify-between px-5 pt-4 pb-3">
-              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Integrations</h2>
-              <Link to="/settings/integrations" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
-                Manage
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 gap-2 p-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {providers.map((p) => {
-                const row = data?.integrations.find((i) => i.provider === p);
-                const ok = row?.status === "ok";
-                const errored = row?.status === "error";
-                return (
-                  <div
-                    key={p}
-                    className="rounded-[10px] p-3"
-                    style={{
-                      border: "1px solid var(--border-subtle)",
-                      backgroundImage: ok ? "var(--gradient-primary-soft)" : "none",
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{
-                          backgroundColor: ok ? "var(--success)" : errored ? "var(--destructive)" : "var(--text-muted)",
-                          boxShadow: ok ? "0 0 8px color-mix(in oklab, var(--success) 60%, transparent)" : undefined,
-                        }}
-                      />
-                      <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
-                    </div>
-                    <div className="mt-1.5">
-                      {ok ? (
-                        <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>Connected</span>
-                      ) : (
-                        <Link
-                          to="/settings/integrations"
-                          className="text-[11px] hover:underline"
-                          style={{ color: "var(--accent)" }}
-                        >
-                          {errored ? "Reconnect →" : "Connect →"}
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section
-            className="card-glow flex min-w-0 flex-col rounded-[12px]"
-            style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
-          >
-            <div className="flex items-baseline gap-2 px-5 pt-4 pb-3">
-              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Pins by board</h2>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>this week</span>
-            </div>
-            <div className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {(() => {
-                const boards = data?.pinsByBoard ?? [];
-                const max = Math.max(1, ...boards.map((b) => b.count));
-                return boards.map((b) => (
-                  <div key={b.name} className="flex items-center gap-3">
-                    <span
-                      className="min-w-0 flex-1 truncate text-sm"
-                      style={{ color: "var(--text-primary)" }}
-                      title={b.name}
-                    >
-                      {b.name}
-                    </span>
-                    <div
-                      className="h-1.5 w-24 overflow-hidden rounded-full"
-                      style={{ backgroundColor: "var(--border-subtle)" }}
-                    >
-                      <div
-                        className="h-full rounded-full bg-gradient-primary"
-                        style={{ width: `${(b.count / max) * 100}%` }}
-                      />
-                    </div>
-                    <span
-                      className="w-6 shrink-0 text-right font-mono text-xs"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {b.count}
-                    </span>
-                  </div>
-                ));
-              })()}
-              {!data?.pinsByBoard?.length && (
-                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                  Nothing published this week yet.{" "}
-                  <Link to="/schedule" className="hover:underline" style={{ color: "var(--accent)" }}>
-                    Schedule pins →
-                  </Link>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
       </div>
 
 
