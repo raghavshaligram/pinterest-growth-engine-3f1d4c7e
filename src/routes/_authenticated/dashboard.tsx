@@ -423,35 +423,48 @@ function DashboardPage() {
   );
 }
 
-function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" }) {
+function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" | "manual" }) {
   const isError = variant === "error";
+  const dotColor =
+    variant === "error"
+      ? "var(--destructive)"
+      : variant === "manual"
+        ? "var(--accent-soft)"
+        : "var(--success)";
   return (
     <div
-      className="flex items-center gap-3 rounded-[6px] py-2.5"
+      className="flex items-center gap-3 rounded-[8px] px-2 py-2 transition-colors hover:bg-accent"
       style={{
-        borderBottom: "1px solid var(--border-subtle)",
-        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 8%, transparent)" : undefined,
-        paddingLeft: isError ? 8 : 0,
-        paddingRight: isError ? 8 : 0,
-        marginLeft: isError ? -8 : 0,
-        marginRight: isError ? -8 : 0,
+        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 6%, transparent)" : undefined,
       }}
     >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
+        aria-hidden
+      />
       {isError ? (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 15%, transparent)" }}
         >
-          <AlertTriangle className="h-3.5 w-3.5" style={{ color: "var(--destructive)" }} />
+          <AlertTriangle className="h-4 w-4" style={{ color: "var(--destructive)" }} />
         </span>
       ) : log.thumbUrl ? (
-        <img src={log.thumbUrl} alt="" className="h-7 w-7 shrink-0 rounded-[6px] object-cover" style={{ border: "1px solid var(--border)" }} />
+        <img
+          src={log.thumbUrl}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-[8px] object-cover"
+          style={{
+            border: `1.5px solid ${variant === "manual" ? "color-mix(in oklab, var(--accent) 40%, transparent)" : "var(--border)"}`,
+          }}
+        />
       ) : (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "var(--border-subtle)" }}
         >
-          <Pin className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
+          <Pin className="h-3.5 w-3.5" style={{ color: "var(--text-muted)" }} />
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -476,6 +489,7 @@ function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal
     </div>
   );
 }
+
 
 function ActionLink(props: { label: string; pending: boolean; onClick: () => void }) {
   return (
