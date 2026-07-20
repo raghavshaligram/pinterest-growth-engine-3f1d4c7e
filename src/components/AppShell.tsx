@@ -67,11 +67,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="shrink-0 p-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="shrink-0 space-y-0.5 p-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <ThemeToggle />
             <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={signOut}>
               <LogOut className="h-4 w-4" /> Sign out
             </Button>
           </div>
+
         </aside>
         <main className="flex flex-1 flex-col overflow-hidden">
           <div className="shrink-0 flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
