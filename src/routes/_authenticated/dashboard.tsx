@@ -26,7 +26,7 @@ const STAGES = [
 // How many "marked as manually posted" rows show inline before the rest
 // collapse under a "N more" expandable row.
 const MANUAL_INLINE_LIMIT = 2;
-const COLUMN_MAX_HEIGHT = 480;
+
 
 function formatClock(iso: string): string {
   const d = new Date(iso);
@@ -70,6 +70,10 @@ function DashboardPage() {
   const pubFn = useServerFn(runPublisher);
   const serpFn = useServerFn(runSerpSweep);
   const [manualExpanded, setManualExpanded] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [boardsExpanded, setBoardsExpanded] = useState(false);
+  const ACTIVITY_COLLAPSED = 10;
+  const BOARDS_COLLAPSED = 10;
 
   const { data } = useQuery({
     queryKey: ["dash", selectedSiteId],
@@ -95,19 +99,19 @@ function DashboardPage() {
   const pipeline = data?.pipeline;
   const needsAttention = data?.needsAttention;
   const pinned = data?.publishedThisWeek ?? [];
-  const moreCount = Math.max(0, (data?.publishedThisWeekTotal ?? 0) - pinned.length);
+  const visiblePinned = pinned.slice(0, 7);
+  const moreCount = Math.max(0, (data?.publishedThisWeekTotal ?? 0) - 7);
   const providers = ["openai", "replicate", "apify", "pinterest"] as const;
   const showSiteTint = selectedSiteId === null;
 
-  // Errors sort to the top (distinct treatment); routine "manually
-  // posted" entries beyond the first couple collapse into one row so a
-  // busy week doesn't bury the errors and real publish events under a
-  // wall of identical manual-mark lines.
-  const allLogs: LogRow[] = data?.recentLogs ?? [];
-  const errorLogs = allLogs.filter((l) => l.level === "error");
-  const rest = allLogs.filter((l) => l.level !== "error");
-  const manualLogs = rest.filter((l) => l.message.startsWith("Marked as manually posted"));
-  const normalLogs = rest.filter((l) => !l.message.startsWith("Marked as manually posted"));
+  // Newest first, regardless of level. Manual-post spam still collapses
+  // via the "N more manually posted" toggle so it doesn't drown the feed.
+  const allLogs: LogRow[] = [...(data?.recentLogs ?? [])].sort(
+    (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+  );
+  const isManual = (l: LogRow) => l.message.startsWith("Marked as manually posted");
+  const manualLogs = allLogs.filter(isManual);
+  const nonManualLogs = allLogs.filter((l) => !isManual(l));
   const manualVisible = manualExpanded ? manualLogs : manualLogs.slice(0, MANUAL_INLINE_LIMIT);
   const manualHiddenCount = manualLogs.length - manualVisible.length;
 
@@ -168,9 +172,9 @@ function DashboardPage() {
             View all
           </Link>
         </div>
-        {pinned.length ? (
-          <div className="flex items-center gap-5 overflow-x-auto pb-2 pt-2">
-            {pinned.map((p, i) => {
+        {visiblePinned.length ? (
+          <div className="flex items-center gap-5 overflow-x-auto pb-2 pt-2 scrollbar-hide">
+            {visiblePinned.map((p, i) => {
               const rot = i % 2 === 0 ? -1.5 : 1.5;
               return (
                 <div key={p.id} className="w-32 shrink-0" style={{ transform: `rotate(${rot}deg)` }}>
@@ -223,150 +227,270 @@ function DashboardPage() {
         )}
       </section>
 
-      {/* minmax(0, Nfr) instead of a bare Nfr is required here: bare fr
-          tracks default to min-width: auto, so an oversized Activity feed
-          (long messages, many rows) blows the column out to its content's
-          intrinsic width instead of respecting the 1.3fr/1fr split -- and
-          on top of that, min-w-0 on the grid items themselves is needed
-          too, since a grid item's own default min-width: auto can still
-          force the track wider even when the track itself is constrained. */}
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+
+
+
+      {/* Integrations spans full width above the Activity / Pins-by-board row. */}
+      <section
+        className="card-glow flex min-w-0 flex-col rounded-[12px]"
+        style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-3">
+          <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Integrations</h2>
+          <Link to="/settings/integrations" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
+            Manage
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-2 p-3 md:grid-cols-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          {providers.map((p) => {
+            const row = data?.integrations.find((i) => i.provider === p);
+            const ok = row?.status === "ok";
+            const errored = row?.status === "error";
+            return (
+              <div
+                key={p}
+                className="rounded-[10px] p-3"
+                style={{
+                  border: "1px solid var(--border-subtle)",
+                  backgroundImage: ok ? "var(--gradient-primary-soft)" : "none",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor: ok ? "var(--success)" : errored ? "var(--destructive)" : "var(--text-muted)",
+                      boxShadow: ok ? "0 0 8px color-mix(in oklab, var(--success) 60%, transparent)" : undefined,
+                    }}
+                  />
+                  <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
+                </div>
+                <div className="mt-1.5">
+                  {ok ? (
+                    <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>Connected</span>
+                  ) : (
+                    <Link
+                      to="/settings/integrations"
+                      className="text-[11px] hover:underline"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {errored ? "Reconnect →" : "Connect →"}
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Activity + Pins by board sit side by side on their own row. */}
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section
-          className="flex min-w-0 flex-col rounded-[8px]"
-          style={{ border: "1px solid var(--border-subtle)", maxHeight: COLUMN_MAX_HEIGHT }}
+          className="card-glow flex min-w-0 flex-col rounded-[12px]"
+          style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex items-center justify-between px-4 pt-3 pb-2">
-            <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Activity</h2>
+          <div className="flex items-center justify-between px-5 pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Activity</h2>
+              <span
+                className="rounded-full px-1.5 py-0.5 font-mono text-[10px]"
+                style={{ backgroundColor: "var(--surface-hover)", color: "var(--text-secondary)" }}
+              >
+                {allLogs.length}
+              </span>
+            </div>
             <Link to="/logs" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
               View all
             </Link>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 pb-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-            {errorLogs.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="error" />
-            ))}
-            {normalLogs.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="normal" />
-            ))}
-            {manualVisible.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="normal" />
-            ))}
-            {manualHiddenCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setManualExpanded((v) => !v)}
-                className="flex w-full items-center justify-center gap-1 py-2.5 text-xs"
-                style={{ color: "var(--text-secondary)", borderBottom: "1px solid var(--border-subtle)" }}
-              >
-                {manualExpanded ? (
-                  <>Show fewer <ChevronUp className="h-3 w-3" /></>
-                ) : (
-                  <>{manualHiddenCount} more manually posted this week <ChevronDown className="h-3 w-3" /></>
-                )}
-              </button>
-            )}
-            {!allLogs.length && (
-              <div className="py-6 text-sm" style={{ color: "var(--text-secondary)" }}>
-                No activity yet.
+          <div className="flex-1 px-3 pb-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            {(() => {
+              // Sort strictly by time, newest first. Manual-posts are
+              // still folded via the manualHiddenCount button below.
+              const merged: Array<{ log: LogRow; variant: "error" | "normal" | "manual" }> = [
+                ...nonManualLogs.map((l) => ({
+                  log: l,
+                  variant: (l.level === "error" ? "error" : "normal") as "error" | "normal" | "manual",
+                })),
+                ...manualVisible.map((l) => ({ log: l, variant: "manual" as const })),
+              ].sort((a, b) => new Date(b.log.at).getTime() - new Date(a.log.at).getTime());
+              const combined = merged;
+              const shown = activityExpanded ? combined : combined.slice(0, ACTIVITY_COLLAPSED);
+              const hidden = combined.length - shown.length;
+              return (
+                <>
+                  {shown.map(({ log, variant }) => (
+                    <ActivityRow key={log.id} log={log} variant={variant} />
+                  ))}
+                  {manualHiddenCount > 0 && activityExpanded && (
+                    <div className="flex justify-center pt-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => setManualExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {manualExpanded ? (
+                          <>Show fewer manual <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>{manualHiddenCount} more manually posted <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {(hidden > 0 || activityExpanded) && combined.length > ACTIVITY_COLLAPSED && (
+                    <div className="flex justify-center pt-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => setActivityExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {activityExpanded ? (
+                          <>Show fewer <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>Show {hidden} more <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {!allLogs.length && (
+                    <div className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                      No activity yet.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </section>
+
+        <section
+          className="card-glow flex min-w-0 flex-col rounded-[12px]"
+          style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+        >
+          <div className="flex items-baseline justify-between px-5 pt-4 pb-3">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Pins by board</h2>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>this week</span>
+            </div>
+            <Link to="/boards" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
+              Manage
+            </Link>
+          </div>
+          <div className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            {(() => {
+              const boards = data?.pinsByBoard ?? [];
+              const max = Math.max(1, ...boards.map((b) => b.count));
+              const shown = boardsExpanded ? boards : boards.slice(0, BOARDS_COLLAPSED);
+              const hidden = boards.length - shown.length;
+              return (
+                <>
+                  {shown.map((b) => (
+                    <div key={b.name} className="flex items-center gap-3">
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm"
+                        style={{ color: "var(--text-primary)" }}
+                        title={b.name}
+                      >
+                        {b.name}
+                      </span>
+                      <div
+                        className="h-1.5 w-24 overflow-hidden rounded-full"
+                        style={{ backgroundColor: "var(--border-subtle)" }}
+                      >
+                        <div
+                          className="h-full rounded-full bg-gradient-primary"
+                          style={{ width: `${(b.count / max) * 100}%` }}
+                        />
+                      </div>
+                      <span
+                        className="w-6 shrink-0 text-right font-mono text-xs"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {b.count}
+                      </span>
+                    </div>
+                  ))}
+                  {boards.length > BOARDS_COLLAPSED && (
+                    <div className="flex justify-center pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setBoardsExpanded((v) => !v)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        {boardsExpanded ? (
+                          <>Show fewer <ChevronUp className="h-3 w-3" /></>
+                        ) : (
+                          <>Show all {boards.length} boards <ChevronDown className="h-3 w-3" /></>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {!data?.pinsByBoard?.length && (
+              <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                Nothing published this week yet.{" "}
+                <Link to="/schedule" className="hover:underline" style={{ color: "var(--accent)" }}>
+                  Schedule pins →
+                </Link>
               </div>
             )}
           </div>
         </section>
-
-        <div className="flex min-w-0 flex-col gap-6 overflow-y-auto" style={{ maxHeight: COLUMN_MAX_HEIGHT }}>
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Integrations</h2>
-              <Link to="/settings/integrations" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
-                Manage
-              </Link>
-            </div>
-            <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {providers.map((p) => {
-                const row = data?.integrations.find((i) => i.provider === p);
-                const ok = row?.status === "ok";
-                return (
-                  <div
-                    key={p}
-                    className="flex items-center justify-between py-2.5"
-                    style={{ borderBottom: "1px solid var(--border-subtle)" }}
-                  >
-                    <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
-                    {ok ? (
-                      <Check className="h-3.5 w-3.5" style={{ color: "var(--success)" }} />
-                    ) : (
-                      <Link
-                        to="/settings/integrations"
-                        className="text-xs hover:underline"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {row?.status === "error" ? "Reconnect" : "Connect"}
-                      </Link>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section>
-            <div className="mb-3 flex items-baseline gap-2">
-              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Pins by board</h2>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>this week</span>
-            </div>
-            <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {(data?.pinsByBoard ?? []).map((b) => (
-                <div
-                  key={b.name}
-                  className="flex items-center justify-between py-2.5"
-                  style={{ borderBottom: "1px solid var(--border-subtle)" }}
-                >
-                  <span className="truncate text-sm" style={{ color: "var(--text-primary)" }}>{b.name}</span>
-                  <span className="font-mono text-xs" style={{ color: "var(--text-secondary)" }}>{b.count}</span>
-                </div>
-              ))}
-              {!data?.pinsByBoard?.length && (
-                <div className="py-4 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  Nothing published this week yet.
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
       </div>
+
+
     </div>
   );
 }
 
-function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" }) {
+function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" | "manual" }) {
   const isError = variant === "error";
+  const dotColor =
+    variant === "error"
+      ? "var(--destructive)"
+      : variant === "manual"
+        ? "var(--accent-soft)"
+        : "var(--success)";
   return (
     <div
-      className="flex items-center gap-3 rounded-[6px] py-2.5"
+      className="flex items-center gap-3 rounded-[8px] px-2 py-2 transition-colors hover:bg-accent"
       style={{
-        borderBottom: "1px solid var(--border-subtle)",
-        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 8%, transparent)" : undefined,
-        paddingLeft: isError ? 8 : 0,
-        paddingRight: isError ? 8 : 0,
-        marginLeft: isError ? -8 : 0,
-        marginRight: isError ? -8 : 0,
+        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 6%, transparent)" : undefined,
       }}
     >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
+        aria-hidden
+      />
       {isError ? (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 15%, transparent)" }}
         >
-          <AlertTriangle className="h-3.5 w-3.5" style={{ color: "var(--destructive)" }} />
+          <AlertTriangle className="h-4 w-4" style={{ color: "var(--destructive)" }} />
         </span>
       ) : log.thumbUrl ? (
-        <img src={log.thumbUrl} alt="" className="h-7 w-7 shrink-0 rounded-[6px] object-cover" style={{ border: "1px solid var(--border)" }} />
+        <img
+          src={log.thumbUrl}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-[8px] object-cover"
+          style={{
+            border: `1.5px solid ${variant === "manual" ? "color-mix(in oklab, var(--accent) 40%, transparent)" : "var(--border)"}`,
+          }}
+        />
       ) : (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "var(--border-subtle)" }}
         >
-          <Pin className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
+          <Pin className="h-3.5 w-3.5" style={{ color: "var(--text-muted)" }} />
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -391,6 +515,7 @@ function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal
     </div>
   );
 }
+
 
 function ActionLink(props: { label: string; pending: boolean; onClick: () => void }) {
   return (

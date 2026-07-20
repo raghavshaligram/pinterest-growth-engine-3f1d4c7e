@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { SiteSwitcher } from "@/components/SiteSwitcher";
 import { SiteProvider } from "@/lib/site-context";
+import { ThemeToggle } from "@/components/ThemeToggle";
+
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -34,16 +36,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <SiteProvider>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex h-screen bg-background text-foreground">
         <aside
-          className="hidden w-60 shrink-0 flex-col md:flex"
+          className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col md:flex"
           style={{ backgroundColor: "var(--bg-card)", borderRight: "1px solid var(--border)" }}
         >
           <div className="flex items-center gap-2.5 px-5 py-6">
             <PinspiderMark size={22} />
             <span className="font-display text-xl tracking-tight">Pinspider</span>
           </div>
-          <nav className="flex-1 space-y-0.5 px-3">
+          <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
             {NAV.map(({ to, label, icon: Icon }) => {
               const active = path === to || (to !== "/dashboard" && path.startsWith(to));
               return (
@@ -65,19 +67,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="p-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="shrink-0 space-y-0.5 p-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <ThemeToggle />
             <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={signOut}>
               <LogOut className="h-4 w-4" /> Sign out
             </Button>
           </div>
+
         </aside>
-        <main className="flex-1 overflow-x-hidden">
-          <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <div className="shrink-0 flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
             <SiteSwitcher />
           </div>
-          <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+          </div>
         </main>
       </div>
     </SiteProvider>
   );
 }
+
