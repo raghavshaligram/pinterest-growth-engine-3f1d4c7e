@@ -1,33 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+// Kicks off OAuth against Pinspider's single shared Pinterest app (app
+// credentials + redirect URI come from deployment env vars — see
+// pinterest-oauth.server.ts:pinterestAppConfig). No per-user setup needed
+// beyond clicking Connect.
 export const startPinterestOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getIntegration } = await import("./integrations.server");
-    const cfg = await getIntegration(context.userId, "pinterest");
-    if (!cfg?.app_id || !cfg?.app_secret) {
-      throw new Error("Save your Pinterest App ID and App Secret first, then click Connect.");
-    }
-    const { signState, buildAuthorizeUrl } = await import("./pinterest-oauth.server");
-    const req = getRequest();
-    const origin = new URL(req.url).origin;
-    const redirectUri = `${origin}/api/public/pinterest/callback`;
+    const { pinterestAppConfig, signState, buildAuthorizeUrl } = await import("./pinterest-oauth.server");
+    const { appId, redirectUri } = pinterestAppConfig();
     const state = signState(context.userId);
     return {
-      authorizeUrl: buildAuthorizeUrl({ appId: cfg.app_id, redirectUri, state }),
+      authorizeUrl: buildAuthorizeUrl({ appId, redirectUri, state }),
       redirectUri,
     };
-  });
-
-export const getPinterestRedirectUri = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async () => {
-    const req = getRequest();
-    const origin = new URL(req.url).origin;
-    return { redirectUri: `${origin}/api/public/pinterest/callback` };
   });
 
 const providerSchema = z.enum(["openai", "replicate", "apify", "pinterest"]);
@@ -39,9 +27,8 @@ const configShapes = {
   pinterest: z.object({
     access_token: z.string().optional(),
     refresh_token: z.string().optional(),
-    app_id: z.string().optional(),
-    app_secret: z.string().optional(),
     publish_mode: z.enum(["api", "webhook"]).optional(),
+    webhook_url: z.string().url().optional(),
   }),
 } as const;
 
@@ -96,16 +83,20 @@ export const saveIntegration = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// Non-secret read of the Pinterest publish mode, safe to expose to the client
-// (unlike the rest of the Pinterest config — access_token, app_secret, etc.
-// — which never leave the server). Used by the Integrations page to show the
-// current API/Webhook selection.
-export const getPinterestPublishMode = createServerFn({ method: "GET" })
+// Non-secret read of the Pinterest publish mode + webhook URL, safe to
+// expose to the client (unlike access_token, which never leaves the
+// server — webhook_url is just a URL the user typed in themselves, so
+// showing it back to them is fine). Used by the Integrations page to
+// render the current API/Webhook selection and prefill the webhook field.
+export const getPinterestSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { getIntegration } = await import("./integrations.server");
     const cfg = await getIntegration(context.userId, "pinterest");
-    return { publish_mode: (cfg?.publish_mode === "webhook" ? "webhook" : "api") as "api" | "webhook" };
+    return {
+      publish_mode: (cfg?.publish_mode === "webhook" ? "webhook" : "api") as "api" | "webhook",
+      webhook_url: cfg?.webhook_url ?? null,
+    };
   });
 
 export const deleteIntegration = createServerFn({ method: "POST" })

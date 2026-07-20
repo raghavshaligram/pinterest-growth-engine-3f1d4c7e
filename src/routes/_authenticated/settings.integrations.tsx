@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestRedirectUri, getPinterestPublishMode } from "@/lib/integrations.functions";
+import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestSettings } from "@/lib/integrations.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
-import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Copy } from "lucide-react";
+import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon } from "lucide-react";
 
 type Provider = "openai" | "replicate" | "apify" | "pinterest";
 
@@ -35,13 +35,6 @@ function IntegrationsPage() {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [qc]);
-
-  const getRedirect = useServerFn(getPinterestRedirectUri);
-  const { data: redirectData } = useQuery({
-    queryKey: ["pinterest-redirect-uri"],
-    queryFn: () => getRedirect(),
-  });
-  const redirectUri = redirectData?.redirectUri ?? "";
 
   return (
     <div className="space-y-8">
@@ -78,31 +71,9 @@ function IntegrationsPage() {
           status={data?.find((i) => i.provider === "apify")}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
         />
-        <IntegrationCard
-          provider="pinterest"
-          title="Pinterest"
-          description="Save App ID + Secret, then click Connect Pinterest to authorize your account (scopes: boards:read, boards:write, pins:read, pins:write). Access + refresh tokens are stored automatically."
-          fields={[
-            { name: "app_id", label: "App ID", type: "text" },
-            { name: "app_secret", label: "App secret", type: "password" },
-          ]}
+        <PinterestCard
           status={data?.find((i) => i.provider === "pinterest")}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
-          extra={
-            <div className="space-y-2 pt-3 border-t">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <Label className="text-xs">Redirect URI (paste into your Pinterest app)</Label>
-                  <code className="mt-1 block truncate rounded bg-muted px-2 py-1 text-xs">{redirectUri}</code>
-                </div>
-                <Button type="button" size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(redirectUri); toast.success("Copied"); }}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <PinterestConnectButton />
-              <PinterestPublishModeToggle />
-            </div>
-          }
         />
       </div>
     </div>
@@ -124,53 +95,137 @@ function PinterestConnectButton() {
   );
 }
 
-function PinterestPublishModeToggle() {
+// Read-only example of the payload the "Webhook" publish path POSTs — kept
+// in sync by hand with webhookPublish()'s body in pinterest.server.ts,
+// which deliberately mirrors apiPublish()'s Pinterest-facing field names.
+const WEBHOOK_PAYLOAD_EXAMPLE = `{
+  "board_id": "<pinterest board id>",
+  "title": "<pin title>",
+  "description": "<pin description>",
+  "alt_text": "<pin alt text>",
+  "link": "<destination page URL>",
+  "image_url": "<signed pin image URL, valid 24h>"
+}`;
+
+function PinterestCard(props: {
+  status?: { status: string; last_error?: string | null; last_used_at?: string | null };
+  onChanged: () => void;
+}) {
   const qc = useQueryClient();
-  const getMode = useServerFn(getPinterestPublishMode);
+  const getSettings = useServerFn(getPinterestSettings);
   const save = useServerFn(saveIntegration);
 
-  const { data } = useQuery({ queryKey: ["pinterest-publish-mode"], queryFn: () => getMode() });
+  const { data } = useQuery({ queryKey: ["pinterest-settings"], queryFn: () => getSettings() });
   const mode = data?.publish_mode ?? "api";
+
+  const [webhookUrl, setWebhookUrl] = useState("");
+  useEffect(() => { setWebhookUrl(data?.webhook_url ?? ""); }, [data?.webhook_url]);
 
   const setMode = useMutation({
     mutationFn: (next: "api" | "webhook") =>
       save({ data: { provider: "pinterest", config: { publish_mode: next } } }),
     onSuccess: (_r, next) => {
       toast.success(next === "api" ? "Publishing via Pinterest API" : "Publishing via webhook");
-      qc.invalidateQueries({ queryKey: ["pinterest-publish-mode"] });
+      qc.invalidateQueries({ queryKey: ["pinterest-settings"] });
+      props.onChanged();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
 
+  const saveWebhook = useMutation({
+    mutationFn: () => save({ data: { provider: "pinterest", config: { webhook_url: webhookUrl.trim() } } }),
+    onSuccess: () => {
+      toast.success("Webhook URL saved");
+      qc.invalidateQueries({ queryKey: ["pinterest-settings"] });
+      props.onChanged();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+
+  const status = props.status?.status ?? "unconfigured";
+
   return (
-    <div className="space-y-2 border-t pt-3">
-      <Label className="text-xs">Publish mode</Label>
-      <div className="inline-flex rounded-md border p-0.5">
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "api" ? "default" : "ghost"}
-          className="h-7 px-3"
-          disabled={setMode.isPending}
-          onClick={() => setMode.mutate("api")}
-        >
-          API
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "webhook" ? "default" : "ghost"}
-          className="h-7 px-3"
-          disabled={setMode.isPending}
-          onClick={() => setMode.mutate("webhook")}
-        >
-          Webhook
-        </Button>
+    <Card className="p-6">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" />
+          <h3 className="text-lg font-semibold">Pinterest</h3>
+        </div>
+        <Badge variant={status === "ok" ? "default" : status === "error" ? "destructive" : "secondary"}>
+          {status === "ok" ? <><CheckCircle2 className="mr-1 h-3 w-3" />Connected</> :
+            status === "error" ? <><AlertCircle className="mr-1 h-3 w-3" />Error</> : "Not configured"}
+        </Badge>
       </div>
-      <p className="text-xs text-muted-foreground">
-        API publishes directly to your connected Pinterest account. Webhook routes through a custom automation (e.g. Make.com, Zapier) instead.
+      <p className="mb-4 text-sm text-muted-foreground">
+        Publish pins straight to your Pinterest account, or route them through your own automation instead.
       </p>
-    </div>
+      {props.status?.last_error && (
+        <p className="mb-4 text-xs text-destructive">{props.status.last_error}</p>
+      )}
+
+      <div className="space-y-2">
+        <Label className="text-xs">Publish mode</Label>
+        <div className="inline-flex rounded-md border p-0.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "api" ? "default" : "ghost"}
+            className="h-7 px-3"
+            disabled={setMode.isPending}
+            onClick={() => setMode.mutate("api")}
+          >
+            API
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "webhook" ? "default" : "ghost"}
+            className="h-7 px-3"
+            disabled={setMode.isPending}
+            onClick={() => setMode.mutate("webhook")}
+          >
+            Webhook
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          API publishes directly to your connected Pinterest account. Webhook routes through a custom automation (e.g. Make.com, Zapier) instead.
+        </p>
+      </div>
+
+      {mode === "api" ? (
+        <div className="mt-4 border-t pt-4">
+          <PinterestConnectButton />
+        </div>
+      ) : (
+        <div className="mt-4 space-y-4 border-t pt-4">
+          <div>
+            <Label className="text-xs">Webhook URL</Label>
+            <div className="mt-1 flex gap-2">
+              <Input
+                type="url"
+                placeholder="https://hook.eu1.make.com/…"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => saveWebhook.mutate()}
+                disabled={saveWebhook.isPending || !webhookUrl.trim()}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Payload Pinspider will POST to this URL</Label>
+            <pre className="mt-1 overflow-x-auto rounded bg-muted px-3 py-2 text-xs">
+              <code>{WEBHOOK_PAYLOAD_EXAMPLE}</code>
+            </pre>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

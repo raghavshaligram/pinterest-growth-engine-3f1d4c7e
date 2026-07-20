@@ -5,13 +5,20 @@ export type OpenAIConfig = { api_key: string };
 export type ReplicateConfig = { api_token: string };
 export type ApifyConfig = { api_token: string; actor_id?: string };
 export type PinterestConfig = {
+  // Populated from Pinspider's shared OAuth app (see pinterest-oauth.server.ts
+  // :pinterestAppConfig) once the user authorizes via Connect Pinterest.
+  // There's no per-user app_id/app_secret anymore — the app credentials are
+  // deployment-level env vars (PINTEREST_APP_ID / PINTEREST_APP_SECRET /
+  // PINTEREST_REDIRECT_URI), never stored per user.
   access_token?: string;
   refresh_token?: string;
-  app_id?: string;
-  app_secret?: string;
-  // "api" (default, direct Pinterest v5 publishing) or "webhook" (legacy
-  // Make.com fallback). See pinterest.server.ts:makePinterestClient.
+  // "api" (default, direct Pinterest v5 publishing) or "webhook" (routes
+  // through the user's own automation URL below). See
+  // pinterest.server.ts:makePinterestClient.
   publish_mode?: "api" | "webhook";
+  // Only used when publish_mode is "webhook" — the user's own automation
+  // endpoint (e.g. a Make.com or Zapier catch hook).
+  webhook_url?: string;
 };
 export type ProviderConfig = {
   openai: OpenAIConfig;

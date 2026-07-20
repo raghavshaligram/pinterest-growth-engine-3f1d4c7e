@@ -9,6 +9,25 @@ function stateSecret(): string {
   return raw;
 }
 
+// Pinspider ships as a single Pinterest developer app shared by every
+// tenant — users authorize *this* app against *their* Pinterest account via
+// OAuth, they never create their own Pinterest app. These three are set
+// once at the deployment level (never per-user, never sent to the client).
+export function pinterestAppConfig(): { appId: string; appSecret: string; redirectUri: string } {
+  const appId = process.env.PINTEREST_APP_ID;
+  const appSecret = process.env.PINTEREST_APP_SECRET;
+  const redirectUri = process.env.PINTEREST_REDIRECT_URI;
+  const missing = [
+    ...(!appId ? ["PINTEREST_APP_ID"] : []),
+    ...(!appSecret ? ["PINTEREST_APP_SECRET"] : []),
+    ...(!redirectUri ? ["PINTEREST_REDIRECT_URI"] : []),
+  ];
+  if (missing.length) {
+    throw new Error(`Missing Pinterest app environment variable(s): ${missing.join(", ")}.`);
+  }
+  return { appId: appId!, appSecret: appSecret!, redirectUri: redirectUri! };
+}
+
 function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }

@@ -1,9 +1,11 @@
 // Server-only. Pinterest publishing adapter.
 // Default mode is direct Pinterest API v5 publishing using the user's own
-// OAuth access_token (same integration record boards.functions.ts's
-// syncPinterestBoards reads). A user can opt back into the legacy Make.com
-// webhook by setting publish_mode: "webhook" on their saved Pinterest
-// integration config (see integrations.server.ts / integrations.functions.ts).
+// OAuth access_token, obtained by authorizing Pinspider's single shared app
+// (see pinterest-oauth.server.ts:pinterestAppConfig — there's no per-user
+// Pinterest app anymore). A user can instead route publishing through their
+// own automation (Make.com, Zapier, etc.) by setting publish_mode: "webhook"
+// and saving a webhook_url on their Pinterest integration config (see
+// integrations.server.ts / integrations.functions.ts).
 export type PublishInput = {
   boardId: string; // Pinterest board id (native)
   title: string;
@@ -22,22 +24,25 @@ export interface PinterestClient {
   publish(input: PublishInput & { userId: string; scheduledPinId: string }): Promise<PublishResult>;
 }
 
-const WEBHOOK_URL = "https://hook.eu1.make.com/clrkvdlzl3w6id6bhtb8jwg8bj0pt0jq";
-
-export async function webhookPublish(input: PublishInput & { userId: string; scheduledPinId: string }): Promise<PublishResult> {
-  const r = await fetch(WEBHOOK_URL, {
+// Publish by POSTing to the user's own automation endpoint (Make.com,
+// Zapier, etc.) instead of Pinterest directly. Payload field names
+// deliberately mirror what apiPublish sends to Pinterest itself, so a
+// webhook receiver built from the documented shape (shown in Settings →
+// Integrations) can forward the fields straight through to Pinterest's own
+// pin-create call if it wants to.
+export async function webhookPublish(
+  input: PublishInput & { webhookUrl: string },
+): Promise<PublishResult> {
+  const r = await fetch(input.webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      userId: input.userId,
-      scheduledPinId: input.scheduledPinId,
-      boardId: input.boardId,
+      board_id: input.boardId,
       title: input.title,
       description: input.description,
+      alt_text: input.altText ?? null,
       link: input.link,
-      imageUrl: input.imageUrl,
-      altText: input.altText ?? null,
-      publishedAt: new Date().toISOString(),
+      image_url: input.imageUrl,
     }),
   });
   const text = await r.text();
@@ -91,15 +96,26 @@ export async function apiPublish(
 }
 
 // Builds the publisher for one user based on their stored Pinterest
-// integration. Defaults to direct-API publishing; falls back to the shared
-// Make.com webhook only if the user has explicitly opted into
-// publish_mode: "webhook".
+// integration. Defaults to direct-API publishing; publishes to the user's
+// own webhook_url instead only if they've explicitly opted into
+// publish_mode: "webhook" and saved a URL.
 export async function makePinterestClient(userId: string): Promise<PinterestClient> {
   const { getIntegration } = await import("./integrations.server");
   const cfg = await getIntegration(userId, "pinterest");
 
   if (cfg?.publish_mode === "webhook") {
-    return { mode: "webhook", publish: (i) => webhookPublish(i) };
+    return {
+      mode: "webhook",
+      publish: async (i) => {
+        const webhookUrl = cfg?.webhook_url;
+        if (!webhookUrl) {
+          throw new Error(
+            'Webhook URL missing — add your Webhook URL in Settings → Integrations, or set publish_mode to "api" to publish directly instead.',
+          );
+        }
+        return webhookPublish({ ...i, webhookUrl });
+      },
+    };
   }
 
   return {
@@ -108,7 +124,7 @@ export async function makePinterestClient(userId: string): Promise<PinterestClie
       const accessToken = cfg?.access_token;
       if (!accessToken) {
         throw new Error(
-          'Pinterest access token missing — connect Pinterest in Settings → Integrations, or set publish_mode to "webhook" to use Make.com instead.',
+          'Pinterest access token missing — connect Pinterest in Settings → Integrations, or set publish_mode to "webhook" to use your own automation instead.',
         );
       }
       return apiPublish({ ...i, accessToken });

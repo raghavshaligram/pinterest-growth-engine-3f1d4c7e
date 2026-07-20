@@ -20,32 +20,27 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
         }
 
         try {
-          const { verifyState, exchangeCode } = await import("@/lib/pinterest-oauth.server");
+          const { pinterestAppConfig, verifyState, exchangeCode } = await import("@/lib/pinterest-oauth.server");
           const verified = verifyState(state);
           if (!verified) {
             return Response.redirect(`${settingsUrl}?pinterest=error&reason=bad_state`, 302);
           }
 
+          // Deployment-level app credentials — same ones startPinterestOAuth
+          // used to build the authorize URL. Throws (caught below) if the
+          // server isn't configured with PINTEREST_APP_ID/APP_SECRET/REDIRECT_URI.
+          const { appId, appSecret, redirectUri } = pinterestAppConfig();
+          const tokens = await exchangeCode({ appId, appSecret, code, redirectUri });
+
           const { getIntegration } = await import("@/lib/integrations.server");
           const cfg = await getIntegration(verified.userId, "pinterest");
-          if (!cfg?.app_id || !cfg?.app_secret) {
-            return Response.redirect(`${settingsUrl}?pinterest=error&reason=missing_app_creds`, 302);
-          }
-
-          const redirectUri = `${url.origin}/api/public/pinterest/callback`;
-          const tokens = await exchangeCode({
-            appId: cfg.app_id,
-            appSecret: cfg.app_secret,
-            code,
-            redirectUri,
-          });
 
           const { encrypt } = await import("@/lib/crypto.server");
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const merged = {
             ...cfg,
             access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token ?? cfg.refresh_token,
+            refresh_token: tokens.refresh_token ?? cfg?.refresh_token,
           };
           const { error } = await supabaseAdmin.from("integrations").upsert(
             {
