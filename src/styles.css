@@ -178,6 +178,11 @@
     background: radial-gradient(circle, color-mix(in oklab, var(--success) 10%, transparent), transparent 70%);
   }
 }
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
 
 @layer base {
   * { border-color: var(--color-border); }
