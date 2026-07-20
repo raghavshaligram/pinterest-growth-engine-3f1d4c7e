@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
+import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 
 export const Route = createFileRoute("/_authenticated/pages/$id")({
   head: () => ({ meta: [{ title: "Page — Pinspider" }] }),
@@ -82,7 +83,13 @@ function PageDetail() {
   );
 }
 
-function BriefCard({ b }: { b: { id: string; title: string; style: string; status: string; pin_images: { storage_path: string }[] } }) {
+function BriefCard({ b }: {
+  b: {
+    id: string; title: string; style: string; status: string;
+    pin_images: { storage_path: string }[];
+    used_serp_patterns?: boolean | null; serp_keyword?: string | null; serp_patterns_captured_at?: string | null;
+  };
+}) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
@@ -156,7 +163,14 @@ function BriefCard({ b }: { b: { id: string; title: string; style: string; statu
         <div className="space-y-1 p-3">
           <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
           <div className="line-clamp-2 text-sm font-medium">{b.title}</div>
-          <Badge variant="outline">{b.status}</Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline">{b.status}</Badge>
+            <SerpTraceBadge
+              usedSerpPatterns={b.used_serp_patterns}
+              serpKeyword={b.serp_keyword}
+              serpPatternsCapturedAt={b.serp_patterns_captured_at}
+            />
+          </div>
         </div>
       </Card>
 

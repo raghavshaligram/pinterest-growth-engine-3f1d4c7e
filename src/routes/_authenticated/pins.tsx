@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 
 export const Route = createFileRoute("/_authenticated/pins")({
   head: () => ({ meta: [{ title: "Pins — Pinspider" }] }),
@@ -163,7 +164,14 @@ function PinTile({ b, url, onOpen }: { b: Brief; url: string | null; onOpen: () 
       </div>
       <div className="p-2">
         <div className="line-clamp-2 text-xs font-medium">{b.title}</div>
-        <Badge variant="outline" className="mt-1">{b.status}</Badge>
+        <div className="mt-1 flex items-center gap-1.5">
+          <Badge variant="outline">{b.status}</Badge>
+          <SerpTraceBadge
+            usedSerpPatterns={b.used_serp_patterns}
+            serpKeyword={b.serp_keyword}
+            serpPatternsCapturedAt={b.serp_patterns_captured_at}
+          />
+        </div>
       </div>
     </Card>
   );
@@ -207,6 +215,11 @@ function PinDetail({
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{row.status}</Badge>
                   <Badge variant="secondary">{pageLabel(row)}</Badge>
+                  <SerpTraceBadge
+                    usedSerpPatterns={row.used_serp_patterns}
+                    serpKeyword={row.serp_keyword}
+                    serpPatternsCapturedAt={row.serp_patterns_captured_at}
+                  />
                 </div>
                 <DialogTitle className="text-xl leading-snug">{row.title ?? "Untitled"}</DialogTitle>
                 <DialogDescription className="sr-only">Pin brief details.</DialogDescription>

@@ -209,6 +209,13 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
           middlePrompt: b.image_prompt,
         }),
         status: "image_pending" as const,
+        // Traceability: record whether this batch used the competitive
+        // "what's currently working" block, and from which keyword/
+        // snapshot age, so the UI can show it after the fact instead of
+        // it only existing inside a prompt no one sees again.
+        used_serp_patterns: Boolean(competitiveBlock),
+        serp_keyword: competitiveBlock ? analysis.primary_keyword : null,
+        serp_patterns_captured_at: competitiveBlock ? serpSnap?.captured_at ?? null : null,
       }));
       const { data: inserted, error: insErr } = await supabaseAdmin.from("pin_briefs").insert(rows).select("id");
       if (insErr) throw insErr;
@@ -235,7 +242,7 @@ export const listBriefs = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("pin_briefs")
-      .select("id, style, title, description, hashtags, alt_text, cta, status, page_id, created_at, pages(url, title), pin_images(storage_path, width, height)")
+      .select("id, style, title, description, hashtags, alt_text, cta, status, page_id, created_at, used_serp_patterns, serp_keyword, serp_patterns_captured_at, pages(url, title), pin_images(storage_path, width, height)")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) throw error;

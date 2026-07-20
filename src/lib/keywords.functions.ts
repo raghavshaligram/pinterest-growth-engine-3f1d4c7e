@@ -60,13 +60,49 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
 export const listKeywords = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("keywords")
-      .select("id, keyword, kind, tracked, page_id, pages(url, title)")
-      .order("keyword")
-      .limit(1000);
+    // serp_snapshots is keyed by free-text `keyword`, not a keyword_id FK
+    // (multiple snapshot rows can exist per keyword, one per sweep run),
+    // so there's no embeddable relationship to join here. Fetch the
+    // lightweight (keyword, captured_at) columns for recent snapshots and
+    // reduce to "most recent per keyword" in JS instead -- same pattern
+    // used for dashboard.functions.ts's pins-by-board tally.
+    const [{ data, error }, { data: snapRows }] = await Promise.all([
+      context.supabase
+        .from("keywords")
+        .select("id, keyword, kind, tracked, page_id, pages(url, title)")
+        .order("keyword")
+        .limit(1000),
+      context.supabase
+        .from("serp_snapshots")
+        .select("keyword, captured_at")
+        .order("captured_at", { ascending: false })
+        .limit(500),
+    ]);
     if (error) throw error;
-    return data ?? [];
+    const lastSweptMap = new Map<string, string>();
+    for (const s of (snapRows ?? []) as { keyword: string; captured_at: string }[]) {
+      if (!lastSweptMap.has(s.keyword)) lastSweptMap.set(s.keyword, s.captured_at);
+    }
+    return (data ?? []).map((k) => ({ ...k, lastSweptAt: lastSweptMap.get(k.keyword) ?? null }));
+  });
+
+// Most recent serp_snapshots row for one keyword -- fetched lazily when a
+// Keywords-page row is expanded, rather than eagerly for every keyword
+// (top_pins/patterns are the heavy columns; listKeywords above only pulls
+// the lightweight captured_at timestamp).
+export const getSerpSnapshot = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { keyword: string }) => z.object({ keyword: z.string().min(1) }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { data: snap, error } = await context.supabase
+      .from("serp_snapshots")
+      .select("id, keyword, captured_at, top_pins, patterns")
+      .eq("keyword", data.keyword)
+      .order("captured_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return snap ?? null;
   });
 
 export const setKeywordTracked = createServerFn({ method: "POST" })

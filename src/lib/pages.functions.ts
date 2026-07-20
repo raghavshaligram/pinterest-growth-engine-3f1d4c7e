@@ -66,7 +66,7 @@ export const getPage = createServerFn({ method: "GET" })
     if (error) throw error;
     const { data: briefs } = await context.supabase
       .from("pin_briefs")
-      .select("id, style, title, description, status, image_prompt, created_at, pin_images(storage_path)")
+      .select("id, style, title, description, status, image_prompt, created_at, used_serp_patterns, serp_keyword, serp_patterns_captured_at, pin_images(storage_path)")
       .eq("page_id", data.id)
       .order("created_at", { ascending: false });
     return { page, briefs: briefs ?? [] };
