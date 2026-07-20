@@ -169,7 +169,7 @@ function DashboardPage() {
           </Link>
         </div>
         {pinned.length ? (
-          <div className="flex items-center gap-5 overflow-x-auto pb-2 pt-2">
+          <div className="flex items-center gap-5 overflow-x-auto pb-2 pt-2 scrollbar-hide">
             {pinned.map((p, i) => {
               const rot = i % 2 === 0 ? -1.5 : 1.5;
               return (
