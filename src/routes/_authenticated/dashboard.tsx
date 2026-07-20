@@ -224,39 +224,8 @@ function DashboardPage() {
         )}
       </section>
 
-      {/* Quick summary strip — 4 tiles reinforcing pipeline numbers and
-          this week's error count. Pure visual layer, no new server work. */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { label: "Scheduled", value: pipeline?.scheduled ?? 0 },
-          { label: "Published", value: pipeline?.published ?? 0 },
-          { label: "Images ready", value: pipeline?.images ?? 0 },
-          { label: "Errors", value: errorLogs.length, tone: "danger" as const },
-        ].map((tile) => (
-          <div
-            key={tile.label}
-            className="card-glow rounded-[12px] px-4 py-3.5"
-            style={{
-              backgroundColor: "var(--bg-card)",
-              border: "1px solid var(--border-subtle)",
-              backgroundImage: tile.tone === "danger" ? "none" : "var(--gradient-primary-soft)",
-            }}
-          >
-            <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-              {tile.label}
-            </div>
-            <div
-              className="mt-1 font-display text-2xl"
-              style={{
-                color:
-                  tile.tone === "danger" && tile.value > 0 ? "var(--destructive)" : "var(--text-primary)",
-              }}
-            >
-              {tile.value}
-            </div>
-          </div>
-        ))}
-      </section>
+
+
 
       {/* minmax(0, Nfr) so a wide Activity row can't blow the track out. */}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
