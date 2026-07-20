@@ -66,7 +66,7 @@
    the source of truth; the block below maps them onto Tailwind's
    pre-existing semantic var names (--background, --card, --primary, etc.)
    so every route picks up the new theme without per-page rewrites. */
-:root, .dark {
+:root {
   --radius: 0.75rem;
 
   --bg-page: #FAF9F6;
@@ -130,6 +130,70 @@
   --gradient-primary-soft: linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent) 0%, color-mix(in oklab, var(--accent-soft) 12%, transparent) 100%);
   --shadow-glow: 0 0 16px -6px color-mix(in oklab, var(--accent) 35%, transparent);
 }
+
+.dark {
+  --bg-page: #0F0F0E;
+  --bg-card: #181715;
+  --text-primary: #F5F3EF;
+  --text-secondary: #9E9A90;
+  --text-muted: #6F6B63;
+  --border: #2C2A25;
+  --border-subtle: #24221E;
+  --accent: #E8553A;
+  --accent-foreground: #FFFFFF;
+  --accent-soft: #FF7A62;
+  --success: #6FA67E;
+  --success-foreground: #FFFFFF;
+  --surface-hover: #24221E;
+
+  --background: var(--bg-page);
+  --foreground: var(--text-primary);
+
+  --card: var(--bg-card);
+  --card-foreground: var(--text-primary);
+
+  --popover: var(--bg-card);
+  --popover-foreground: var(--text-primary);
+
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --primary-glow: var(--accent-soft);
+
+  --secondary: var(--border-subtle);
+  --secondary-foreground: var(--text-primary);
+
+  --muted: var(--border-subtle);
+  --muted-foreground: var(--text-secondary);
+
+  --destructive: #E35C4C;
+  --destructive-foreground: #FFFFFF;
+
+  --warning: #E0A35E;
+  --warning-foreground: #FFFFFF;
+
+  --input: var(--border);
+  --ring: var(--accent);
+
+  --chart-1: #E8553A;
+  --chart-2: #6FA67E;
+  --chart-3: #9B84C7;
+  --chart-4: #6B9BC4;
+  --chart-5: #E0A35E;
+
+  --sidebar: var(--bg-card);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-foreground);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+
+  --gradient-primary: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
+  --gradient-primary-soft: linear-gradient(135deg, color-mix(in oklab, var(--accent) 16%, transparent) 0%, color-mix(in oklab, var(--accent-soft) 16%, transparent) 100%);
+  --shadow-glow: 0 0 24px -6px color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
 
 @utility bg-gradient-primary { background-image: var(--gradient-primary); }
 @utility bg-gradient-primary-soft { background-image: var(--gradient-primary-soft); }
