@@ -304,13 +304,18 @@ function DashboardPage() {
               View all
             </Link>
           </div>
-          <div className="px-3 pb-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          <div className="flex-1 px-3 pb-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
             {(() => {
-              const combined: Array<{ log: LogRow; variant: "error" | "normal" | "manual" }> = [
-                ...errorLogs.map((l) => ({ log: l, variant: "error" as const })),
-                ...normalLogs.map((l) => ({ log: l, variant: "normal" as const })),
+              // Sort strictly by time, newest first. Manual-posts are
+              // still folded via the manualHiddenCount button below.
+              const merged: Array<{ log: LogRow; variant: "error" | "normal" | "manual" }> = [
+                ...nonManualLogs.map((l) => ({
+                  log: l,
+                  variant: (l.level === "error" ? "error" : "normal") as "error" | "normal" | "manual",
+                })),
                 ...manualVisible.map((l) => ({ log: l, variant: "manual" as const })),
-              ];
+              ].sort((a, b) => new Date(b.log.at).getTime() - new Date(a.log.at).getTime());
+              const combined = merged;
               const shown = activityExpanded ? combined : combined.slice(0, ACTIVITY_COLLAPSED);
               const hidden = combined.length - shown.length;
               return (
