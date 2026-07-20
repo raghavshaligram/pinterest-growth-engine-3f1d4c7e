@@ -25,8 +25,12 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  /* Tailwind's "accent" role is a neutral hover/highlight surface
+     (bg-accent, hover:bg-accent on menu items, ghost buttons, etc.) --
+     kept distinct from the brand --accent token below so hover states
+     don't turn brand-red everywhere. */
+  --color-accent: var(--surface-hover);
+  --color-accent-foreground: var(--text-primary);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
@@ -36,6 +40,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-brand: var(--accent);
+  --color-brand-foreground: var(--accent-foreground);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -52,65 +59,76 @@
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 
-/* Blotato-inspired dark theme with coral→magenta gradient accents. */
+/* Pinspider design system -- light workspace aesthetic. Named tokens are
+   the source of truth; the block below maps them onto Tailwind's
+   pre-existing semantic var names (--background, --card, --primary, etc.)
+   so every route picks up the new theme without per-page rewrites. */
 :root, .dark {
-  --radius: 1rem;
+  --radius: 0.75rem;
 
-  --background: oklch(0.12 0.015 15);
-  --foreground: oklch(0.97 0.008 60);
+  --bg-page: #FAF9F6;
+  --bg-card: #FFFFFF;
+  --text-primary: #1C1B19;
+  --text-secondary: #8A867C;
+  --text-muted: #B0AC9F;
+  --border: #E4E1D9;
+  --border-subtle: #EFECE4;
+  --accent: #C23B22;
+  --accent-foreground: #FFFFFF;
+  --accent-soft: #E0654A;
+  --success: #4F7A5C;
+  --success-foreground: #FFFFFF;
+  --surface-hover: #F1EEE7;
 
-  --card: oklch(0.16 0.017 15);
-  --card-foreground: oklch(0.97 0.008 60);
+  --background: var(--bg-page);
+  --foreground: var(--text-primary);
 
-  --popover: oklch(0.16 0.017 15);
-  --popover-foreground: oklch(0.97 0.008 60);
+  --card: var(--bg-card);
+  --card-foreground: var(--text-primary);
 
-  --primary: oklch(0.66 0.20 25);
-  --primary-foreground: oklch(0.98 0.005 60);
-  --primary-glow: oklch(0.66 0.24 355);
+  --popover: var(--bg-card);
+  --popover-foreground: var(--text-primary);
 
-  --secondary: oklch(0.22 0.015 15);
-  --secondary-foreground: oklch(0.96 0.008 60);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --primary-glow: var(--accent-soft);
 
-  --muted: oklch(0.20 0.012 15);
-  --muted-foreground: oklch(0.70 0.014 60);
+  --secondary: var(--border-subtle);
+  --secondary-foreground: var(--text-primary);
 
-  --accent: oklch(0.28 0.05 355);
-  --accent-foreground: oklch(0.98 0.008 60);
+  --muted: var(--border-subtle);
+  --muted-foreground: var(--text-secondary);
 
-  --destructive: oklch(0.60 0.22 28);
-  --destructive-foreground: oklch(0.98 0.005 60);
+  --destructive: #B23A2E;
+  --destructive-foreground: #FFFFFF;
 
-  --success: oklch(0.68 0.14 155);
-  --success-foreground: oklch(0.12 0.02 155);
+  --warning: #C68A4B;
+  --warning-foreground: #FFFFFF;
 
-  --warning: oklch(0.78 0.15 75);
-  --warning-foreground: oklch(0.15 0.03 75);
+  --input: var(--border);
+  --ring: var(--accent);
 
-  --border: oklch(0.22 0.012 15);
-  --input: oklch(0.20 0.012 15);
-  --ring: oklch(0.66 0.22 355);
+  --chart-1: #C23B22;
+  --chart-2: #4F7A5C;
+  --chart-3: #8067AD;
+  --chart-4: #4A6C93;
+  --chart-5: #C68A4B;
 
-  --chart-1: oklch(0.66 0.20 25);
-  --chart-2: oklch(0.66 0.24 355);
-  --chart-3: oklch(0.68 0.14 155);
-  --chart-4: oklch(0.70 0.15 260);
-  --chart-5: oklch(0.75 0.14 320);
+  --sidebar: var(--bg-card);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-foreground);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
 
-  --sidebar: oklch(0.10 0.012 15);
-  --sidebar-foreground: oklch(0.90 0.008 60);
-  --sidebar-primary: oklch(0.66 0.20 25);
-  --sidebar-primary-foreground: oklch(0.98 0.005 60);
-  --sidebar-accent: oklch(0.20 0.014 15);
-  --sidebar-accent-foreground: oklch(0.97 0.008 60);
-  --sidebar-border: oklch(0.20 0.014 15);
-  --sidebar-ring: oklch(0.66 0.22 355);
-
-  --gradient-primary: linear-gradient(135deg, oklch(0.66 0.20 25) 0%, oklch(0.66 0.24 355) 100%);
-  --gradient-primary-soft: linear-gradient(135deg, oklch(0.66 0.20 25 / 0.15) 0%, oklch(0.66 0.24 355 / 0.15) 100%);
-  --shadow-glow: 0 0 40px -8px oklch(0.66 0.22 355 / 0.45), 0 0 80px -20px oklch(0.66 0.20 25 / 0.35);
+  --gradient-primary: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
+  --gradient-primary-soft: linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent) 0%, color-mix(in oklab, var(--accent-soft) 12%, transparent) 100%);
+  --shadow-glow: 0 0 16px -6px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 
 @utility bg-gradient-primary { background-image: var(--gradient-primary); }
@@ -129,7 +147,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: radial-gradient(600px circle at 100% 0%, oklch(0.66 0.22 355 / 0.14), transparent 45%);
+    background: radial-gradient(600px circle at 100% 0%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 45%);
     pointer-events: none;
     border-radius: inherit;
   }
@@ -150,14 +168,14 @@
     left: -10%;
     width: 40rem;
     height: 40rem;
-    background: radial-gradient(circle, oklch(0.66 0.20 25 / 0.35), transparent 70%);
+    background: radial-gradient(circle, color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%);
   }
   &::after {
     bottom: -20%;
     right: -10%;
     width: 45rem;
     height: 45rem;
-    background: radial-gradient(circle, oklch(0.66 0.24 355 / 0.30), transparent 70%);
+    background: radial-gradient(circle, color-mix(in oklab, var(--success) 10%, transparent), transparent 70%);
   }
 }
 

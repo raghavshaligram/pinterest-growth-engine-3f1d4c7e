@@ -2,11 +2,14 @@ import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Globe, FileText, Images, Calendar, LayoutGrid,
-  KeyRound, Settings2, ScrollText, Sparkles, LogOut,
+  KeyRound, Settings2, ScrollText, LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { PinspiderMark } from "@/components/PinspiderMark";
+import { SiteSwitcher } from "@/components/SiteSwitcher";
+import { SiteProvider } from "@/lib/site-context";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -30,47 +33,51 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="relative hidden w-60 shrink-0 flex-col bg-sidebar md:flex">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-primary/40 to-transparent" />
-        <div className="flex items-center gap-2.5 px-5 py-6">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
-            <Sparkles className="h-4 w-4 text-primary-foreground" />
+    <SiteProvider>
+      <div className="flex min-h-screen bg-background text-foreground">
+        <aside
+          className="hidden w-60 shrink-0 flex-col md:flex"
+          style={{ backgroundColor: "var(--bg-card)", borderRight: "1px solid var(--border)" }}
+        >
+          <div className="flex items-center gap-2.5 px-5 py-6">
+            <PinspiderMark size={22} />
+            <span className="font-display text-xl tracking-tight">Pinspider</span>
           </div>
-          <span className="font-display text-xl tracking-tight">Pinspider</span>
-        </div>
-        <nav className="flex-1 space-y-0.5 px-3">
-          {NAV.map(({ to, label, icon: Icon }) => {
-            const active = path === to || (to !== "/dashboard" && path.startsWith(to));
-            return (
-              <Link
-                key={to}
-                to={to}
-                className={cn(
-                  "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
-                  active
-                    ? "bg-gradient-primary-soft text-foreground"
-                    : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                )}
-              >
-                {active && (
-                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-gradient-primary" />
-                )}
-                <Icon className={cn("h-4 w-4", active && "text-primary")} />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="border-t border-sidebar-border p-3">
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={signOut}>
-            <LogOut className="h-4 w-4" /> Sign out
-          </Button>
-        </div>
-      </aside>
-      <main className="flex-1 overflow-x-hidden">
-        <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
-      </main>
-    </div>
+          <nav className="flex-1 space-y-0.5 px-3">
+            {NAV.map(({ to, label, icon: Icon }) => {
+              const active = path === to || (to !== "/dashboard" && path.startsWith(to));
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={cn(
+                    "relative flex items-center gap-3 rounded-[6px] px-3 py-2 text-sm transition-colors",
+                    active ? "font-medium" : "hover:bg-accent",
+                  )}
+                  style={{
+                    color: active ? "var(--accent)" : "var(--text-secondary)",
+                    backgroundColor: active ? "var(--surface-hover)" : undefined,
+                  }}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="p-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={signOut}>
+              <LogOut className="h-4 w-4" /> Sign out
+            </Button>
+          </div>
+        </aside>
+        <main className="flex-1 overflow-x-hidden">
+          <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+            <SiteSwitcher />
+          </div>
+          <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+        </main>
+      </div>
+    </SiteProvider>
   );
 }
