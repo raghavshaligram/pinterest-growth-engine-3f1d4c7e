@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { describeCapEvent, capEventIsWarning } from "@/lib/cap-event-copy";
 
 // How many "published this week" pin thumbnails we pull signed URLs for.
 // Only a handful render (the rest collapse into a compact "+N" chip), but
@@ -12,8 +13,20 @@ const PUBLISHED_SHOW_LIMIT = 8;
 // posted" tail to collapse (see dashboard.tsx), not just whatever fits
 // on screen.
 const RECENT_LOGS_FETCH_LIMIT = 40;
+const RECENT_CAP_EVENTS_FETCH_LIMIT = 20;
 const PINS_BY_BOARD_FETCH_LIMIT = 500;
 const FALLBACK_SITE_COLOR = "#8A867C";
+
+type CapEventRow = {
+  id: string;
+  event_type: string;
+  from_tier: string | null;
+  to_tier: string | null;
+  from_cap: number | null;
+  to_cap: number | null;
+  detail: unknown;
+  created_at: string;
+};
 
 export const dashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -75,6 +88,15 @@ export const dashboardStats = createServerFn({ method: "GET" })
       pageIds,
     );
     const integrationsP = s.from("integrations").select("provider, status");
+    // Account-level, not site-scoped — only surfaced in the unscoped
+    // "all sites" view, same treatment as other account-wide signals.
+    const capEventsP = scoped
+      ? Promise.resolve({ data: [] as CapEventRow[] })
+      : s
+          .from("account_cap_events")
+          .select("id, event_type, from_tier, to_tier, from_cap, to_cap, detail, created_at")
+          .order("created_at", { ascending: false })
+          .limit(RECENT_CAP_EVENTS_FETCH_LIMIT);
     const lastCrawledBaseQ = s.from("pages").select("last_crawled_at").order("last_crawled_at", { ascending: false }).limit(1);
     const lastCrawledP = scoped ? lastCrawledBaseQ.eq("site_id", siteId) : lastCrawledBaseQ;
     const sitesColorP = s.from("sites").select("id, accent_color");
@@ -124,6 +146,7 @@ export const dashboardStats = createServerFn({ method: "GET" })
       sitesColorRes,
       publishedRowsRes,
       pinsByBoardRowsRes,
+      capEventsRes,
     ] = await Promise.all([
       pagesTotalP,
       briefsTotalP,
@@ -137,6 +160,7 @@ export const dashboardStats = createServerFn({ method: "GET" })
       sitesColorP,
       publishedRowsP,
       pinsByBoardRowsP,
+      capEventsP,
     ]);
 
     // Recent activity: resolve which scheduled_pins ids are in scope (via
@@ -147,7 +171,7 @@ export const dashboardStats = createServerFn({ method: "GET" })
     let recentLogsQuery = s
       .from("publish_logs")
       .select(
-        "id, at, level, message, scheduled_pin_id, scheduled_pins(board_id, boards(name), pin_briefs(title, pin_images(storage_path)))",
+        "id, at, level, message, scheduled_pin_id, scheduled_pins(board_id, boards(name), pin_briefs(title, pin_images(storage_path), pages(url)))",
       )
       .order("at", { ascending: false })
       .limit(RECENT_LOGS_FETCH_LIMIT);
@@ -210,10 +234,12 @@ export const dashboardStats = createServerFn({ method: "GET" })
       scheduled_pins?: {
         board_id?: string | null;
         boards?: { name?: string | null } | null;
-        pin_briefs?: { title?: string | null; pin_images?: { storage_path: string }[] | null } | null;
+        pin_briefs?: { title?: string | null; pin_images?: { storage_path: string }[] | null; pages?: { url?: string | null } | null } | null;
       } | null;
     };
     const logRows = (recentLogRows ?? []) as unknown as LogRow[];
+
+    const capEventRows = (capEventsRes.data ?? []) as unknown as CapEventRow[];
 
     // Sign every storage path referenced by either section in one batch so
     // overlapping images (a pin that's both "published this week" and has
@@ -263,8 +289,25 @@ export const dashboardStats = createServerFn({ method: "GET" })
         pinTitle: sp?.pin_briefs?.title ?? null,
         boardName: sp?.boards?.name ?? null,
         thumbUrl: path ? signedUrlMap.get(path) ?? null : null,
+        pageUrl: sp?.pin_briefs?.pages?.url ?? null,
+        link: null as string | null,
       };
     });
+
+    // account_cap_events folded into the same feed shape (see
+    // cap-event-copy.ts for the shared wording) — no pin/board/thumb, and
+    // api_error_brake rows link straight to /logs, which is literally
+    // where the publish_logs error rows that triggered them live.
+    const capEventLogs = capEventRows.map((r) => ({
+      id: `cap-${r.id}`,
+      at: r.created_at,
+      level: capEventIsWarning(r.event_type) ? "error" : "info",
+      message: describeCapEvent(r),
+      pinTitle: null as string | null,
+      boardName: null as string | null,
+      thumbUrl: null as string | null,
+      link: r.event_type === "api_error_brake" ? "/logs" : null,
+    }));
 
     const boardCounts = new Map<string, { name: string; count: number }>();
     for (const row of (pinsByBoardRowsRes.data ?? []) as { board_id: string | null; boards?: { name?: string | null } | null }[]) {
@@ -288,7 +331,7 @@ export const dashboardStats = createServerFn({ method: "GET" })
       publishedThisWeek,
       publishedThisWeekTotal: publishedRowsRes.count ?? publishedRows.length,
       lastUpdatedAt: lastCrawledRes.data?.[0]?.last_crawled_at ?? null,
-      recentLogs,
+      recentLogs: [...recentLogs, ...capEventLogs],
       pinsByBoard,
       integrations: integrationsRes.data ?? [],
     };

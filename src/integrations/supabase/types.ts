@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_cap_events: {
+        Row: {
+          created_at: string
+          detail: Json | null
+          event_type: string
+          from_cap: number | null
+          from_tier: string | null
+          id: string
+          to_cap: number | null
+          to_tier: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json | null
+          event_type: string
+          from_cap?: number | null
+          from_tier?: string | null
+          id?: string
+          to_cap?: number | null
+          to_tier?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detail?: Json | null
+          event_type?: string
+          from_cap?: number | null
+          from_tier?: string | null
+          id?: string
+          to_cap?: number | null
+          to_tier?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      account_publishing_profiles: {
+        Row: {
+          cap_mode: string
+          created_at: string
+          current_daily_cap: number
+          id: string
+          last_cap_check_at: string | null
+          manual_cap: number | null
+          onboarded_at: string
+          pinterest_metrics: Json | null
+          reconciled_at: string | null
+          reconciled_tier: string
+          self_reported_age_bucket: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cap_mode?: string
+          created_at?: string
+          current_daily_cap?: number
+          id?: string
+          last_cap_check_at?: string | null
+          manual_cap?: number | null
+          onboarded_at?: string
+          pinterest_metrics?: Json | null
+          reconciled_at?: string | null
+          reconciled_tier: string
+          self_reported_age_bucket: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cap_mode?: string
+          created_at?: string
+          current_daily_cap?: number
+          id?: string
+          last_cap_check_at?: string | null
+          manual_cap?: number | null
+          onboarded_at?: string
+          pinterest_metrics?: Json | null
+          reconciled_at?: string | null
+          reconciled_tier?: string
+          self_reported_age_bucket?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       boards: {
         Row: {
           category: string | null

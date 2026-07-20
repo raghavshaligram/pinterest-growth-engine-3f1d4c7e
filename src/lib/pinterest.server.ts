@@ -95,6 +95,46 @@ export async function apiPublish(
   return { mode: "api", pinterestPinId: json.id };
 }
 
+// Pinterest account metrics, used only for onboarding tier reconciliation
+// (see publishing-profile.server.ts:reconcileTier). Pinterest's v5 API has
+// no "account created at" field, so there's no direct way to verify a
+// user's self-reported account age — this instead pulls the counters
+// that DO exist (pins/boards/followers) as an activity-level sanity
+// check against what they claimed.
+// https://developers.pinterest.com/docs/api/v5/#operation/user_account/get
+export type PinterestAccountMetrics = {
+  username?: string;
+  accountType?: string;
+  boardCount?: number;
+  pinCount?: number;
+  followerCount?: number;
+  followingCount?: number;
+  monthlyViews?: number;
+};
+
+export async function fetchUserAccount(accessToken: string): Promise<PinterestAccountMetrics> {
+  const r = await fetch("https://api.pinterest.com/v5/user_account", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`Pinterest v5 user_account ${r.status}: ${text}`);
+  let json: Record<string, unknown>;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Pinterest v5 user_account: non-JSON response: ${text.slice(0, 200)}`);
+  }
+  return {
+    username: typeof json.username === "string" ? json.username : undefined,
+    accountType: typeof json.account_type === "string" ? json.account_type : undefined,
+    boardCount: typeof json.board_count === "number" ? json.board_count : undefined,
+    pinCount: typeof json.pin_count === "number" ? json.pin_count : undefined,
+    followerCount: typeof json.follower_count === "number" ? json.follower_count : undefined,
+    followingCount: typeof json.following_count === "number" ? json.following_count : undefined,
+    monthlyViews: typeof json.monthly_views === "number" ? json.monthly_views : undefined,
+  };
+}
+
 // Builds the publisher for one user based on their stored Pinterest
 // integration. Defaults to direct-API publishing; publishes to the user's
 // own webhook_url instead only if they've explicitly opted into
