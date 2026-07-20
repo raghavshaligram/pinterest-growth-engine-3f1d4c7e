@@ -104,7 +104,9 @@ function DashboardPage() {
   // posted" entries beyond the first couple collapse into one row so a
   // busy week doesn't bury the errors and real publish events under a
   // wall of identical manual-mark lines.
-  const allLogs: LogRow[] = data?.recentLogs ?? [];
+  const allLogs: LogRow[] = [...(data?.recentLogs ?? [])].sort(
+    (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+  );
   const errorLogs = allLogs.filter((l) => l.level === "error");
   const rest = allLogs.filter((l) => l.level !== "error");
   const manualLogs = rest.filter((l) => l.message.startsWith("Marked as manually posted"));
