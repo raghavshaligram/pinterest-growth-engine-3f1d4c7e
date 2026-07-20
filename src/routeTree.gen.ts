@@ -10,29 +10,41 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ScheduleRouteImport } from './routes/schedule'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSitesRouteImport } from './routes/_authenticated/sites'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedScheduleRouteImport } from './routes/_authenticated/schedule'
 import { Route as AuthenticatedPinsRouteImport } from './routes/_authenticated/pins'
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
 import { Route as AuthenticatedKeywordsRouteImport } from './routes/_authenticated/keywords'
-import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBoardsRouteImport } from './routes/_authenticated/boards'
 import { Route as AuthenticatedPagesIndexRouteImport } from './routes/_authenticated/pages.index'
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedPagesIdRouteImport } from './routes/_authenticated/pages.$id'
 import { Route as ApiPublicPinterestCallbackRouteImport } from './routes/api/public/pinterest.callback'
+import { Route as ApiPublicCronTierCheckRouteImport } from './routes/api/public/cron/tier-check'
 import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
 import { Route as ApiPublicCronPublishRouteImport } from './routes/api/public/cron/publish'
+import { Route as ApiPublicCronMaterializeRouteImport } from './routes/api/public/cron/materialize'
 import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
 import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScheduleRoute = ScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -59,11 +71,6 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedScheduleRoute = AuthenticatedScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedPinsRoute = AuthenticatedPinsRouteImport.update({
   id: '/pins',
   path: '/pins',
@@ -77,11 +84,6 @@ const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
 const AuthenticatedKeywordsRoute = AuthenticatedKeywordsRouteImport.update({
   id: '/keywords',
   path: '/keywords',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedBoardsRoute = AuthenticatedBoardsRouteImport.update({
@@ -111,6 +113,11 @@ const ApiPublicPinterestCallbackRoute =
     path: '/api/public/pinterest/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCronTierCheckRoute = ApiPublicCronTierCheckRouteImport.update({
+  id: '/api/public/cron/tier-check',
+  path: '/api/public/cron/tier-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicCronSerpRoute = ApiPublicCronSerpRouteImport.update({
   id: '/api/public/cron/serp',
   path: '/api/public/cron/serp',
@@ -121,6 +128,12 @@ const ApiPublicCronPublishRoute = ApiPublicCronPublishRouteImport.update({
   path: '/api/public/cron/publish',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCronMaterializeRoute =
+  ApiPublicCronMaterializeRouteImport.update({
+    id: '/api/public/cron/materialize',
+    path: '/api/public/cron/materialize',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicCronImagesRoute = ApiPublicCronImagesRouteImport.update({
   id: '/api/public/cron/images',
   path: '/api/public/cron/images',
@@ -135,13 +148,13 @@ const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/boards': typeof AuthenticatedBoardsRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
   '/keywords': typeof AuthenticatedKeywordsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/pins': typeof AuthenticatedPinsRoute
-  '/schedule': typeof AuthenticatedScheduleRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/sites': typeof AuthenticatedSitesRoute
   '/pages/$id': typeof AuthenticatedPagesIdRoute
@@ -149,20 +162,22 @@ export interface FileRoutesByFullPath {
   '/pages/': typeof AuthenticatedPagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/cron/tier-check': typeof ApiPublicCronTierCheckRoute
   '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/boards': typeof AuthenticatedBoardsRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
   '/keywords': typeof AuthenticatedKeywordsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/pins': typeof AuthenticatedPinsRoute
-  '/schedule': typeof AuthenticatedScheduleRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/sites': typeof AuthenticatedSitesRoute
   '/pages/$id': typeof AuthenticatedPagesIdRoute
@@ -170,8 +185,10 @@ export interface FileRoutesByTo {
   '/pages': typeof AuthenticatedPagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/cron/tier-check': typeof ApiPublicCronTierCheckRoute
   '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRoutesById {
@@ -179,13 +196,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/boards': typeof AuthenticatedBoardsRoute
-  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/keywords': typeof AuthenticatedKeywordsRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/pins': typeof AuthenticatedPinsRoute
-  '/_authenticated/schedule': typeof AuthenticatedScheduleRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
   '/_authenticated/pages/$id': typeof AuthenticatedPagesIdRoute
@@ -193,8 +210,10 @@ export interface FileRoutesById {
   '/_authenticated/pages/': typeof AuthenticatedPagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
+  '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
   '/api/public/cron/publish': typeof ApiPublicCronPublishRoute
   '/api/public/cron/serp': typeof ApiPublicCronSerpRoute
+  '/api/public/cron/tier-check': typeof ApiPublicCronTierCheckRoute
   '/api/public/pinterest/callback': typeof ApiPublicPinterestCallbackRoute
 }
 export interface FileRouteTypes {
@@ -202,13 +221,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/dashboard'
+    | '/schedule'
     | '/sitemap.xml'
     | '/boards'
-    | '/dashboard'
     | '/keywords'
     | '/logs'
     | '/pins'
-    | '/schedule'
     | '/settings'
     | '/sites'
     | '/pages/$id'
@@ -216,20 +235,22 @@ export interface FileRouteTypes {
     | '/pages/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
+    | '/api/public/cron/materialize'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/cron/tier-check'
     | '/api/public/pinterest/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
+    | '/dashboard'
+    | '/schedule'
     | '/sitemap.xml'
     | '/boards'
-    | '/dashboard'
     | '/keywords'
     | '/logs'
     | '/pins'
-    | '/schedule'
     | '/settings'
     | '/sites'
     | '/pages/$id'
@@ -237,21 +258,23 @@ export interface FileRouteTypes {
     | '/pages'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
+    | '/api/public/cron/materialize'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/cron/tier-check'
     | '/api/public/pinterest/callback'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/dashboard'
+    | '/schedule'
     | '/sitemap.xml'
     | '/_authenticated/boards'
-    | '/_authenticated/dashboard'
     | '/_authenticated/keywords'
     | '/_authenticated/logs'
     | '/_authenticated/pins'
-    | '/_authenticated/schedule'
     | '/_authenticated/settings'
     | '/_authenticated/sites'
     | '/_authenticated/pages/$id'
@@ -259,8 +282,10 @@ export interface FileRouteTypes {
     | '/_authenticated/pages/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
+    | '/api/public/cron/materialize'
     | '/api/public/cron/publish'
     | '/api/public/cron/serp'
+    | '/api/public/cron/tier-check'
     | '/api/public/pinterest/callback'
   fileRoutesById: FileRoutesById
 }
@@ -268,11 +293,15 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  DashboardRoute: typeof DashboardRoute
+  ScheduleRoute: typeof ScheduleRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
+  ApiPublicCronMaterializeRoute: typeof ApiPublicCronMaterializeRoute
   ApiPublicCronPublishRoute: typeof ApiPublicCronPublishRoute
   ApiPublicCronSerpRoute: typeof ApiPublicCronSerpRoute
+  ApiPublicCronTierCheckRoute: typeof ApiPublicCronTierCheckRoute
   ApiPublicPinterestCallbackRoute: typeof ApiPublicPinterestCallbackRoute
 }
 
@@ -283,6 +312,20 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule': {
+      id: '/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof ScheduleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -320,13 +363,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/schedule': {
-      id: '/_authenticated/schedule'
-      path: '/schedule'
-      fullPath: '/schedule'
-      preLoaderRoute: typeof AuthenticatedScheduleRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/pins': {
       id: '/_authenticated/pins'
       path: '/pins'
@@ -346,13 +382,6 @@ declare module '@tanstack/react-router' {
       path: '/keywords'
       fullPath: '/keywords'
       preLoaderRoute: typeof AuthenticatedKeywordsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/boards': {
@@ -390,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPinterestCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cron/tier-check': {
+      id: '/api/public/cron/tier-check'
+      path: '/api/public/cron/tier-check'
+      fullPath: '/api/public/cron/tier-check'
+      preLoaderRoute: typeof ApiPublicCronTierCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/serp': {
       id: '/api/public/cron/serp'
       path: '/api/public/cron/serp'
@@ -402,6 +438,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/cron/publish'
       fullPath: '/api/public/cron/publish'
       preLoaderRoute: typeof ApiPublicCronPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/materialize': {
+      id: '/api/public/cron/materialize'
+      path: '/api/public/cron/materialize'
+      fullPath: '/api/public/cron/materialize'
+      preLoaderRoute: typeof ApiPublicCronMaterializeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/cron/images': {
@@ -437,11 +480,9 @@ const AuthenticatedSettingsRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedBoardsRoute: typeof AuthenticatedBoardsRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedKeywordsRoute: typeof AuthenticatedKeywordsRoute
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedPinsRoute: typeof AuthenticatedPinsRoute
-  AuthenticatedScheduleRoute: typeof AuthenticatedScheduleRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
   AuthenticatedPagesIdRoute: typeof AuthenticatedPagesIdRoute
@@ -450,11 +491,9 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedBoardsRoute: AuthenticatedBoardsRoute,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedKeywordsRoute: AuthenticatedKeywordsRoute,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedPinsRoute: AuthenticatedPinsRoute,
-  AuthenticatedScheduleRoute: AuthenticatedScheduleRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedSitesRoute: AuthenticatedSitesRoute,
   AuthenticatedPagesIdRoute: AuthenticatedPagesIdRoute,
@@ -468,11 +507,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  DashboardRoute: DashboardRoute,
+  ScheduleRoute: ScheduleRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
+  ApiPublicCronMaterializeRoute: ApiPublicCronMaterializeRoute,
   ApiPublicCronPublishRoute: ApiPublicCronPublishRoute,
   ApiPublicCronSerpRoute: ApiPublicCronSerpRoute,
+  ApiPublicCronTierCheckRoute: ApiPublicCronTierCheckRoute,
   ApiPublicPinterestCallbackRoute: ApiPublicPinterestCallbackRoute,
 }
 export const routeTree = rootRouteImport
