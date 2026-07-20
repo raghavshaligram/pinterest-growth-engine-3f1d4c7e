@@ -95,7 +95,8 @@ function DashboardPage() {
   const pipeline = data?.pipeline;
   const needsAttention = data?.needsAttention;
   const pinned = data?.publishedThisWeek ?? [];
-  const moreCount = Math.max(0, (data?.publishedThisWeekTotal ?? 0) - pinned.length);
+  const visiblePinned = pinned.slice(0, 7);
+  const moreCount = Math.max(0, (data?.publishedThisWeekTotal ?? 0) - 7);
   const providers = ["openai", "replicate", "apify", "pinterest"] as const;
   const showSiteTint = selectedSiteId === null;
 
