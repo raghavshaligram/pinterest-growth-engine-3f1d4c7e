@@ -306,6 +306,7 @@ export const dashboardStats = createServerFn({ method: "GET" })
       pinTitle: null as string | null,
       boardName: null as string | null,
       thumbUrl: null as string | null,
+      pageUrl: null as string | null,
       link: r.event_type === "api_error_brake" ? "/logs" : null,
     }));
 
