@@ -110,6 +110,33 @@ Global rules for both families:
 - Text must be correctly spelled, large, clean, and never cropped.
 ${brandFont ? `- Typography direction (title): ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}`;
 
+    // Competitive-pattern signal: if a recent SERP sweep has already
+    // summarized "what's working" for this page's primary keyword (see
+    // keywords.functions.ts:summarizeAndStorePatterns), fold the title
+    // patterns/themes into the prompt as inspiration. Stale (>7 days) or
+    // missing data is skipped silently -- this is enrichment, not a
+    // requirement, so most pages (no tracked keyword sweep yet, or Apify
+    // simply isn't configured) generate exactly as before.
+    const PATTERNS_FRESHNESS_DAYS = 7;
+    const { data: serpSnap } = await context.supabase
+      .from("serp_snapshots")
+      .select("patterns, captured_at")
+      .eq("keyword", analysis.primary_keyword)
+      .order("captured_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const snapAgeDays = serpSnap?.captured_at
+      ? (Date.now() - new Date(serpSnap.captured_at).getTime()) / (1000 * 60 * 60 * 24)
+      : Infinity;
+    const patterns = snapAgeDays <= PATTERNS_FRESHNESS_DAYS
+      ? (serpSnap?.patterns as { title_patterns?: string[]; themes?: string[]; summary?: string } | null)
+      : null;
+    const competitiveBlock = patterns && ((patterns.title_patterns?.length ?? 0) > 0 || (patterns.themes?.length ?? 0) > 0)
+      ? `\n\nWHAT'S CURRENTLY WORKING FOR "${analysis.primary_keyword}" ON PINTEREST (from recent competitive research — use as inspiration for title/description angles, do not copy any title verbatim):
+Title patterns seen: ${JSON.stringify(patterns.title_patterns ?? [])}
+Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `\nSummary: ${patterns.summary}` : ""}`
+      : "";
+
     const stylesSubset = [...PIN_STYLES].sort(() => Math.random() - 0.5).slice(0, Math.min(data.count, PIN_STYLES.length));
     const chosenStyles = stylesSubset.length >= data.count
       ? stylesSubset.slice(0, data.count)
@@ -137,7 +164,8 @@ ${brandFont ? `- Typography direction (title): ${brandFont}.\n` : ""}${brandNote
 - alt_text: <=250 chars, LITERAL visual description of what's in the image ("gloved hand digging beside green rain barrel next to garden shed"), include primary keyword once, NOT marketing copy.
 - hashtags: 4-6, lowercase, no spaces, include the primary keyword as a hashtag plus secondaries; no # in the strings.
 - cta: chosen from the intent-matched pool ONLY.
-- intent: one of informational|tool|list|commercial.`,
+- intent: one of informational|tool|list|commercial.
+If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`,
         user: `Create ${data.count} unique Pinterest pin briefs for this page. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
 
 Return JSON: { briefs: [{ style, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
@@ -157,7 +185,7 @@ Topic: ${analysis.topic ?? ""}
 Primary keyword: ${analysis.primary_keyword}
 Secondary: ${JSON.stringify(analysis.secondary_keywords ?? [])}
 Audience: ${analysis.audience ?? ""}
-Category: ${analysis.category ?? ""}`,
+Category: ${analysis.category ?? ""}${competitiveBlock}`,
       });
 
       const rows = resp.briefs.slice(0, data.count).map((b) => ({

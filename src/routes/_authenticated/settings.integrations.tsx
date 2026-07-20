@@ -47,7 +47,7 @@ function IntegrationsPage() {
         <IntegrationCard
           provider="openai"
           title="OpenAI"
-          description="Powers page analysis, pin strategy, copy, and winning-pattern clustering."
+          description="Powers page analysis, pin copy, and competitive pattern summaries from your SERP sweeps (title formats, themes, and what's saving well) — folded into new briefs when recent."
           fields={[{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }]}
           status={data?.find((i) => i.provider === "openai")}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}

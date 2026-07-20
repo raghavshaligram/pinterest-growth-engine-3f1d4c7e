@@ -2,6 +2,61 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+type TopPin = { url?: string; title?: string; description?: string; image?: string; board?: string; saves?: number };
+
+export type SerpPatterns = {
+  title_patterns: string[];
+  themes: string[];
+  high_performers: { title: string; saves: number | null }[];
+  summary: string;
+  generated_at: string;
+};
+
+// Summarize a keyword's scraped top pins into structured "what's working"
+// patterns via OpenAI, and store them on the serp_snapshot row (the
+// `patterns` column existed in the schema but was never populated until
+// now). This is enrichment on top of the sweep, not core to it -- if the
+// user hasn't configured OpenAI, or the summarization call fails, we log
+// via markIntegration and move on rather than failing the whole sweep.
+async function summarizeAndStorePatterns(userId: string, snapshotId: string, keyword: string, topPins: TopPin[]) {
+  const { getIntegration, markIntegration } = await import("./integrations.server");
+  const { openaiJSON } = await import("./openai.server");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  const cfg = await getIntegration(userId, "openai");
+  if (!cfg?.api_key) return; // optional enrichment -- no key configured, skip quietly
+
+  const pinsForPrompt = topPins
+    .filter((p) => p.title)
+    .map((p) => ({ title: p.title, description: p.description?.slice(0, 300), saves: p.saves ?? null }));
+  if (!pinsForPrompt.length) return;
+
+  try {
+    type PatternsResp = {
+      title_patterns: string[];
+      themes: string[];
+      high_performers: { title: string; saves: number | null }[];
+      summary: string;
+    };
+    const resp = await openaiJSON<PatternsResp>({
+      apiKey: cfg.api_key,
+      model: "gpt-4o-mini",
+      system: `You are a Pinterest competitive-research analyst. You'll be given the top-ranking pins currently showing for a Pinterest search. Return strict JSON summarizing PATTERNS ACROSS them, not a description of any single pin:
+- title_patterns: 3-6 short strings describing recurring TITLE FORMATS ("N ways to ___", "X vs Y comparisons", "question-format hooks", "before/after framing"). Describe the pattern, don't copy a title verbatim.
+- themes: 3-6 short strings describing recurring THEMES/ANGLES in the descriptions.
+- high_performers: up to 5 pins from the input whose saves count is notably high relative to the rest of the set — {title, saves}. If save counts are missing or not meaningfully different across pins, return an empty array rather than guessing.
+- summary: one or two plain-English sentences on what's currently working for this keyword on Pinterest.`,
+      user: `Keyword: ${keyword}\n\nTop pins currently ranking (title, description, saves):\n${JSON.stringify(pinsForPrompt)}`,
+    });
+
+    const patterns: SerpPatterns = { ...resp, generated_at: new Date().toISOString() };
+    await supabaseAdmin.from("serp_snapshots").update({ patterns }).eq("id", snapshotId).eq("user_id", userId);
+    await markIntegration(userId, "openai", "ok");
+  } catch (e) {
+    await markIntegration(userId, "openai", "error", e instanceof Error ? e.message : String(e));
+  }
+}
+
 export const listKeywords = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -46,8 +101,18 @@ export const runSerpSweep = createServerFn({ method: "POST" })
         const top_pins = items.slice(0, 25).map((p) => ({
           url: p.pinUrl, title: p.title, description: p.description, image: p.imageUrl, board: p.boardName, saves: p.saves,
         }));
-        await supabaseAdmin.from("serp_snapshots").insert({ user_id: context.userId, keyword, top_pins });
+        const { data: snapshot } = await supabaseAdmin
+          .from("serp_snapshots")
+          .insert({ user_id: context.userId, keyword, top_pins })
+          .select("id")
+          .single();
         swept++;
+        // Best-effort: summarize into `patterns` for brief generation to
+        // use later. Failure here shouldn't fail the sweep itself -- the
+        // snapshot's raw top_pins are already saved either way.
+        if (snapshot?.id) {
+          await summarizeAndStorePatterns(context.userId, snapshot.id, keyword, top_pins);
+        }
       } catch (e) {
         await markIntegration(context.userId, "apify", "error", e instanceof Error ? e.message : String(e));
       }
