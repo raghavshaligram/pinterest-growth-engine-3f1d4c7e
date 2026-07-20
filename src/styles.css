@@ -164,6 +164,12 @@
 @layer base {
   * { border-color: var(--color-border); }
   html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  /* Reserve a stable gutter for the viewport scrollbar so any layout that
+     crosses the viewport-height threshold (e.g. a card animating taller)
+     doesn't shift page width when the scrollbar toggles on/off.
+     overflow-y: scroll is the fallback for browsers without
+     scrollbar-gutter support — both are safe to set together. */
+  html { overflow-y: scroll; scrollbar-gutter: stable; }
   body { font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
   .font-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.03em; }
   h1, h2, h3 { letter-spacing: -0.025em; }

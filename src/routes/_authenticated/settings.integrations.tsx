@@ -107,6 +107,28 @@ const WEBHOOK_PAYLOAD_EXAMPLE = `{
   "image_url": "<signed pin image URL, valid 24h>"
 }`;
 
+// Animates height smoothly between a collapsed (0fr) and expanded (1fr) row
+// using the CSS grid-template-rows trick, instead of a raw conditional
+// that snaps between two different-height blocks. Both `open` and `!open`
+// content stay mounted the whole time — only the row's fraction (and thus
+// its rendered height) changes — so toggling never unmounts/remounts
+// whatever's inside, and the transition animates smoothly regardless of
+// how tall either side's content actually is.
+function CollapsibleSection(props: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateRows: props.open ? "1fr" : "0fr",
+        transition: "grid-template-rows 250ms ease",
+      }}
+      aria-hidden={!props.open}
+    >
+      <div className="overflow-hidden">{props.children}</div>
+    </div>
+  );
+}
+
 function PinterestCard(props: {
   status?: { status: string; last_error?: string | null; last_used_at?: string | null };
   onChanged: () => void;
@@ -192,11 +214,13 @@ function PinterestCard(props: {
         </p>
       </div>
 
-      {mode === "api" ? (
+      <CollapsibleSection open={mode === "api"}>
         <div className="mt-4 border-t pt-4">
           <PinterestConnectButton />
         </div>
-      ) : (
+      </CollapsibleSection>
+
+      <CollapsibleSection open={mode === "webhook"}>
         <div className="mt-4 space-y-4 border-t pt-4">
           <div>
             <Label className="text-xs">Webhook URL</Label>
@@ -224,7 +248,7 @@ function PinterestCard(props: {
             </pre>
           </div>
         </div>
-      )}
+      </CollapsibleSection>
     </Card>
   );
 }
@@ -234,7 +258,7 @@ function IntegrationCard(props: {
   title: string;
   description: string;
   fields: { name: string; label: string; placeholder?: string; type: "text" | "password" }[];
-  status?: { status: string; last_error?: string | null; last_used_at?: string | null };
+  status?: { status: string; last_error?: string | null; last_used_at?: string | null; has_value?: boolean };
   onChanged: () => void;
   extra?: React.ReactNode;
 }) {
@@ -250,7 +274,14 @@ function IntegrationCard(props: {
   });
   const testMut = useMutation({
     mutationFn: () => test({ data: { provider: props.provider } }),
-    onSuccess: (r) => { r.ok ? toast.success(r.message) : toast.error(r.message); props.onChanged(); },
+    onSuccess: (r) => {
+      // Test always validates whatever's already saved on the server, never
+      // unsaved text in the fields above — make that explicit so a passing
+      // test can't be misread as "the box's current contents are connected."
+      const prefix = "Testing saved credential — ";
+      r.ok ? toast.success(prefix + r.message) : toast.error(prefix + r.message);
+      props.onChanged();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
   const delMut = useMutation({
@@ -259,6 +290,7 @@ function IntegrationCard(props: {
   });
 
   const status = props.status?.status ?? "unconfigured";
+  const hasValue = props.status?.has_value ?? false;
   return (
     <Card className="p-6">
       <div className="mb-2 flex items-center justify-between">
@@ -277,18 +309,27 @@ function IntegrationCard(props: {
         onSubmit={(e) => { e.preventDefault(); saveMut.mutate(); }}
         className="space-y-3"
       >
-        {props.fields.map((f) => (
-          <div key={f.name}>
-            <Label>{f.label}</Label>
-            <Input
-              type={f.type}
-              placeholder={f.placeholder}
-              value={vals[f.name] ?? ""}
-              onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
-              autoComplete="new-password"
-            />
-          </div>
-        ))}
+        {props.fields.map((f) => {
+          // The credential (password-type) field never gets its actual value
+          // sent to the client — has_value just tells us one is stored, so
+          // an empty box can say "something's saved" instead of looking
+          // identical to "nothing's ever been saved here."
+          const placeholder = f.type === "password" && hasValue && !vals[f.name]
+            ? "•••••••• (saved — leave blank to keep)"
+            : f.placeholder;
+          return (
+            <div key={f.name}>
+              <Label>{f.label}</Label>
+              <Input
+                type={f.type}
+                placeholder={placeholder}
+                value={vals[f.name] ?? ""}
+                onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
+                autoComplete="new-password"
+              />
+            </div>
+          );
+        })}
         <div className="flex flex-wrap gap-2 pt-2">
           <Button type="submit" size="sm" disabled={saveMut.isPending}>Save</Button>
           <Button type="button" size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
@@ -298,6 +339,9 @@ function IntegrationCard(props: {
             <Trash2 className="mr-1 h-4 w-4" />Clear
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Test checks the credential already saved on the server — not unsaved text typed above. Click Save first to test a new value.
+        </p>
         {props.status?.last_error && (
           <p className="pt-2 text-xs text-destructive">{props.status.last_error}</p>
         )}

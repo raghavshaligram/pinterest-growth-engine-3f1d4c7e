@@ -19,11 +19,18 @@ export const startPinterestOAuth = createServerFn({ method: "POST" })
   });
 
 const providerSchema = z.enum(["openai", "replicate", "apify", "pinterest"]);
+type ProviderName = z.infer<typeof providerSchema>;
 
+// Credential fields are optional at the schema level for every provider —
+// this lets a partial save go through (e.g. just updating Apify's actor_id,
+// or flipping Pinterest's publish_mode) without forcing the caller to
+// resupply a field that's already stored. saveIntegration enforces "must
+// have SOME value, from this request or the existing config" itself, at
+// the merge step below, using CREDENTIAL_FIELD.
 const configShapes = {
-  openai: z.object({ api_key: z.string().min(10) }),
-  replicate: z.object({ api_token: z.string().min(10) }),
-  apify: z.object({ api_token: z.string().min(10), actor_id: z.string().optional() }),
+  openai: z.object({ api_key: z.string().min(10).optional() }),
+  replicate: z.object({ api_token: z.string().min(10).optional() }),
+  apify: z.object({ api_token: z.string().min(10).optional(), actor_id: z.string().optional() }),
   pinterest: z.object({
     access_token: z.string().optional(),
     refresh_token: z.string().optional(),
@@ -32,14 +39,44 @@ const configShapes = {
   }),
 } as const;
 
+// The one field per provider that represents "a credential is actually
+// configured" — used both to reject a save that would leave the provider
+// with no credential at all, and (in listIntegrations) to tell the client
+// whether a value exists without ever sending the value itself. Pinterest
+// is null here because its access_token is never submitted through this
+// form — it's written by the OAuth callback route directly.
+const CREDENTIAL_FIELD: Record<ProviderName, string | null> = {
+  openai: "api_key",
+  replicate: "api_token",
+  apify: "api_token",
+  pinterest: null,
+};
+
+// Returns has_value alongside the usual status metadata — never the
+// credential itself. config_ciphertext is decrypted in-process to compute
+// the boolean and then discarded; it's not part of the returned shape.
 export const listIntegrations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("integrations")
-      .select("provider, status, last_used_at, last_error, updated_at");
+      .select("provider, status, last_used_at, last_error, updated_at, config_ciphertext");
     if (error) throw error;
-    return data ?? [];
+    const { decrypt } = await import("./crypto.server");
+    return (data ?? []).map((row) => {
+      const { config_ciphertext, provider, ...rest } = row;
+      const field = CREDENTIAL_FIELD[provider as ProviderName];
+      let has_value = false;
+      if (field) {
+        try {
+          const cfg = JSON.parse(decrypt(config_ciphertext)) as Record<string, unknown>;
+          has_value = Boolean(cfg[field]);
+        } catch {
+          has_value = false;
+        }
+      }
+      return { provider, ...rest, has_value };
+    });
   });
 
 export const saveIntegration = createServerFn({ method: "POST" })
@@ -66,7 +103,16 @@ export const saveIntegration = createServerFn({ method: "POST" })
       .eq("provider", data.provider)
       .maybeSingle();
     const existing = existingRow ? (JSON.parse(decrypt(existingRow.config_ciphertext)) as Record<string, unknown>) : {};
-    const merged = { ...existing, ...parsed };
+    const merged: Record<string, unknown> = { ...existing, ...parsed };
+
+    // Now that credential fields are optional at the schema level (so a
+    // partial save can go through at all), enforce here that the provider
+    // ends up with SOME credential — either just-submitted or already
+    // stored — instead of silently persisting a config with no usable key.
+    const requiredField = CREDENTIAL_FIELD[data.provider];
+    if (requiredField && !merged[requiredField]) {
+      throw new Error(`${requiredField} is required — enter a value before saving.`);
+    }
 
     const ciphertext = encrypt(JSON.stringify(merged));
     const { error } = await supabaseAdmin.from("integrations").upsert(
