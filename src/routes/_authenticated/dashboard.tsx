@@ -169,9 +169,9 @@ function DashboardPage() {
             View all
           </Link>
         </div>
-        {pinned.length ? (
+        {visiblePinned.length ? (
           <div className="flex items-center gap-5 overflow-x-auto pb-2 pt-2 scrollbar-hide">
-            {pinned.map((p, i) => {
+            {visiblePinned.map((p, i) => {
               const rot = i % 2 === 0 ? -1.5 : 1.5;
               return (
                 <div key={p.id} className="w-32 shrink-0" style={{ transform: `rotate(${rot}deg)` }}>
