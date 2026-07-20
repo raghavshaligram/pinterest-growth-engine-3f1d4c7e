@@ -13,8 +13,18 @@ import { loadEnv } from "vite";
 // fail if the runtime `process.env` is not populated. We define the public Supabase variables as
 // static replacements so the server-side code can resolve them without depending on runtime env.
 const env = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
-const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL || "";
-const supabaseKey = env.SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+const supabaseUrl =
+  env.SUPABASE_URL ||
+  env.VITE_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  "https://nglirfhptuctfeebrtap.supabase.co";
+const supabaseKey =
+  env.SUPABASE_PUBLISHABLE_KEY ||
+  env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.SUPABASE_PUBLISHABLE_KEY ||
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  "sb_publishable_12wGvWpw5vh2uZAqrC8A3Q_Km6xgjAq";
 
 export default defineConfig({
   tanstackStart: {
@@ -24,6 +34,8 @@ export default defineConfig({
   },
   vite: {
     define: {
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabaseKey),
       "process.env.SUPABASE_URL": JSON.stringify(supabaseUrl),
       "process.env.SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabaseKey),
     },
