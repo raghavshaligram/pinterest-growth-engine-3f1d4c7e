@@ -224,25 +224,61 @@ function DashboardPage() {
         )}
       </section>
 
-      {/* minmax(0, Nfr) instead of a bare Nfr is required here: bare fr
-          tracks default to min-width: auto, so an oversized Activity feed
-          (long messages, many rows) blows the column out to its content's
-          intrinsic width instead of respecting the 1.3fr/1fr split -- and
-          on top of that, min-w-0 on the grid items themselves is needed
-          too, since a grid item's own default min-width: auto can still
-          force the track wider even when the track itself is constrained. */}
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      {/* Quick summary strip — 4 tiles reinforcing pipeline numbers and
+          this week's error count. Pure visual layer, no new server work. */}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "Scheduled", value: pipeline?.scheduled ?? 0 },
+          { label: "Published", value: pipeline?.published ?? 0 },
+          { label: "Images ready", value: pipeline?.images ?? 0 },
+          { label: "Errors", value: errorLogs.length, tone: "danger" as const },
+        ].map((tile) => (
+          <div
+            key={tile.label}
+            className="card-glow rounded-[12px] px-4 py-3.5"
+            style={{
+              backgroundColor: "var(--bg-card)",
+              border: "1px solid var(--border-subtle)",
+              backgroundImage: tile.tone === "danger" ? "none" : "var(--gradient-primary-soft)",
+            }}
+          >
+            <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+              {tile.label}
+            </div>
+            <div
+              className="mt-1 font-display text-2xl"
+              style={{
+                color:
+                  tile.tone === "danger" && tile.value > 0 ? "var(--destructive)" : "var(--text-primary)",
+              }}
+            >
+              {tile.value}
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* minmax(0, Nfr) so a wide Activity row can't blow the track out. */}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <section
-          className="flex min-w-0 flex-col rounded-[8px]"
-          style={{ border: "1px solid var(--border-subtle)" }}
+          className="card-glow flex min-w-0 flex-col rounded-[12px]"
+          style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex items-center justify-between px-4 pt-3 pb-2">
-            <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Activity</h2>
+          <div className="flex items-center justify-between px-5 pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Activity</h2>
+              <span
+                className="rounded-full px-1.5 py-0.5 font-mono text-[10px]"
+                style={{ backgroundColor: "var(--surface-hover)", color: "var(--text-secondary)" }}
+              >
+                {allLogs.length}
+              </span>
+            </div>
             <Link to="/logs" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
               View all
             </Link>
           </div>
-          <div className="px-4 pb-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          <div className="px-3 pb-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
             {errorLogs.map((l) => (
               <ActivityRow key={l.id} log={l} variant="error" />
             ))}
@@ -250,24 +286,26 @@ function DashboardPage() {
               <ActivityRow key={l.id} log={l} variant="normal" />
             ))}
             {manualVisible.map((l) => (
-              <ActivityRow key={l.id} log={l} variant="normal" />
+              <ActivityRow key={l.id} log={l} variant="manual" />
             ))}
             {manualHiddenCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setManualExpanded((v) => !v)}
-                className="flex w-full items-center justify-center gap-1 py-2.5 text-xs"
-                style={{ color: "var(--text-secondary)", borderBottom: "1px solid var(--border-subtle)" }}
-              >
-                {manualExpanded ? (
-                  <>Show fewer <ChevronUp className="h-3 w-3" /></>
-                ) : (
-                  <>{manualHiddenCount} more manually posted this week <ChevronDown className="h-3 w-3" /></>
-                )}
-              </button>
+              <div className="flex justify-center pt-2 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setManualExpanded((v) => !v)}
+                  className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                  style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                >
+                  {manualExpanded ? (
+                    <>Show fewer <ChevronUp className="h-3 w-3" /></>
+                  ) : (
+                    <>{manualHiddenCount} more manually posted <ChevronDown className="h-3 w-3" /></>
+                  )}
+                </button>
+              </div>
             )}
             {!allLogs.length && (
-              <div className="py-6 text-sm" style={{ color: "var(--text-secondary)" }}>
+              <div className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
                 No activity yet.
               </div>
             )}
@@ -276,37 +314,52 @@ function DashboardPage() {
 
         <div className="flex min-w-0 flex-col gap-6">
           <section
-            className="flex min-w-0 flex-col rounded-[8px]"
-            style={{ border: "1px solid var(--border-subtle)" }}
+            className="card-glow flex min-w-0 flex-col rounded-[12px]"
+            style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
           >
-            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Integrations</h2>
               <Link to="/settings/integrations" className="text-xs hover:underline" style={{ color: "var(--accent)" }}>
                 Manage
               </Link>
             </div>
-            <div className="px-4 pb-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {providers.map((p, idx) => {
+            <div className="grid grid-cols-2 gap-2 p-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              {providers.map((p) => {
                 const row = data?.integrations.find((i) => i.provider === p);
                 const ok = row?.status === "ok";
+                const errored = row?.status === "error";
                 return (
                   <div
                     key={p}
-                    className="flex items-center justify-between py-2.5"
-                    style={{ borderBottom: idx === providers.length - 1 ? undefined : "1px solid var(--border-subtle)" }}
+                    className="rounded-[10px] p-3"
+                    style={{
+                      border: "1px solid var(--border-subtle)",
+                      backgroundImage: ok ? "var(--gradient-primary-soft)" : "none",
+                    }}
                   >
-                    <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
-                    {ok ? (
-                      <Check className="h-3.5 w-3.5" style={{ color: "var(--success)" }} />
-                    ) : (
-                      <Link
-                        to="/settings/integrations"
-                        className="text-xs hover:underline"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {row?.status === "error" ? "Reconnect" : "Connect"}
-                      </Link>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor: ok ? "var(--success)" : errored ? "var(--destructive)" : "var(--text-muted)",
+                          boxShadow: ok ? "0 0 8px color-mix(in oklab, var(--success) 60%, transparent)" : undefined,
+                        }}
+                      />
+                      <span className="text-sm capitalize" style={{ color: "var(--text-primary)" }}>{p}</span>
+                    </div>
+                    <div className="mt-1.5">
+                      {ok ? (
+                        <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>Connected</span>
+                      ) : (
+                        <Link
+                          to="/settings/integrations"
+                          className="text-[11px] hover:underline"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          {errored ? "Reconnect →" : "Connect →"}
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -314,27 +367,50 @@ function DashboardPage() {
           </section>
 
           <section
-            className="flex min-w-0 flex-col rounded-[8px]"
-            style={{ border: "1px solid var(--border-subtle)" }}
+            className="card-glow flex min-w-0 flex-col rounded-[12px]"
+            style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
           >
-            <div className="flex items-baseline gap-2 px-4 pt-3 pb-2">
+            <div className="flex items-baseline gap-2 px-5 pt-4 pb-3">
               <h2 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Pins by board</h2>
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>this week</span>
             </div>
-            <div className="px-4 pb-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              {(data?.pinsByBoard ?? []).map((b, idx, arr) => (
-                <div
-                  key={b.name}
-                  className="flex items-center justify-between py-2.5"
-                  style={{ borderBottom: idx === arr.length - 1 ? undefined : "1px solid var(--border-subtle)" }}
-                >
-                  <span className="truncate text-sm" style={{ color: "var(--text-primary)" }}>{b.name}</span>
-                  <span className="font-mono text-xs" style={{ color: "var(--text-secondary)" }}>{b.count}</span>
-                </div>
-              ))}
+            <div className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              {(() => {
+                const boards = data?.pinsByBoard ?? [];
+                const max = Math.max(1, ...boards.map((b) => b.count));
+                return boards.map((b) => (
+                  <div key={b.name} className="flex items-center gap-3">
+                    <span
+                      className="min-w-0 flex-1 truncate text-sm"
+                      style={{ color: "var(--text-primary)" }}
+                      title={b.name}
+                    >
+                      {b.name}
+                    </span>
+                    <div
+                      className="h-1.5 w-24 overflow-hidden rounded-full"
+                      style={{ backgroundColor: "var(--border-subtle)" }}
+                    >
+                      <div
+                        className="h-full rounded-full bg-gradient-primary"
+                        style={{ width: `${(b.count / max) * 100}%` }}
+                      />
+                    </div>
+                    <span
+                      className="w-6 shrink-0 text-right font-mono text-xs"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {b.count}
+                    </span>
+                  </div>
+                ));
+              })()}
               {!data?.pinsByBoard?.length && (
-                <div className="py-4 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  Nothing published this week yet.
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                  Nothing published this week yet.{" "}
+                  <Link to="/schedule" className="hover:underline" style={{ color: "var(--accent)" }}>
+                    Schedule pins →
+                  </Link>
                 </div>
               )}
             </div>
@@ -342,39 +418,53 @@ function DashboardPage() {
         </div>
       </div>
 
+
     </div>
   );
 }
 
-function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" }) {
+function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal" | "manual" }) {
   const isError = variant === "error";
+  const dotColor =
+    variant === "error"
+      ? "var(--destructive)"
+      : variant === "manual"
+        ? "var(--accent-soft)"
+        : "var(--success)";
   return (
     <div
-      className="flex items-center gap-3 rounded-[6px] py-2.5"
+      className="flex items-center gap-3 rounded-[8px] px-2 py-2 transition-colors hover:bg-accent"
       style={{
-        borderBottom: "1px solid var(--border-subtle)",
-        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 8%, transparent)" : undefined,
-        paddingLeft: isError ? 8 : 0,
-        paddingRight: isError ? 8 : 0,
-        marginLeft: isError ? -8 : 0,
-        marginRight: isError ? -8 : 0,
+        backgroundColor: isError ? "color-mix(in oklab, var(--destructive) 6%, transparent)" : undefined,
       }}
     >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: dotColor }}
+        aria-hidden
+      />
       {isError ? (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "color-mix(in oklab, var(--destructive) 15%, transparent)" }}
         >
-          <AlertTriangle className="h-3.5 w-3.5" style={{ color: "var(--destructive)" }} />
+          <AlertTriangle className="h-4 w-4" style={{ color: "var(--destructive)" }} />
         </span>
       ) : log.thumbUrl ? (
-        <img src={log.thumbUrl} alt="" className="h-7 w-7 shrink-0 rounded-[6px] object-cover" style={{ border: "1px solid var(--border)" }} />
+        <img
+          src={log.thumbUrl}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-[8px] object-cover"
+          style={{
+            border: `1.5px solid ${variant === "manual" ? "color-mix(in oklab, var(--accent) 40%, transparent)" : "var(--border)"}`,
+          }}
+        />
       ) : (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]"
           style={{ backgroundColor: "var(--border-subtle)" }}
         >
-          <Pin className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
+          <Pin className="h-3.5 w-3.5" style={{ color: "var(--text-muted)" }} />
         </span>
       )}
       <div className="min-w-0 flex-1">
@@ -399,6 +489,7 @@ function ActivityRow({ log, variant }: { log: LogRow; variant: "error" | "normal
     </div>
   );
 }
+
 
 function ActionLink(props: { label: string; pending: boolean; onClick: () => void }) {
   return (

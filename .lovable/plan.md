@@ -1,72 +1,48 @@
-# Blotato-inspired design refresh (full app, loose interpretation)
+# Dashboard visual refresh (below "Pinned this week")
 
-Keep Pinspider's warm Pinterest-red identity, but borrow Blotato's energy: deeper near-black background, a **coral→magenta gradient** as the signature accent, glowing gradient CTAs, bold sans-serif display type, and subtle radial halos. Not a copy — no yellow announcement bar, no hot-pink neon, no mockup pane.
+The current Activity / Integrations / Pins-by-board area reads like a plain three-column table stack — thin hairlines, tiny mono text, no color, no depth. It's information-dense but visually flat and doesn't match the warm coral/magenta identity of the rest of the app.
 
-## Design tokens (src/styles.css)
+## Direction
 
-- **Background**: darker, cooler near-black. `--background: oklch(0.12 0.015 15)`; `--card: oklch(0.16 0.017 15)`; `--sidebar: oklch(0.10 0.012 15)`.
-- **Primary**: keep warm coral-red `oklch(0.66 0.20 25)` as solid token, but introduce a gradient pair:
-  - `--primary-glow: oklch(0.66 0.24 355)` (magenta)
-  - `--gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--primary-glow) 100%)`
-  - `--gradient-primary-soft: linear-gradient(135deg, oklch(0.66 0.20 25 / 0.15), oklch(0.66 0.24 355 / 0.15))`
-  - `--shadow-glow: 0 0 40px -8px oklch(0.66 0.22 355 / 0.45), 0 0 80px -20px oklch(0.66 0.20 25 / 0.35)`
-- **Border**: tighter, cooler `oklch(0.22 0.012 15)`.
-- **Radius**: bump to `1rem` for a softer, more modern feel.
+Lean into the app's existing tokens (`--gradient-primary`, `--shadow-glow`, `card-glow`) so this block feels like part of Pinspider, not a dev console. Keep the same data — just present it with more hierarchy, color, and personality.
 
-## Typography
+## Layout changes
 
-- Swap display font from *Instrument Serif* to **Space Grotesk** (bold, geometric, matches Blotato energy without cloning Inter). Body stays Inter.
-- Load via `<link>` in `src/routes/__root.tsx` (never `@import` in CSS per Tailwind v4 rules).
-- Update `--font-display` in `@theme` and `.font-display` weight to 600.
-- Tighter tracking on headings (`-0.03em`) for the bold display look.
+- Keep the 1.3fr / 1fr split, but widen the gap and give each panel a real card treatment: `--bg-card` fill, soft border, 12px radius, subtle `card-glow` halo on the top-right of each panel.
+- Panels get a proper header row (title + small count chip + action link) with a divider, instead of the current thin baseline.
+- Remove the dashed/hairline `border-subtle` row separators inside each card — replace with generous vertical spacing and, where useful, alternating row hover states.
 
-## Component-level changes
+## Activity panel (left)
 
-- **Button (`primary` variant)**: gradient background + subtle glow shadow on hover. Add a new `variant="gradient"` in `src/components/ui/button.tsx` using `--gradient-primary` and `--shadow-glow`.
-- **AppShell sidebar**:
-  - Logo icon gets a small gradient chip behind the Sparkles.
-  - Active nav item uses a left gradient bar + soft gradient tint background instead of flat `bg-sidebar-accent`.
-  - Sidebar keeps solid dark, but border becomes a hairline gradient on the right edge.
-- **Cards**: add a `.card-glow` utility (`@utility`) for hero/dashboard summary cards — subtle radial magenta halo top-right, thin border.
-- **Auth page (`/auth`)**: full-bleed background with two large soft radial halos (coral top-left, magenta bottom-right), centered card floats on top with backdrop blur, gradient submit button. Small "TRUSTED BY" style eyebrow chip above the heading.
-- **Dashboard**: promote the top stat row to gradient-tinted cards; primary CTA (e.g. "Generate pins") becomes the gradient button.
+- Bigger, rounder thumbnails (40px), with a colored ring for errors (destructive) and a faint coral ring for publishes.
+- Two-line row: primary line = pin title in `--text-primary`, secondary line = `→ Board · event` in `--text-secondary`.
+- Event verbs get a tiny colored dot on the left (green = published, coral = manually posted, red = error) so the eye can scan the feed by outcome.
+- Error rows keep the tinted destructive background but as a full-width pill inside the card, not a negative-margin hack.
+- "N more manually posted" collapse row becomes a soft ghost button centered at the bottom.
 
-## Utilities added to styles.css
+## Integrations panel (top right)
 
-```css
-@utility bg-gradient-primary { background-image: var(--gradient-primary); }
-@utility text-gradient-primary {
-  background-image: var(--gradient-primary);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-@utility shadow-glow { box-shadow: var(--shadow-glow); }
-@utility card-glow {
-  position: relative;
-  &::before {
-    content: "";
-    position: absolute; inset: 0;
-    background: radial-gradient(600px circle at 100% 0%, oklch(0.66 0.22 355 / 0.12), transparent 40%);
-    pointer-events: none; border-radius: inherit;
-  }
-}
-```
+- Turn the flat list into a 2×2 grid of provider tiles (OpenAI, Replicate, Apify, Pinterest).
+- Each tile: provider name, a status dot (green ok / coral needs-attention / red error), and a small "Connected" or "Connect" link. Connected tiles get a very subtle gradient tint; disconnected tiles stay neutral so the eye is drawn to what needs action.
+
+## Pins by board panel (bottom right)
+
+- Replace the plain "name — count" rows with horizontal mini bar chart rows: board name on the left, a thin bar filled with `--gradient-primary` proportional to the max count that week, count number on the right in mono.
+- Empty state: friendly one-liner + a subtle "Schedule pins" link to `/schedule`.
+
+## New: subtle "This week" summary strip
+
+Above these two columns, add a compact 4-tile strip (published, queued, drafts, errors) using the same gradient-tinted card treatment as the auth/dashboard hero cards elsewhere in the app. Purely visual reinforcement of the numbers already available in `pipeline` — no new server work.
 
 ## Files touched
 
-- `src/styles.css` — tokens, gradient vars, glow shadow, utilities, heading tracking, radius bump.
-- `src/routes/__root.tsx` — add Space Grotesk `<link>` in head.
-- `src/components/ui/button.tsx` — add `gradient` variant.
-- `src/components/AppShell.tsx` — logo chip, gradient active state, hairline right edge.
-- `src/routes/auth.tsx` — halo background, blurred card, gradient CTA, eyebrow chip.
-- `src/routes/_authenticated/dashboard.tsx` — apply `card-glow` + gradient CTA on primary actions.
+- `src/routes/_authenticated/dashboard.tsx` — restructure the lower grid, ActivityRow, Integrations, Pins-by-board, add the summary strip.
+- `src/styles.css` — only if a small helper utility is needed (e.g. `.ring-accent-soft`); reuse existing `card-glow`, gradient, and shadow tokens otherwise.
 
-## What I'm intentionally NOT doing
+## Not doing
 
-- No yellow announcement bar.
-- No hot-pink neon — the accent stays coral-leaning to preserve Pinterest brand link.
-- No app-preview mockup pane on the auth page.
-- No changes to business logic, server functions, or DB.
+- No schema, server function, or data-shape changes.
+- No changes to "Pinned this week", the pipeline stepper, or the sidebar.
+- No new fonts or palette shifts — strictly reusing existing tokens.
 
 Approve and I'll implement in one pass.
