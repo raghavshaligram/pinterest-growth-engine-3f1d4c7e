@@ -73,7 +73,7 @@ function DashboardPage() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [boardsExpanded, setBoardsExpanded] = useState(false);
   const ACTIVITY_COLLAPSED = 5;
-  const BOARDS_COLLAPSED = 5;
+  const BOARDS_COLLAPSED = 10;
 
   const { data } = useQuery({
     queryKey: ["dash", selectedSiteId],
