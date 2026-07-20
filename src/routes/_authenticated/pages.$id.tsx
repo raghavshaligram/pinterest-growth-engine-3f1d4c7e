@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/pages/$id")({
-  head: () => ({ meta: [{ title: "Page — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Page — Pinspider" }] }),
   component: PageDetail,
 });
 

@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="font-display text-xl tracking-tight">PinForge</span>
+          <span className="font-display text-xl tracking-tight">Pinspider</span>
         </div>
         <nav className="flex-1 space-y-0.5 px-3">
           {NAV.map(({ to, label, icon: Icon }) => {

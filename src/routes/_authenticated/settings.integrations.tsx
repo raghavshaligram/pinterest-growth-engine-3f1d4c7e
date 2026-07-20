@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestRedirectUri } from "@/lib/integrations.functions";
+import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestRedirectUri, getPinterestPublishMode } from "@/lib/integrations.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Copy } f
 type Provider = "openai" | "replicate" | "apify" | "pinterest";
 
 export const Route = createFileRoute("/_authenticated/settings/integrations")({
-  head: () => ({ meta: [{ title: "Integrations — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Integrations — Pinspider" }] }),
   component: IntegrationsPage,
 });
 
@@ -100,6 +100,7 @@ function IntegrationsPage() {
                 </Button>
               </div>
               <PinterestConnectButton />
+              <PinterestPublishModeToggle />
             </div>
           }
         />
@@ -120,6 +121,56 @@ function PinterestConnectButton() {
       <LinkIcon className="mr-1 h-4 w-4" />
       {connect.isPending ? "Redirecting…" : "Connect Pinterest"}
     </Button>
+  );
+}
+
+function PinterestPublishModeToggle() {
+  const qc = useQueryClient();
+  const getMode = useServerFn(getPinterestPublishMode);
+  const save = useServerFn(saveIntegration);
+
+  const { data } = useQuery({ queryKey: ["pinterest-publish-mode"], queryFn: () => getMode() });
+  const mode = data?.publish_mode ?? "api";
+
+  const setMode = useMutation({
+    mutationFn: (next: "api" | "webhook") =>
+      save({ data: { provider: "pinterest", config: { publish_mode: next } } }),
+    onSuccess: (_r, next) => {
+      toast.success(next === "api" ? "Publishing via Pinterest API" : "Publishing via webhook");
+      qc.invalidateQueries({ queryKey: ["pinterest-publish-mode"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <Label className="text-xs">Publish mode</Label>
+      <div className="inline-flex rounded-md border p-0.5">
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "api" ? "default" : "ghost"}
+          className="h-7 px-3"
+          disabled={setMode.isPending}
+          onClick={() => setMode.mutate("api")}
+        >
+          API
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "webhook" ? "default" : "ghost"}
+          className="h-7 px-3"
+          disabled={setMode.isPending}
+          onClick={() => setMode.mutate("webhook")}
+        >
+          Webhook
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        API publishes directly to your connected Pinterest account. Webhook routes through a custom automation (e.g. Make.com, Zapier) instead.
+      </p>
+    </div>
   );
 }
 

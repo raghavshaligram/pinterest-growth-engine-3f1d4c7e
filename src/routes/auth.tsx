@@ -13,8 +13,8 @@ export const Route = createFileRoute("/auth")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Sign in — PinForge" },
-      { name: "description", content: "Sign in to PinForge to run your Pinterest growth engine." },
+      { title: "Sign in — Pinspider" },
+      { name: "description", content: "Sign in to Pinspider to run your Pinterest growth engine." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -61,7 +61,7 @@ function AuthPage() {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="font-display text-3xl">PinForge</span>
+          <span className="font-display text-3xl">Pinspider</span>
         </div>
         <div className="mb-6 text-center">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-[11px] uppercase tracking-widest text-muted-foreground backdrop-blur">

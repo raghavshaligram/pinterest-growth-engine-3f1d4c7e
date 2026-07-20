@@ -12,7 +12,7 @@ import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Tr
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/pins")({
-  head: () => ({ meta: [{ title: "Pins — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Pins — Pinspider" }] }),
   component: PinsPage,
 });
 

@@ -73,9 +73,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "PinForge — Pinterest SEO & Auto-Pinning" },
+      { title: "Pinspider — Pinterest SEO & Auto-Pinning" },
       { name: "description", content: "AI-powered Pinterest growth engine: discover pages, generate pins with Nano Banana 2, schedule and publish automatically." },
-      { property: "og:title", content: "PinForge — Pinterest SEO & Auto-Pinning" },
+      { property: "og:title", content: "Pinspider — Pinterest SEO & Auto-Pinning" },
       { property: "og:description", content: "AI-powered Pinterest growth engine for websites." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

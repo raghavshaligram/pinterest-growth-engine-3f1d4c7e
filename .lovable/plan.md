@@ -1,6 +1,6 @@
 # Blotato-inspired design refresh (full app, loose interpretation)
 
-Keep PinForge's warm Pinterest-red identity, but borrow Blotato's energy: deeper near-black background, a **coral→magenta gradient** as the signature accent, glowing gradient CTAs, bold sans-serif display type, and subtle radial halos. Not a copy — no yellow announcement bar, no hot-pink neon, no mockup pane.
+Keep Pinspider's warm Pinterest-red identity, but borrow Blotato's energy: deeper near-black background, a **coral→magenta gradient** as the signature accent, glowing gradient CTAs, bold sans-serif display type, and subtle radial halos. Not a copy — no yellow announcement bar, no hot-pink neon, no mockup pane.
 
 ## Design tokens (src/styles.css)
 

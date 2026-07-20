@@ -1,4 +1,5 @@
-// Server-only publisher. Chooses API vs Apify vs export mode per user integrations.
+// Server-only publisher. Publishes due pins via the user's Pinterest client
+// (direct API by default, Make.com webhook if the user opted into publish_mode: "webhook").
 export async function processDuePinsForUser(userId: string, limit = 25, onlyId?: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { makePinterestClient } = await import("./pinterest.server");
@@ -16,7 +17,11 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
   if (!due?.length) return { processed: 0 };
 
   const client = await makePinterestClient(userId);
-  let ok = 0, fail = 0, exported = 0;
+  let ok = 0, fail = 0;
+  // No publish mode produces "exported" results anymore (dead "export" mode
+  // removed), but the field is kept at 0 for compatibility with schedule.tsx's
+  // result toast, which still reads r.exported as a fallback.
+  const exported = 0;
 
   for (const sp of due) {
     try {
@@ -30,6 +35,16 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       const imageUrl = signed.data?.signedUrl;
       if (!imageUrl) throw new Error("Could not sign image URL");
 
+      // Direct-API mode needs a real Pinterest board id — an unsynced board
+      // (created locally, never synced from Pinterest) can't be published to
+      // yet, so fail fast with a clear message instead of a confusing
+      // Pinterest 400.
+      if (client.mode === "api" && !board.pinterest_board_id) {
+        throw new Error(
+          'Board is not linked to a Pinterest board — run "Sync boards" in Settings → Integrations, or set publish_mode to "webhook" for this account.',
+        );
+      }
+
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
       const input = {
         userId,
@@ -42,30 +57,17 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
         altText: brief.alt_text ?? undefined,
       };
 
-      if (client.mode === "export") {
-        await supabaseAdmin.from("scheduled_pins").update({
-          status: "exported",
-          published_at: new Date().toISOString(),
-        }).eq("id", sp.id);
-        await supabaseAdmin.from("publish_logs").insert({
-          user_id: userId, scheduled_pin_id: sp.id, level: "info", message: "Exported (no Pinterest credentials)",
-        });
-        exported++;
-      } else {
-        const result = await client.publish(input);
-        const pinId = result.mode === "api" ? result.pinterestPinId
-          : result.mode === "webhook" ? (result.pinterestPinId ?? null)
-          : null;
-        await supabaseAdmin.from("scheduled_pins").update({
-          status: "published",
-          pinterest_pin_id: pinId,
-          published_at: new Date().toISOString(),
-        }).eq("id", sp.id);
-        await supabaseAdmin.from("publish_logs").insert({
-          user_id: userId, scheduled_pin_id: sp.id, level: "info", message: `Published via ${result.mode}${pinId ? ` (${pinId})` : ""}`,
-        });
-        ok++;
-      }
+      const result = await client.publish(input);
+      const pinId = result.pinterestPinId ?? null;
+      await supabaseAdmin.from("scheduled_pins").update({
+        status: "published",
+        pinterest_pin_id: pinId,
+        published_at: new Date().toISOString(),
+      }).eq("id", sp.id);
+      await supabaseAdmin.from("publish_logs").insert({
+        user_id: userId, scheduled_pin_id: sp.id, level: "info", message: `Published via ${result.mode}${pinId ? ` (${pinId})` : ""}`,
+      });
+      ok++;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       fail++;

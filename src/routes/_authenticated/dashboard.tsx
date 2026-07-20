@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Activity, ImageIcon, Send, Search, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — Pinspider" }] }),
   component: DashboardPage,
 });
 

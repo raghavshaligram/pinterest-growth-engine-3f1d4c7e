@@ -6,7 +6,7 @@ async function fetchText(url: string, timeoutMs = 15000): Promise<string> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "PinForgeBot/1.0" } });
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "PinspiderBot/1.0" } });
     if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     return await r.text();
   } finally {

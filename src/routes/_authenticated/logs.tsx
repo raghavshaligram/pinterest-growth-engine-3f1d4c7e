@@ -18,7 +18,7 @@ const listLogs = createServerFn({ method: "GET" })
   });
 
 export const Route = createFileRoute("/_authenticated/logs")({
-  head: () => ({ meta: [{ title: "Logs — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Logs — Pinspider" }] }),
   component: LogsPage,
 });
 

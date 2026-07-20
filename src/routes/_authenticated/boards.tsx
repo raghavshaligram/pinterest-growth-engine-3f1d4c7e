@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { LayoutGrid, Trash2, RefreshCw, Save } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/boards")({
-  head: () => ({ meta: [{ title: "Boards — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Boards — Pinspider" }] }),
   component: BoardsPage,
 });
 

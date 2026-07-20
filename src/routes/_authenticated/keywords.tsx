@@ -10,7 +10,7 @@ import { Search } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/keywords")({
-  head: () => ({ meta: [{ title: "Keywords — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Keywords — Pinspider" }] }),
   component: KeywordsPage,
 });
 

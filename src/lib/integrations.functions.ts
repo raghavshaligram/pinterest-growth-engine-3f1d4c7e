@@ -41,6 +41,7 @@ const configShapes = {
     refresh_token: z.string().optional(),
     app_id: z.string().optional(),
     app_secret: z.string().optional(),
+    publish_mode: z.enum(["api", "webhook"]).optional(),
   }),
 } as const;
 
@@ -63,9 +64,24 @@ export const saveIntegration = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const shape = configShapes[data.provider];
     const parsed = shape.parse(data.config);
-    const { encrypt } = await import("./crypto.server");
+    const { encrypt, decrypt } = await import("./crypto.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const ciphertext = encrypt(JSON.stringify(parsed));
+
+    // Merge onto whatever's already stored instead of replacing the whole
+    // config. The client never gets secret values back (e.g. access_token,
+    // app_secret aren't returned by listIntegrations), so a partial save —
+    // like just flipping publish_mode, or fixing one field — must not wipe
+    // fields the caller didn't send.
+    const { data: existingRow } = await supabaseAdmin
+      .from("integrations")
+      .select("config_ciphertext")
+      .eq("user_id", context.userId)
+      .eq("provider", data.provider)
+      .maybeSingle();
+    const existing = existingRow ? (JSON.parse(decrypt(existingRow.config_ciphertext)) as Record<string, unknown>) : {};
+    const merged = { ...existing, ...parsed };
+
+    const ciphertext = encrypt(JSON.stringify(merged));
     const { error } = await supabaseAdmin.from("integrations").upsert(
       {
         user_id: context.userId,
@@ -78,6 +94,18 @@ export const saveIntegration = createServerFn({ method: "POST" })
     );
     if (error) throw error;
     return { ok: true };
+  });
+
+// Non-secret read of the Pinterest publish mode, safe to expose to the client
+// (unlike the rest of the Pinterest config — access_token, app_secret, etc.
+// — which never leave the server). Used by the Integrations page to show the
+// current API/Webhook selection.
+export const getPinterestPublishMode = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { getIntegration } = await import("./integrations.server");
+    const cfg = await getIntegration(context.userId, "pinterest");
+    return { publish_mode: (cfg?.publish_mode === "webhook" ? "webhook" : "api") as "api" | "webhook" };
   });
 
 export const deleteIntegration = createServerFn({ method: "POST" })

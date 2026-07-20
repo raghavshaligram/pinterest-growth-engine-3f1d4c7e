@@ -13,7 +13,7 @@ import { CalendarClock, Send, Wand2, Trash2, Zap, ExternalLink, Link as LinkIcon
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/schedule")({
-  head: () => ({ meta: [{ title: "Schedule — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Schedule — Pinspider" }] }),
   component: SchedulePage,
 });
 

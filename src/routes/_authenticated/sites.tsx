@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Globe, Trash2, RefreshCcw, Palette } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/sites")({
-  head: () => ({ meta: [{ title: "Sites — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Sites — Pinspider" }] }),
   component: SitesPage,
 });
 

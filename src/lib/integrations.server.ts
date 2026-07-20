@@ -9,6 +9,9 @@ export type PinterestConfig = {
   refresh_token?: string;
   app_id?: string;
   app_secret?: string;
+  // "api" (default, direct Pinterest v5 publishing) or "webhook" (legacy
+  // Make.com fallback). See pinterest.server.ts:makePinterestClient.
+  publish_mode?: "api" | "webhook";
 };
 export type ProviderConfig = {
   openai: OpenAIConfig;

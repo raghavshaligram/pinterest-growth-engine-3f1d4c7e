@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 
 
 export const Route = createFileRoute("/_authenticated/pages/")({
-  head: () => ({ meta: [{ title: "Pages — PinForge" }] }),
+  head: () => ({ meta: [{ title: "Pages — Pinspider" }] }),
   component: PagesPage,
 });
 
