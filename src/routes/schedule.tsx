@@ -66,6 +66,7 @@ function SchedulePage() {
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [open, setOpen] = useState<ScheduledRow | null>(null);
+  const [search, setSearch] = useState("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled"] });
 
