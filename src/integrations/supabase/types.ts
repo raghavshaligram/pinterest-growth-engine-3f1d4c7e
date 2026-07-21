@@ -346,6 +346,7 @@ export type Database = {
           serp_patterns_captured_at: string | null
           status: Database["public"]["Enums"]["brief_status"]
           style: string
+          template_id: string | null
           title: string
           updated_at: string
           used_serp_patterns: boolean
@@ -366,6 +367,7 @@ export type Database = {
           serp_patterns_captured_at?: string | null
           status?: Database["public"]["Enums"]["brief_status"]
           style: string
+          template_id?: string | null
           title: string
           updated_at?: string
           used_serp_patterns?: boolean
@@ -386,6 +388,7 @@ export type Database = {
           serp_patterns_captured_at?: string | null
           status?: Database["public"]["Enums"]["brief_status"]
           style?: string
+          template_id?: string | null
           title?: string
           updated_at?: string
           used_serp_patterns?: boolean

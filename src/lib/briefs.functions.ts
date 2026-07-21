@@ -26,7 +26,7 @@ export const PIN_STYLES = [
 // since it's tied to the compositional device, not the vertical.
 export type SiteVertical = "garden_content" | "general_content" | "etsy_product" | "ecomm_product";
 type GenerationMode = "illustrated";
-type TemplateId =
+export type TemplateId =
   | "quick_tip_grid"
   | "editorial_before_after"
   | "problem_solution_headline"
@@ -190,7 +190,7 @@ const SHAPE_REGISTRY: ShapeRegistry = {
       default_middle_prompt: (topic) =>
         `A horizontal calendar strip about ${topic}, divided into 3-4 equal-width month/season segments sitting flush side by side, each with one small icon and a short month/season label beneath it -- minimal text overlay, let the calendar segments carry the timing. No connecting thread or arrows between segments, no vertical stacking.`,
       typography_direction: "rounded friendly bold sans for month/season labels",
-      content_fit: "best for content organized around a calendar (monthly/seasonal planting or maintenance schedules).",
+      content_fit: "best for content organized around a calendar (monthly/seasonal or recurring maintenance schedules).",
     },
     // The only shape depicting UI/interface chrome -- distinguishes it
     // from quote_stat_card (which also has one large prominent number)
@@ -283,6 +283,16 @@ export function buildThemedPinPrompt(input: {
   title: string;
   cta?: string | null;
   style?: string | null;
+  /**
+   * The classifier's own shape decision (see generateBriefs), stored per
+   * brief and passed through explicitly. Takes priority over deriving a
+   * template from `style` -- the regex only covers 6 of 11 shapes and
+   * would silently downgrade any brief classified into one of the 5
+   * newly-reachable shapes. `style` remains as a fallback purely for
+   * legacy callers/rows that predate template_id (e.g. image-worker
+   * re-rendering an old brief that never had a stored decision).
+   */
+  templateId?: TemplateId | null;
   topic?: string | null;
   primaryKeyword?: string | null;
   brandHost: string;
@@ -302,7 +312,7 @@ export function buildThemedPinPrompt(input: {
 }) {
   const vertical: SiteVertical = input.vertical ?? "garden_content";
   const generationMode: GenerationMode = "illustrated";
-  const templateId = resolveTemplateId(input.style);
+  const templateId = input.templateId ?? resolveTemplateId(input.style);
 
   // Shape (compositional mechanism) and flavor (genre/palette/
   // typography-fallback) are resolved independently now -- any shape is
@@ -398,16 +408,34 @@ export const generateBriefs = createServerFn({ method: "POST" })
 - list: ${JSON.stringify(ctaPools.list)}
 - commercial: ${JSON.stringify(ctaPools.commercial)}
 Never mix pools. Never invent CTAs outside the pools. Vary CTAs across the batch.`;
-    const brandBlock = `LOCKED PIN THEME — every image must belong to one of these two reusable families, matching the user's uploaded references:
-1) EDITORIAL PHOTO BEFORE/AFTER PIN: cream top title band, huge dark-green elegant serif title, two vertical photo panels with a thin cream divider, realistic gardening/home-improvement transformation.
-2) CLEAN ILLUSTRATED QUICK-TIP CARD GRID: pale blue/cream airy background, big rounded blue title, 2-column grid of white rounded cards, teal/blue line icons, short tip text, subtle leaf/water accents.
 
-Global rules for both families:
-- Aspect ratio 2:3, 1000x1500.
-- Palette only: ${brandColors.join(", ") || "deep garden green, clear blue, soft sky, cream, leaf green"}. No random colors, no purple gradients, no dark tech UI.
-- Bottom bar is mandatory: full-width dark green/brand-color bar, flush to bottom, ~5% tall, containing ONLY the centered URL "${brandHost}" in cream small sans. No logo, no wordmark, no tagline, no social handle.
-- Text must be correctly spelled, large, clean, and never cropped.
-${brandFont ? `- Typography direction (title): ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}`;
+    // Content-aware template classifier. Replaces the old style-label
+    // regex (resolveTemplateId/STYLE_TEMPLATE_RULES) as the routing
+    // mechanism -- that regex only ever reached 6 of the 11 registered
+    // shapes and couldn't be extended to the other 5 without either
+    // stealing style-label coverage from shapes that already worked or
+    // faking a semantic fit that wasn't really there. The LLM already
+    // sees each brief's full context (topic, angle, style) in this same
+    // call, so it picks the best-fitting shape directly from the real
+    // catalog instead.
+    const vertical: SiteVertical = (site?.vertical as SiteVertical | null) ?? "garden_content";
+    const flavor = VERTICAL_FLAVOR_REGISTRY[vertical]?.illustrated ?? VERTICAL_FLAVOR_REGISTRY.general_content!.illustrated!;
+    const shapeCatalog = Object.entries(SHAPE_REGISTRY.illustrated!)
+      .map(([id, shape]) => `- ${id}: ${shape!.content_fit}`)
+      .join("\n");
+    const validTemplateIds = new Set(Object.keys(SHAPE_REGISTRY.illustrated!));
+
+    // Shared brand context for the LLM's own copy/content decisions.
+    // Deliberately NOT a theme/family description anymore -- which shape
+    // a pin uses is the classifier's job (below) and buildThemedPinPrompt
+    // owns 100% of the actual frame/layout text; restating it here (the
+    // old brandBlock described only 2 hardcoded, garden-flavored
+    // families) was both stale now that 11 shapes exist and would have
+    // silently biased every LLM-written image_prompt toward garden
+    // imagery regardless of the site's actual vertical.
+    const brandBlock = `Brand context:
+- Palette: ${brandColors.join(", ") || flavor.palette_fallback}.
+${brandFont ? `- Typography direction: ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}`;
 
     // Competitive-pattern signal: if a recent SERP sweep has already
     // summarized "what's working" for this page's primary keyword (see
@@ -457,6 +485,7 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
       type BriefsResp = {
         briefs: Array<{
           style: string;
+          template_id: string;
           intent: "informational" | "tool" | "list" | "commercial";
           title: string;
           description: string;
@@ -469,27 +498,29 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
       const resp = await openaiJSON<BriefsResp>({
         apiKey: cfg.api_key,
         model: "gpt-4o-mini",
-        system: `You are a Pinterest SEO strategist. Return strict JSON. Every pin has:
+        system: `You are a Pinterest SEO strategist and visual-template classifier. Return strict JSON. Every pin has:
 - title: <=100 chars, PRIMARY KEYWORD in the first 40 chars, curiosity-driven, no clickbait, no ALL CAPS.
 - description: 150-450 chars, natural sentences, primary keyword in first 50 chars, weave in 2-3 secondary keywords, end with the CTA phrase as a call to action.
-- alt_text: <=250 chars, LITERAL visual description of what's in the image ("gloved hand digging beside green rain barrel next to garden shed"), include primary keyword once, NOT marketing copy.
+- alt_text: <=250 chars, LITERAL visual description of what's in the image, include primary keyword once, NOT marketing copy.
 - hashtags: 4-6, lowercase, no spaces, include the primary keyword as a hashtag plus secondaries; no # in the strings.
 - cta: chosen from the intent-matched pool ONLY.
 - intent: one of informational|tool|list|commercial.
+- template_id: the single best-fitting visual template for THIS brief's specific content angle, chosen from the template catalog given in the user message (use the id exactly as written). Judge fit by what the brief is actually about, not by its style label -- e.g. a brief that corrects a common misconception belongs in myth_vs_fact regardless of which style tag it also carries.
+- image_prompt: a SHORT description of ONLY the middle visual content specific to this brief (subject matter and mood) -- the chosen template supplies its own composition, typography, palette, and border/URL-bar automatically, so do not describe layout, frame, or text placement yourself.
 If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`,
         user: `Create ${data.count} unique Pinterest pin briefs for this page. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
 
-Return JSON: { briefs: [{ style, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
+Return JSON: { briefs: [{ style, template_id, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
 
 CTA & INTENT RULES:
 ${ctaGuidance}
 
-The image_prompt is for a text-to-image model producing a vertical 2:3 Pinterest pin at 1000x1500. Describe the middle illustration/photo, composition, and mood. Vary the middle imagery per brief. The universal template below is IDENTICAL on every pin — describe it verbatim at the end of every image_prompt.
+VISUAL TEMPLATE CATALOG -- pick the single best-fitting template_id per brief from this exact list (id on the left, use it verbatim):
+${shapeCatalog}
+
+Vary template_id across the batch where the content genuinely supports different templates -- don't collapse every brief onto the same one or two templates if the page's content angles are diverse enough to justify more variety.
 
 ${brandBlock}
-
-Every image_prompt MUST END with this exact line (substitute [cta text] with this brief's cta):
-"UNIVERSAL FRAME: Title in cream serif across the top over brand-color overlay. CTA button in warm accent color at ~75% down reading [cta text]. Bottom bar: solid dark brand-color band, full width, containing only the centered URL text \\"${brandHost}\\" in cream small sans. No wordmark, no logo, no tagline — URL only in the bottom bar. Palette: ${brandColors.join(", ") || "cohesive brand palette"}."
 
 Page: ${page.url}
 Topic: ${analysis.topic ?? ""}
@@ -499,10 +530,21 @@ Audience: ${analysis.audience ?? ""}
 Category: ${analysis.category ?? ""}${competitiveBlock}`,
       });
 
-      const rows = resp.briefs.slice(0, data.count).map((b) => ({
+      const rows = resp.briefs.slice(0, data.count).map((b) => {
+        // Defensive fallback only: an LLM occasionally returns a
+        // template_id outside the given catalog (typo, omission, older
+        // cached response shape). Falls back to the narrower style-label
+        // regex rather than crashing the batch -- this is a safety net,
+        // not a routing mechanism. Normal path always uses the
+        // classifier's own choice.
+        const templateId = validTemplateIds.has(b.template_id)
+          ? (b.template_id as TemplateId)
+          : resolveTemplateId(b.style);
+        return {
         user_id: context.userId,
         page_id: page.id,
         style: b.style,
+        template_id: templateId,
         intent: (["informational", "tool", "list", "commercial"].includes(b.intent) ? b.intent : defaultIntent),
         title: b.title,
         description: b.description,
@@ -512,13 +554,13 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
         image_prompt: buildThemedPinPrompt({
           title: b.title,
           cta: b.cta,
-          style: b.style,
+          templateId,
           topic: analysis.topic,
           primaryKeyword: analysis.primary_keyword,
           brandHost,
           brandColors,
           brandFont,
-          vertical: (site?.vertical ?? null) as SiteVertical | null,
+          vertical,
           middlePrompt: b.image_prompt,
         }),
         status: "image_pending" as const,
@@ -529,7 +571,8 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
         used_serp_patterns: Boolean(competitiveBlock),
         serp_keyword: competitiveBlock ? analysis.primary_keyword : null,
         serp_patterns_captured_at: competitiveBlock ? serpSnap?.captured_at ?? null : null,
-      }));
+        };
+      });
       const { data: inserted, error: insErr } = await supabaseAdmin.from("pin_briefs").insert(rows).select("id");
       if (insErr) throw insErr;
 

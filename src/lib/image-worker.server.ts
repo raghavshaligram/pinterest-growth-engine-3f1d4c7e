@@ -1,7 +1,7 @@
 // Server-only. Image generation worker driving Replicate + Storage.
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
-import type { SiteVertical } from "@/lib/briefs.functions";
+import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -72,12 +72,19 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       // (image_prompt_edited_at set -- see trg_pin_briefs_image_prompt_edit),
       // it's already final/themed: use it as-is instead of re-deriving via
       // buildThemedPinPrompt, which would silently discard the edit.
-      const briefRow = brief as { image_prompt_edited_at?: string | null };
+      const briefRow = brief as { image_prompt_edited_at?: string | null; template_id?: string | null };
+      // template_id is the classifier's stored shape decision (see
+      // generateBriefs in briefs.functions.ts). Reusing it here on
+      // re-render keeps the SAME shape the brief was originally
+      // classified into. Only legacy briefs generated before this
+      // column existed have no stored value -- those fall back to the
+      // narrower style-label regex inside buildThemedPinPrompt itself.
       const themedPrompt = briefRow.image_prompt_edited_at
         ? brief.image_prompt
         : buildThemedPinPrompt({
             title: brief.title,
             cta: brief.cta,
+            templateId: (briefRow.template_id as TemplateId | null) ?? null,
             style: brief.style,
             topic: analysis.topic,
             primaryKeyword: analysis.primary_keyword,
