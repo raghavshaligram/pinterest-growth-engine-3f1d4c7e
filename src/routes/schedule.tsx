@@ -11,7 +11,7 @@ import {
   deleteAllScheduled, replaceScheduledPin, publishNow, markPosted, duplicateScheduledPin,
   unscheduleScheduledPin,
 } from "@/lib/schedule.functions";
-import { useSiteContext } from "@/lib/site-context";
+import { useSiteContext, SiteProvider } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor } from "@/lib/pin-shell-tokens";
