@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { SAFETY, buildScheduleState, findSafeBoard, commitPlacement, type ExistingRow } from "@/lib/scheduling-safety.server";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const listScheduled = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -191,7 +192,7 @@ export const runFullPipeline = createServerFn({ method: "POST" })
         result.analyzed++;
         await new Promise((r) => setTimeout(r, 400)); // throttle
       } catch (e) {
-        result.errors.push(`analyze ${p.id}: ${e instanceof Error ? e.message : String(e)}`);
+        result.errors.push(`analyze ${p.id}: ${getErrorMessage(e)}`);
       }
     }
 
@@ -212,7 +213,7 @@ export const runFullPipeline = createServerFn({ method: "POST" })
         result.briefsFor++;
         await new Promise((r) => setTimeout(r, 400));
       } catch (e) {
-        result.errors.push(`briefs ${p.id}: ${e instanceof Error ? e.message : String(e)}`);
+        result.errors.push(`briefs ${p.id}: ${getErrorMessage(e)}`);
       }
     }
 

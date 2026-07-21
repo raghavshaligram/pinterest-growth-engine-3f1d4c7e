@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Sparkles, ImageIcon, Zap, Loader2, EyeOff, Eye, Filter, Check, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
+import { getErrorMessage } from "@/lib/error-message";
 
 
 export const Route = createFileRoute("/pages/")({
@@ -68,7 +69,7 @@ function PagesPage() {
   const pipelineM = useMutation({
     mutationFn: () => pipeline({ data: { maxAnalyze: 25, maxBriefs: 15, maxImages: 30 } }),
     onSuccess: (r) => { toast.success(`Pipeline: analyzed ${r.analyzed}, briefs for ${r.briefsFor}, queued ${r.imagesQueued} images`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const analyzeAllM = useMutation({
@@ -81,7 +82,7 @@ function PagesPage() {
       return { ok, fail, total: targets.length };
     },
     onSuccess: (r) => { toast.success(`Analyzed ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const briefsAllM = useMutation({
@@ -92,7 +93,7 @@ function PagesPage() {
       const errors: string[] = [];
       for (const p of targets) {
         try { await gen({ data: { pageId: p.id, count: 10 } }); ok++; invalidate(); }
-        catch (e) { fail++; errors.push(e instanceof Error ? e.message : String(e)); }
+        catch (e) { fail++; errors.push(getErrorMessage(e)); }
       }
       return { ok, fail, total: targets.length, skipped: false as const, errors };
     },
@@ -102,7 +103,7 @@ function PagesPage() {
       toast.success(`Briefs for ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`);
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const renderAllM = useMutation({
@@ -131,7 +132,7 @@ function PagesPage() {
       return { ok, fail, pagesDone, totalPages: targets.length };
     },
     onSuccess: (r) => toast.success(`Rendered ${r.ok} images across ${r.pagesDone}/${r.totalPages} pages${r.fail ? ` (${r.fail} failed)` : ""}`),
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const renderOneM = useMutation({
@@ -149,7 +150,7 @@ function PagesPage() {
       return { ok, fail };
     },
     onSuccess: (r) => toast.success(`Rendered ${r.ok} image${r.ok === 1 ? "" : "s"}${r.fail ? ` (${r.fail} failed)` : ""}`),
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   // Keep imgFn referenced (fallback global worker button hidden below)
@@ -159,13 +160,13 @@ function PagesPage() {
   const autoExcludeM = useMutation({
     mutationFn: () => autoExclude(),
     onSuccess: (r) => { toast.success(`Auto-excluded ${r.excluded} page${r.excluded === 1 ? "" : "s"}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const toggleM = useMutation({
     mutationFn: (v: { pageId: string; excluded: boolean }) => setExcluded({ data: v }),
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const analyzedCount = active.filter((p) => p.last_analyzed_at).length;

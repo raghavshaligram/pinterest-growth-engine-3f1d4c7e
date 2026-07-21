@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getErrorMessage } from "@/lib/error-message";
 
 type TopPin = { url?: string; title?: string; description?: string; image?: string; board?: string; saves?: number };
 
@@ -53,7 +54,7 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
     await supabaseAdmin.from("serp_snapshots").update({ patterns }).eq("id", snapshotId).eq("user_id", userId);
     await markIntegration(userId, "openai", "ok");
   } catch (e) {
-    await markIntegration(userId, "openai", "error", e instanceof Error ? e.message : String(e));
+    await markIntegration(userId, "openai", "error", getErrorMessage(e));
   }
 }
 
@@ -150,7 +151,7 @@ export const runSerpSweep = createServerFn({ method: "POST" })
           await summarizeAndStorePatterns(context.userId, snapshot.id, keyword, top_pins);
         }
       } catch (e) {
-        await markIntegration(context.userId, "apify", "error", e instanceof Error ? e.message : String(e));
+        await markIntegration(context.userId, "apify", "error", getErrorMessage(e));
       }
     }
     await markIntegration(context.userId, "apify", "ok");

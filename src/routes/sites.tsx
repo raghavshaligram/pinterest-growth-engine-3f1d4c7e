@@ -27,6 +27,7 @@ import {
 } from "@/lib/sites.functions";
 import { PinShell } from "@/components/PinShell";
 import { SiteProvider } from "@/lib/site-context";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/sites")({
   ssr: false,
@@ -163,12 +164,12 @@ function SitesPage() {
   const delMut = useMutation({
     mutationFn: (id: string) => delFn({ data: { id } }),
     onSuccess: () => { toast.success("Site removed"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const crawlMut = useMutation({
     mutationFn: (id: string) => crawlFn({ data: { siteId: id } }),
     onSuccess: (r) => { toast.success(`Crawl: +${r.added} added, ${r.updated} updated, ${r.errors} errors`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const rows = (sites ?? []) as SiteOverviewRow[];
@@ -409,7 +410,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
       },
     }),
     onSuccess: () => { toast.success("Site added"); onCreated(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const cfg = SITE_TYPE_CONFIG[siteType];
@@ -583,7 +584,7 @@ function SiteCard({
       },
     }),
     onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const cfg = SITE_TYPE_CONFIG[site.site_type as SiteType] ?? SITE_TYPE_CONFIG.website;

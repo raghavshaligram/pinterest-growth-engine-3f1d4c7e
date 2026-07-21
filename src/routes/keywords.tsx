@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Search, ChevronDown, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/keywords")({
   ssr: false,
@@ -63,7 +64,7 @@ function KeywordsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["keywords"] }) });
   const sweepMut = useMutation({ mutationFn: () => sweep(),
     onSuccess: (r) => { toast.success(`Swept ${r.swept ?? 0} keywords`); qc.invalidateQueries({ queryKey: ["keywords"] }); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+    onError: (e) => toast.error(getErrorMessage(e)) });
 
   return (
     <div className="space-y-6">

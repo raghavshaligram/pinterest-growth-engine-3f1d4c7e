@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getErrorMessage } from "@/lib/error-message";
 
 const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
@@ -231,7 +232,7 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
       await markIntegration(context.userId, "openai", "ok");
       return { created: inserted!.length };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       await markIntegration(context.userId, "openai", "error", msg);
       throw e;
     }

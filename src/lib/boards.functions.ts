@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const listBoards = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -113,7 +114,7 @@ export const syncPinterestBoards = createServerFn({ method: "POST" })
       await markIntegration(context.userId, "pinterest", "ok");
       return { created, updated, total: boards.length };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       await markIntegration(context.userId, "pinterest", "error", msg);
       throw e;
     }

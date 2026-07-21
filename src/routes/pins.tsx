@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/pins")({
   ssr: false,
@@ -83,7 +84,7 @@ function PinsPage() {
       qc.invalidateQueries({ queryKey: ["briefs"] });
       qc.invalidateQueries({ queryKey: ["scheduled"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const deleteMut = useMutation({
     mutationFn: (briefId: string) => del({ data: { briefId } }),
@@ -93,7 +94,7 @@ function PinsPage() {
       qc.invalidateQueries({ queryKey: ["briefs"] });
       qc.invalidateQueries({ queryKey: ["scheduled"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   // Batch-sign all image URLs in a single request (avoids N round-trips).

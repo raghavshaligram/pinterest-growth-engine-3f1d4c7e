@@ -1,6 +1,7 @@
 // Pinterest OAuth callback. Public route — verifies HMAC-signed `state`
 // to bind the flow to the initiating user before exchanging the code.
 import { createFileRoute } from "@tanstack/react-router";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/api/public/pinterest/callback")({
   server: {
@@ -57,7 +58,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
 
           return Response.redirect(`${settingsUrl}?pinterest=connected`, 302);
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = getErrorMessage(e);
           return Response.redirect(
             `${settingsUrl}?pinterest=error&reason=${encodeURIComponent(msg.slice(0, 200))}`,
             302,

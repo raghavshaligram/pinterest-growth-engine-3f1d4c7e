@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { LayoutGrid, Trash2, RefreshCw, Save } from "lucide-react";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/boards")({
   ssr: false,
@@ -60,7 +61,7 @@ function BoardsPage() {
       toast.success(`Synced ${r.total} boards from Pinterest (${r.created} new, ${r.updated} updated)`);
       qc.invalidateQueries({ queryKey: ["boards"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const [name, setName] = useState("");
@@ -68,7 +69,7 @@ function BoardsPage() {
   const addMut = useMutation({
     mutationFn: () => up({ data: { name, pinterest_board_id: pid || undefined } }),
     onSuccess: () => { setName(""); setPid(""); toast.success("Board saved"); qc.invalidateQueries({ queryKey: ["boards"] }); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   return (
@@ -131,7 +132,7 @@ function BoardCard({
       site_ids: siteIds,
     } }),
     onSuccess: () => { toast.success("Board updated"); onSaved(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const toggleSite = (id: string) => {

@@ -24,6 +24,7 @@ import {
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/schedule")({
   ssr: false,
@@ -111,12 +112,12 @@ function SchedulePage() {
   const autoMut = useMutation({
     mutationFn: (vars: { days: number; perDay: number }) => auto({ data: { ...vars, hoursStart: 9, hoursEnd: 21 } }),
     onSuccess: (r) => { toast.success(r.reason ?? `Scheduled ${r.scheduled} pin${r.scheduled === 1 ? "" : "s"}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const pubMut = useMutation({
     mutationFn: () => pub(),
     onSuccess: () => { toast.success("Publish run complete"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   // Moves the pin back to a ready-to-schedule draft (pin_briefs.status =
   // "ready" -- the same status freshly-generated, not-yet-scheduled pins
@@ -125,42 +126,42 @@ function SchedulePage() {
   const unscheduleMut = useMutation({
     mutationFn: (id: string) => unscheduleFn({ data: { id } }),
     onSuccess: () => { invalidate(); setOpen(null); toast.success("Unscheduled — back in Pins as a draft"); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const rescheduleMut = useMutation({
     mutationFn: (v: { id: string; scheduled_at: string }) => resched({ data: v }),
     onSuccess: () => { toast.success("Rescheduled"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const queueMut = useMutation({
     mutationFn: (ids?: string[]) => queue({ data: ids ? { ids } : { all: true } }),
     onSuccess: (r) => { toast.success(`Queued ${r.queued} pin${r.queued === 1 ? "" : "s"}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const wipeMut = useMutation({
     mutationFn: () => wipe({ data: {} }),
     onSuccess: (r) => { toast.success(`Deleted ${r.deleted} scheduled pin${r.deleted === 1 ? "" : "s"}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const replaceMut = useMutation({
     mutationFn: (id: string) => replace({ data: { id } }),
     onSuccess: () => { toast.success("Pin replaced"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const publishNowMut = useMutation({
     mutationFn: (id: string) => publishNowFn({ data: { id } }),
     onSuccess: () => { toast.success("Published"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const markPostedMut = useMutation({
     mutationFn: (v: { id: string; pinterestPinId?: string; unmark?: boolean }) => markPostedFn({ data: v }),
     onSuccess: (r) => { toast.success(r.unmarked ? "Mark cleared" : "Marked as posted"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const duplicateMut = useMutation({
     mutationFn: (id: string) => duplicateFn({ data: { id } }),
     onSuccess: () => { toast.success("Duplicated to tomorrow"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const rows = data ?? [];

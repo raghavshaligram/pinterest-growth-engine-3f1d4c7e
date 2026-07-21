@@ -5,11 +5,23 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const SITE_TYPES = ["website", "etsy", "ecomm"] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
 
+// Supabase/PostgREST errors cross the server->client RPC boundary through
+// TanStack Start's ShallowErrorPlugin, which only preserves `.message` --
+// the `.code`/`.details`/`.hint` PostgrestError carries (e.g. "23502" for a
+// not-null violation, "42501" for an RLS denial, "23514" for a check
+// constraint) are otherwise silently dropped. Fold the code into the
+// message itself so it survives and the real cause is diagnosable from the
+// client-side toast, not just from server logs.
+function throwPgError(error: { message: string; code?: string } | null): never {
+  if (!error) throw new Error("Unknown database error");
+  throw new Error(error.code ? `${error.message} (code: ${error.code})` : error.message);
+}
+
 export const listSites = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase.from("sites").select("*").order("created_at");
-    if (error) throw error;
+    if (error) throwPgError(error);
     return data ?? [];
   });
 
@@ -53,7 +65,7 @@ export const getSitesOverview = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SiteOverviewRow[]> => {
     const s = context.supabase;
     const { data: siteRows, error } = await s.from("sites").select("*").order("created_at");
-    if (error) throw error;
+    if (error) throwPgError(error);
     const sites = siteRows ?? [];
     if (sites.length === 0) return [];
 
@@ -117,7 +129,7 @@ export const upsertSite = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const row = { ...data, user_id: context.userId };
     const { data: out, error } = await context.supabase.from("sites").upsert(row as never).select().single();
-    if (error) throw error;
+    if (error) throwPgError(error);
     return out;
   });
 
@@ -126,7 +138,7 @@ export const deleteSite = createServerFn({ method: "POST" })
   .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.from("sites").delete().eq("id", data.id);
-    if (error) throw error;
+    if (error) throwPgError(error);
     return { ok: true };
   });
 
@@ -162,11 +174,11 @@ export const crawlSite = createServerFn({ method: "POST" })
         };
         if (!existing) {
           const { error } = await supabaseAdmin.from("pages").insert(row);
-          if (error) throw error;
+          if (error) throwPgError(error);
           added++;
         } else if (existing.content_hash !== page.content_hash) {
           const { error } = await supabaseAdmin.from("pages").update(row).eq("id", existing.id);
-          if (error) throw error;
+          if (error) throwPgError(error);
           updated++;
         }
       } catch { errors++; }

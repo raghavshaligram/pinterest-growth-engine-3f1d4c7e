@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error-message";
 // Shared cron helper: authenticate via Supabase anon key header.
 export function checkCronAuth(request: Request): Response | null {
   const apikey = request.headers.get("apikey");
@@ -15,7 +16,7 @@ export async function forEachUser(cb: (userId: string) => Promise<unknown>) {
   const users = Array.from(new Set((data ?? []).map((r) => r.user_id)));
   const results: Record<string, unknown> = {};
   for (const u of users) {
-    try { results[u] = await cb(u); } catch (e) { results[u] = { error: e instanceof Error ? e.message : String(e) }; }
+    try { results[u] = await cb(u); } catch (e) { results[u] = { error: getErrorMessage(e) }; }
   }
   return { users: users.length, results };
 }

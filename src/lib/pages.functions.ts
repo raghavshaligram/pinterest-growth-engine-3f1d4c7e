@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const listPages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -127,7 +128,7 @@ Headings: ${JSON.stringify(((page.headings as unknown as unknown[]) ?? []).slice
       await markIntegration(context.userId, "openai", "ok");
       return analysis;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       await markIntegration(context.userId, "openai", "error", msg);
       throw e;
     }

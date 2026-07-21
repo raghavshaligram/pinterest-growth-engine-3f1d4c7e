@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon } from "lucide-react";
+import { getErrorMessage } from "@/lib/error-message";
 
 type Provider = "openai" | "replicate" | "apify" | "pinterest";
 
@@ -145,7 +146,7 @@ function PublishingAgePrompt({ open, onOpenChange }: { open: boolean; onOpenChan
       qc.invalidateQueries({ queryKey: ["account-health"] });
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   return (
@@ -192,7 +193,7 @@ function PinterestConnectButton() {
   const connect = useMutation({
     mutationFn: () => start(),
     onSuccess: (r) => { window.location.href = r.authorizeUrl; },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   return (
     <Button type="button" size="sm" onClick={() => connect.mutate()} disabled={connect.isPending}>
@@ -258,7 +259,7 @@ function PinterestCard(props: {
       qc.invalidateQueries({ queryKey: ["pinterest-settings"] });
       props.onChanged();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const saveWebhook = useMutation({
@@ -268,7 +269,7 @@ function PinterestCard(props: {
       qc.invalidateQueries({ queryKey: ["pinterest-settings"] });
       props.onChanged();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const status = props.status?.status ?? "unconfigured";
@@ -377,7 +378,7 @@ function IntegrationCard(props: {
   const saveMut = useMutation({
     mutationFn: () => save({ data: { provider: props.provider, config: Object.fromEntries(Object.entries(vals).filter(([, v]) => v)) } }),
     onSuccess: () => { toast.success("Saved"); setVals({}); props.onChanged(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const testMut = useMutation({
     mutationFn: () => test({ data: { provider: props.provider } }),
@@ -389,7 +390,7 @@ function IntegrationCard(props: {
       r.ok ? toast.success(prefix + r.message) : toast.error(prefix + r.message);
       props.onChanged();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const delMut = useMutation({
     mutationFn: () => del({ data: { provider: props.provider } }),
@@ -476,7 +477,7 @@ function AccountHealthSection() {
       toast.success(r.cap_mode === "manual" ? `Manual cap set to ${r.effectiveCap}/day` : "Back to automatic cap control");
       qc.invalidateQueries({ queryKey: ["account-health"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const profile = data?.profile;

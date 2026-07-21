@@ -24,6 +24,7 @@ import {
   Search, SlidersHorizontal, Plus, CheckCircle2, AlertTriangle, TrendingUp,
   Pencil, CalendarOff, ImageIcon,
 } from "lucide-react";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/dashboard")({
   ssr: false,
@@ -74,17 +75,17 @@ function DashboardPage() {
   const publishNowMut = useMutation({
     mutationFn: (id: string) => publishNowFn({ data: { id } }),
     onSuccess: () => { toast.success("Published"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const rescheduleMut = useMutation({
     mutationFn: (v: { id: string; scheduled_at: string }) => rescheduleFn({ data: v }),
     onSuccess: () => { toast.success("Rescheduled"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const duplicateMut = useMutation({
     mutationFn: (id: string) => duplicateFn({ data: { id } }),
     onSuccess: () => { toast.success("Duplicated to tomorrow"); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   // Moves the pin back to a ready-to-schedule draft rather than deleting
   // it -- see unscheduleScheduledPin for why pin_briefs.status is set to
@@ -93,22 +94,22 @@ function DashboardPage() {
   const unscheduleMut = useMutation({
     mutationFn: (id: string) => unscheduleFn({ data: { id } }),
     onSuccess: () => { invalidate(); setOpen(null); toast.success("Unscheduled — back in Pins as a draft"); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const queueMut = useMutation({
     mutationFn: (id: string) => queueFn({ data: { ids: [id] } }),
     onSuccess: (r) => { toast.success(`Queued ${r.queued} pin${r.queued === 1 ? "" : "s"}`); invalidate(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const replaceMut = useMutation({
     mutationFn: (id: string) => replaceFn({ data: { id } }),
     onSuccess: () => { toast.success("Pin replaced"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const markPostedMut = useMutation({
     mutationFn: (v: { id: string; pinterestPinId?: string; unmark?: boolean }) => markPostedFn({ data: v }),
     onSuccess: (r) => { toast.success(r.unmarked ? "Mark cleared" : "Marked as posted"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
 
   const rows = data ?? [];

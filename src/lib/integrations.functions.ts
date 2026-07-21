@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getErrorMessage } from "@/lib/error-message";
 
 // Kicks off OAuth against Pinspider's single shared Pinterest app (app
 // credentials + redirect URI come from deployment env vars — see
@@ -192,7 +193,7 @@ export const testIntegration = createServerFn({ method: "POST" })
       await markIntegration(context.userId, data.provider, "ok");
       return { ok: true, message: "Connected" };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       await markIntegration(context.userId, data.provider, "error", msg);
       return { ok: false, message: msg };
     }

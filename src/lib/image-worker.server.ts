@@ -1,5 +1,6 @@
 // Server-only. Image generation worker driving Replicate + Storage.
 import { createHash } from "node:crypto";
+import { getErrorMessage } from "@/lib/error-message";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -106,7 +107,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       await markIntegration(userId, "replicate", "ok");
       ok++;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       await supabaseAdmin.from("jobs").update({ status: "failed", last_error: msg }).eq("id", job.id);
       await markIntegration(userId, "replicate", "error", msg);
       fail++;

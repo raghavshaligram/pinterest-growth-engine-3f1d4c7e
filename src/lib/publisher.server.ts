@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/error-message";
 // Server-only publisher. Publishes due pins via the user's Pinterest client
 // (direct API by default, Make.com webhook if the user opted into publish_mode: "webhook").
 export async function processDuePinsForUser(userId: string, limit = 25, onlyId?: string) {
@@ -69,7 +70,7 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       });
       ok++;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       fail++;
       await supabaseAdmin.from("scheduled_pins").update({ status: "failed", last_error: msg }).eq("id", sp.id);
       await supabaseAdmin.from("publish_logs").insert({

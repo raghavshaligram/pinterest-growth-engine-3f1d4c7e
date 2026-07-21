@@ -17,6 +17,7 @@ import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
+import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/pages/$id")({
   ssr: false,
@@ -52,13 +53,13 @@ function PageDetail() {
 
   const anaMut = useMutation({ mutationFn: () => analyze({ data: { pageId: id } }),
     onSuccess: () => { toast.success("Analyzed"); qc.invalidateQueries({ queryKey: ["page", id] }); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+    onError: (e) => toast.error(getErrorMessage(e)) });
   const genMut = useMutation({ mutationFn: (n: number) => gen({ data: { pageId: id, count: n } }),
     onSuccess: (r) => { toast.success(`Created ${r.created} briefs. Run image worker to render.`); qc.invalidateQueries({ queryKey: ["page", id] }); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+    onError: (e) => toast.error(getErrorMessage(e)) });
   const imgMut = useMutation({ mutationFn: () => img(),
     onSuccess: (r) => { toast.success(JSON.stringify(r)); qc.invalidateQueries({ queryKey: ["page", id] }); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)) });
+    onError: (e) => toast.error(getErrorMessage(e)) });
 
   if (!data) return <p>Loading…</p>;
   const { page, briefs } = data;
@@ -136,12 +137,12 @@ function BriefCard({ b }: {
       qc.invalidateQueries({ queryKey: ["briefs"] });
       qc.invalidateQueries();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const delMut = useMutation({
     mutationFn: () => del({ data: { briefId: b.id } }),
     onSuccess: () => { toast.success("Pin deleted"); qc.invalidateQueries(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
   const [open, setOpen] = useState(false);
   return (
