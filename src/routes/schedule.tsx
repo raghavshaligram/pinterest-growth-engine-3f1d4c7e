@@ -226,7 +226,7 @@ function SchedulePage() {
               label={DAY_LABELS[i]}
               day={day}
               isLast={i === 6}
-              rows={rows}
+              rows={filteredRows}
               onOpen={setOpen}
               onUnschedule={(id) => unscheduleMut.mutate(id)}
               onAddSlot={addSlot}
