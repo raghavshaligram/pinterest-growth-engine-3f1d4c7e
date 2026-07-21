@@ -11,15 +11,15 @@ import {
   deleteAllScheduled, replaceScheduledPin, publishNow, markPosted, duplicateScheduledPin,
   unscheduleScheduledPin,
 } from "@/lib/schedule.functions";
-import { useSiteContext, SiteProvider } from "@/lib/site-context";
+import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
+import { TopBar } from "@/components/PinTopBar";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor } from "@/lib/pin-shell-tokens";
 import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
 import {
   ChevronLeft, ChevronRight, Plus, Star, Check, ImageIcon, ChevronDown, Pencil, CalendarOff,
-  Search, SlidersHorizontal,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -34,13 +34,11 @@ export const Route = createFileRoute("/schedule")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Schedule — Pinspider" }] }),
-  // SiteProvider now lives inside PinShell itself (see components/
-  // PinShell.tsx).
-  component: () => (
-    <SiteProvider>
-      <SchedulePage />
-    </SiteProvider>
-  ),
+  // SiteProvider lives inside PinShell itself (see components/
+  // PinShell.tsx) -- Lovable's own tooling re-added a per-route wrap
+  // here independently (see git history), which would decouple this
+  // page's data queries from the header switcher. Removed again.
+  component: () => <SchedulePage />,
 });
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
@@ -51,43 +49,7 @@ const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 // placeholder until real per-slot performance data exists.
 const BEST_HOURS = [12, 19];
 
-function TopBar({
-  search, onSearch, children,
-}: {
-  search: string;
-  onSearch: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 12px" }}>
-      <div
-        style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
-          borderRadius: 999, padding: "0 14px", height: 36,
-        }}
-      >
-        <Search size={18} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Search scheduled pins..."
-          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, color: PIN.textPrimary, width: "100%" }}
-        />
-      </div>
-      <button
-        type="button"
-        title="Filters"
-        style={{
-          width: 36, height: 36, borderRadius: 10, background: PIN.fieldBg, border: "none",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}
-      >
-        <SlidersHorizontal size={17} style={{ color: PIN.textSecondary }} />
-      </button>
-      {children}
-    </div>
-  );
-}
+
 
 function SchedulePage() {
   const { user } = Route.useRouteContext();
@@ -191,7 +153,7 @@ function SchedulePage() {
 
   return (
     <PinShell active="schedule" userEmail={user?.email}>
-      <TopBar search={search} onSearch={setSearch}>
+      <TopBar search={search} onSearch={setSearch} placeholder="Search scheduled pins...">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" style={scheduleBtnStyle}>

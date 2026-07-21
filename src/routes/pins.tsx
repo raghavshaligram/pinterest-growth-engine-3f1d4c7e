@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { TopBar } from "@/components/PinTopBar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,12 @@ export const Route = createFileRoute("/pins")({
 
 function PinsPageRoute() {
   const { user } = Route.useRouteContext();
+  const [search, setSearch] = useState("");
   return (
     <PinShell active="pins" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch} placeholder="Search pins..." />
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <PinsPage />
+        <PinsPage search={search} />
       </div>
     </PinShell>
   );
@@ -44,7 +47,7 @@ function PinsPageRoute() {
 
 type Brief = Awaited<ReturnType<typeof listBriefs>>[number];
 
-function PinsPage() {
+function PinsPage({ search }: { search: string }) {
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listBriefs);
   const worker = useServerFn(runImageWorker);
@@ -59,6 +62,12 @@ function PinsPage() {
 
   const pending = data?.filter((b) => b.status !== "ready" && !b.pin_images?.length).length ?? 0;
   const ready = data?.filter((b) => b.pin_images?.length).length ?? 0;
+  // Search narrows the rendered grid only -- pending/ready above stay
+  // page-wide totals, same as Dashboard's search not touching its own
+  // stat tiles.
+  const visible = (data ?? []).filter((b) =>
+    !search.trim() || b.title.toLowerCase().includes(search.trim().toLowerCase())
+  );
 
   async function renderAll() {
     setRunning(true);
@@ -137,11 +146,15 @@ function PinsPage() {
         </div>
       </header>
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {data?.map((b) => {
+        {visible.map((b) => {
           const p = b.pin_images?.[0]?.storage_path;
           return <PinTile key={b.id} b={b} url={p ? urlMap?.[p] ?? null : null} onOpen={() => setOpen(b)} />;
         })}
-        {!data?.length && <p className="text-sm text-muted-foreground">No pins yet.</p>}
+        {!visible.length && (
+          <p className="text-sm text-muted-foreground">
+            {data?.length ? "No pins match your search." : "No pins yet."}
+          </p>
+        )}
       </div>
 
       <PinDetail

@@ -19,7 +19,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { SiteProvider } from "@/lib/site-context";
-import { SiteSwitcher } from "@/components/SiteSwitcher";
 import type { ReactNode } from "react";
 
 type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "keywords" | "logs" | "settings";
@@ -128,7 +127,6 @@ export function PinShell({
       <div style={{ display: "flex", height: "100vh", background: PIN.bg, fontFamily: PIN_FONT, color: PIN.textPrimary }}>
         <Sidebar active={active} userEmail={userEmail} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <ShellHeader />
           {children}
         </div>
       </div>
@@ -136,22 +134,10 @@ export function PinShell({
   );
 }
 
-// Persistent strip above every page's own content, holding the site
-// switcher (see SiteSwitcher.tsx) -- previously the only site indicator
-// anywhere was a non-interactive label inside Dashboard's own
-// FilterPillsRow, and every other page had none at all. Deliberately
-// minimal (no page title, no breadcrumbs) since each page still renders
-// its own header content directly inside `children`; this row's only
-// job is a consistent, always-present site switcher.
-function ShellHeader() {
-  return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", padding: "12px 24px",
-        borderBottom: "1px solid #EFECE4", background: PIN.card, flexShrink: 0,
-      }}
-    >
-      <SiteSwitcher />
-    </div>
-  );
-}
+// The dedicated ShellHeader strip that used to live here (just the
+// SiteSwitcher, alone, above everything) was removed -- the switcher
+// now lives inline in the same search+filter row as every page's own
+// TopBar (see components/PinTopBar.tsx), consistent with where it sits
+// on Dashboard/Schedule, instead of on its own separate line. SiteProvider
+// stays here as the single shared instance every page's TopBar and data
+// queries read from.

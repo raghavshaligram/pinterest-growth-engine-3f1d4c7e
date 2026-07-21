@@ -14,14 +14,15 @@ import {
   unscheduleScheduledPin, queuePins, replaceScheduledPin, markPosted,
 } from "@/lib/schedule.functions";
 import { dashboardStats } from "@/lib/dashboard.functions";
-import { useSiteContext, SiteProvider } from "@/lib/site-context";
+import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
+import { TopBar } from "@/components/PinTopBar";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
 import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
 import {
-  Search, SlidersHorizontal, Plus, CheckCircle2, AlertTriangle, TrendingUp,
+  Plus, CheckCircle2, AlertTriangle, TrendingUp,
   Pencil, CalendarOff, ImageIcon,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
@@ -34,14 +35,13 @@ export const Route = createFileRoute("/dashboard")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Dashboard — Pinspider" }] }),
-  // SiteProvider now lives inside PinShell itself (see components/
-  // PinShell.tsx) -- one shared instance for the whole app instead of
-  // Dashboard/Schedule/Sites each mounting their own.
-  component: () => (
-    <SiteProvider>
-      <DashboardPage />
-    </SiteProvider>
-  ),
+  // SiteProvider lives inside PinShell itself (see components/
+  // PinShell.tsx) -- one shared instance for the whole app. Lovable's
+  // own tooling re-added a per-route wrap here independently (see git
+  // history) -- that would decouple this page's data queries from the
+  // header switcher, since useContext resolves to the nearest
+  // Provider, not the outer PinShell one. Removed again.
+  component: () => <DashboardPage />,
 });
 
 
@@ -151,7 +151,17 @@ function DashboardPage() {
 
   return (
     <PinShell active="dashboard" userEmail={user?.email}>
-      <TopBar search={search} onSearch={setSearch} />
+      <TopBar search={search} onSearch={setSearch} placeholder="Search your pins...">
+        <Link
+          to="/pins"
+          style={{
+            display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 999,
+            background: PIN.accent, color: "#FFFFFF", fontSize: 14, fontWeight: 600, flexShrink: 0, textDecoration: "none",
+          }}
+        >
+          <Plus size={16} />Create Pin
+        </Link>
+      </TopBar>
       <FilterPillsRow pill={pill} onPill={setPill} />
       <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 32px" }}>
         <MasonryFeed
@@ -189,45 +199,7 @@ function DashboardPage() {
 
 // ---------- Top bar ----------
 
-function TopBar({ search, onSearch }: { search: string; onSearch: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 12px" }}>
-      <div
-        style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
-          borderRadius: 999, padding: "0 14px", height: 36,
-        }}
-      >
-        <Search size={18} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Search your pins..."
-          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, color: PIN.textPrimary, width: "100%" }}
-        />
-      </div>
-      <button
-        type="button"
-        title="Filters"
-        style={{
-          width: 36, height: 36, borderRadius: 10, background: PIN.fieldBg, border: "none",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}
-      >
-        <SlidersHorizontal size={17} style={{ color: PIN.textSecondary }} />
-      </button>
-      <Link
-        to="/pins"
-        style={{
-          display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 999,
-          background: PIN.accent, color: "#FFFFFF", fontSize: 14, fontWeight: 600, flexShrink: 0, textDecoration: "none",
-        }}
-      >
-        <Plus size={16} />Create Pin
-      </Link>
-    </div>
-  );
-}
+
 
 // ---------- Filter pills ----------
 

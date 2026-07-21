@@ -11,6 +11,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { listKeywords, setKeywordTracked, runSerpSweep, getSerpSnapshot } from "@/lib/keywords.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { TopBar } from "@/components/PinTopBar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,10 +34,12 @@ export const Route = createFileRoute("/keywords")({
 
 function KeywordsPageRoute() {
   const { user } = Route.useRouteContext();
+  const [search, setSearch] = useState("");
   return (
     <PinShell active="keywords" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch} placeholder="Search keywords..." />
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <KeywordsPage />
+        <KeywordsPage search={search} />
       </div>
     </PinShell>
   );
@@ -55,13 +58,16 @@ function formatSwept(iso: string): string {
   return `last swept ${d}d ago`;
 }
 
-function KeywordsPage() {
+function KeywordsPage({ search }: { search: string }) {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listKeywords);
   const set = useServerFn(setKeywordTracked);
   const sweep = useServerFn(runSerpSweep);
   const { data } = useQuery({ queryKey: ["keywords", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
+  const visible = (data ?? []).filter((k) =>
+    !search.trim() || k.keyword.toLowerCase().includes(search.trim().toLowerCase())
+  );
   const setMut = useMutation({ mutationFn: (v: { id: string; tracked: boolean }) => set({ data: v }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["keywords"] }) });
   const sweepMut = useMutation({ mutationFn: () => sweep(),
@@ -78,8 +84,12 @@ function KeywordsPage() {
         <Button onClick={() => sweepMut.mutate()} disabled={sweepMut.isPending}><Search className="mr-2 h-4 w-4" />Run SERP sweep</Button>
       </header>
       <div className="space-y-2">
-        {data?.map((k) => <KeywordRow key={k.id} k={k} onToggle={(v) => setMut.mutate({ id: k.id, tracked: v })} />)}
-        {!data?.length && <p className="text-sm text-muted-foreground">No keywords yet. Analyze a page to generate them.</p>}
+        {visible.map((k) => <KeywordRow key={k.id} k={k} onToggle={(v) => setMut.mutate({ id: k.id, tracked: v })} />)}
+        {!visible.length && (
+          <p className="text-sm text-muted-foreground">
+            {data?.length ? "No keywords match your search." : "No keywords yet. Analyze a page to generate them."}
+          </p>
+        )}
       </div>
     </div>
   );

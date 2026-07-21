@@ -11,6 +11,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listBoards, upsertBoard, deleteBoard, syncPinterestBoards } from "@/lib/boards.functions";
 import { listSites } from "@/lib/sites.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { TopBar } from "@/components/PinTopBar";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,10 +35,12 @@ export const Route = createFileRoute("/boards")({
 
 function BoardsPageRoute() {
   const { user } = Route.useRouteContext();
+  const [search, setSearch] = useState("");
   return (
     <PinShell active="boards" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch} placeholder="Search boards..." />
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <BoardsPage />
+        <BoardsPage search={search} />
       </div>
     </PinShell>
   );
@@ -45,7 +48,7 @@ function BoardsPageRoute() {
 
 type BoardRow = Awaited<ReturnType<typeof listBoards>>[number];
 
-function BoardsPage() {
+function BoardsPage({ search }: { search: string }) {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listBoards);
@@ -55,6 +58,9 @@ function BoardsPage() {
   const sync = useServerFn(syncPinterestBoards);
 
   const { data: boards } = useQuery({ queryKey: ["boards", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
+  const visibleBoards = (boards ?? []).filter((b) =>
+    !search.trim() || b.name.toLowerCase().includes(search.trim().toLowerCase())
+  );
   const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
 
   const syncMut = useMutation({
@@ -100,11 +106,13 @@ function BoardsPage() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {boards?.map((b) => (
+        {visibleBoards.map((b) => (
           <BoardCard key={b.id} board={b} sites={sites ?? []} onDelete={() => del({ data: { id: b.id } }).then(() => qc.invalidateQueries({ queryKey: ["boards"] }))} onSaved={() => qc.invalidateQueries({ queryKey: ["boards"] })} />
         ))}
-        {!boards?.length && (
-          <p className="text-sm text-muted-foreground">No boards yet. Click <strong>Sync from Pinterest</strong> to pull them in.</p>
+        {!visibleBoards.length && (
+          <p className="text-sm text-muted-foreground">
+            {boards?.length ? "No boards match your search." : <>No boards yet. Click <strong>Sync from Pinterest</strong> to pull them in.</>}
+          </p>
         )}
       </div>
     </div>

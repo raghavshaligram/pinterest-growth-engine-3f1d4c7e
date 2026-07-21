@@ -60,7 +60,7 @@ export function SiteSwitcher() {
             borderRadius: 999, border: `1px solid ${SW.border}`,
             background: open || triggerHover ? SW.hoverTint : SW.card,
             fontFamily: PIN_FONT, fontSize: 13, fontWeight: 500, color: SW.textPrimary,
-            cursor: "pointer", transition: "background-color 120ms ease",
+            cursor: "pointer", transition: "background-color 120ms ease", flexShrink: 0,
           }}
         >
           {triggerDotColor ? (

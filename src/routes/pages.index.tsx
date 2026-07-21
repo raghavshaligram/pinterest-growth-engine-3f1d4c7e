@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { TopBar } from "@/components/PinTopBar";
 import { generateBriefs, runImageWorker, renderImagesForPage } from "@/lib/briefs.functions";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
@@ -34,16 +35,18 @@ export const Route = createFileRoute("/pages/")({
 
 function PagesRoute() {
   const { user } = Route.useRouteContext();
+  const [search, setSearch] = useState("");
   return (
     <PinShell active="pages" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch} placeholder="Search pages..." />
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <PagesPage />
+        <PagesPage search={search} />
       </div>
     </PinShell>
   );
 }
 
-function PagesPage() {
+function PagesPage({ search }: { search: string }) {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listPages);
@@ -66,7 +69,9 @@ function PagesPage() {
 
   const active = (data ?? []).filter((p) => !p.excluded);
   const excluded = (data ?? []).filter((p) => p.excluded);
-  const visible = showExcluded ? excluded : active;
+  const visible = (showExcluded ? excluded : active).filter((p) =>
+    !search.trim() || (p.title ?? p.url).toLowerCase().includes(search.trim().toLowerCase())
+  );
 
   const pipelineM = useMutation({
     mutationFn: () => pipeline({ data: { maxAnalyze: 25, maxBriefs: 15, maxImages: 30 } }),
