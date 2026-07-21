@@ -392,19 +392,24 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
   return (
     <Card className="p-6">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">Add a site</h2>
-          <p className="text-sm text-muted-foreground">
-            {step === 1 && "Choose your site type"}
-            {step === 2 && "Enter your site URL"}
-            {step === 3 && "Set brand identity"}
-          </p>
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#E60023" }}>
+            <Plus className="h-4 w-4 text-white" />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">Add a site</h2>
+            <p className="text-sm text-muted-foreground">
+              {step === 1 && "Choose your site type"}
+              {step === 2 && "Enter your site URL"}
+              {step === 3 && "Set brand identity"}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {([1, 2, 3] as const).map((n) => (
-            <span key={n} className="h-1.5 w-6 rounded-full" style={{ background: n <= step ? "#111111" : "#E5E5E5" }} />
+            <span key={n} className="h-2 w-2 rounded-full" style={{ background: n <= step ? "#E60023" : "#E5E5E5" }} />
           ))}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCancel}><X className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 ml-1" onClick={onCancel}><X className="h-4 w-4" /></Button>
         </div>
       </div>
 
@@ -416,8 +421,8 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
             const active = siteType === t;
             return (
               <button
-                key={t} type="button" onClick={() => setSiteType(t)}
-                className="rounded-lg border p-4 text-left"
+                key={t} type="button" onClick={() => { setSiteType(t); setStep(2); }}
+                className="rounded-lg border p-4 text-left transition-colors hover:border-neutral-400"
                 style={{ borderColor: active ? "#111111" : "#E5E5E5", borderWidth: active ? 2 : 1 }}
               >
                 <Icon className="mb-2 h-5 w-5" />
@@ -430,17 +435,19 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
       )}
 
       {step === 2 && (
-        <div className="max-w-lg space-y-4">
-          <div>
-            <Label>{cfg.urlLabel}</Label>
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={cfg.urlPlaceholder} />
-          </div>
-          {siteType === "website" && (
+        <div className="max-w-2xl space-y-4">
+          <div className={siteType === "website" ? "grid grid-cols-2 gap-6" : ""}>
             <div>
-              <Label>Sitemap URL <span className="text-muted-foreground">(optional)</span></Label>
-              <Input value={sitemapUrl} onChange={(e) => setSitemapUrl(e.target.value)} placeholder="https://yoursite.com/sitemap.xml" />
+              <Label>{cfg.urlLabel}</Label>
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={cfg.urlPlaceholder} />
             </div>
-          )}
+            {siteType === "website" && (
+              <div>
+                <Label>Sitemap URL <span className="text-muted-foreground">(optional)</span></Label>
+                <Input value={sitemapUrl} onChange={(e) => setSitemapUrl(e.target.value)} placeholder="https://yoursite.com/sitemap.xml" />
+              </div>
+            )}
+          </div>
           {cfg.tip && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">💡 {cfg.tip}</p>}
         </div>
       )}
@@ -461,13 +468,21 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
 
       <div className="mt-6 flex justify-end gap-2">
         {step > 1 && <Button variant="outline" onClick={() => setStep((s) => (s - 1) as WizardStep)}>Back</Button>}
-        {step < 3 && (
-          <Button onClick={() => setStep((s) => (s + 1) as WizardStep)} disabled={step === 2 && !url.trim()}>
-            {step === 2 ? "Next: Brand info →" : "Next"}
+        {step === 2 && (
+          <Button
+            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
+            onClick={() => setStep(3)}
+            disabled={!url.trim()}
+          >
+            Next: Brand info →
           </Button>
         )}
         {step === 3 && (
-          <Button onClick={() => createMut.mutate()} disabled={!brandName.trim() || createMut.isPending}>
+          <Button
+            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
+            onClick={() => createMut.mutate()}
+            disabled={!brandName.trim() || createMut.isPending}
+          >
             <Plus className="mr-1.5 h-4 w-4" />Add site
           </Button>
         )}
