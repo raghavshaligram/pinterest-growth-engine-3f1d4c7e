@@ -639,6 +639,7 @@ export type Database = {
           updated_at: string
           url: string
           user_id: string
+          vertical: string | null
         }
         Insert: {
           accent_color?: string | null
@@ -656,6 +657,7 @@ export type Database = {
           updated_at?: string
           url: string
           user_id: string
+          vertical?: string | null
         }
         Update: {
           accent_color?: string | null
@@ -673,6 +675,7 @@ export type Database = {
           updated_at?: string
           url?: string
           user_id?: string
+          vertical?: string | null
         }
         Relationships: []
       }
