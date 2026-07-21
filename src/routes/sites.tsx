@@ -452,7 +452,9 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
           <div className="space-y-4">
             <div className={siteType === "website" ? "grid grid-cols-2 gap-6" : ""}>
               <div>
-                <Label className="font-semibold">{cfg.urlLabel}</Label>
+                <div className="flex items-baseline gap-1.5">
+                  <Label className="font-semibold">{cfg.urlLabel}</Label>
+                </div>
                 <div className="relative mt-1.5">
                   <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
