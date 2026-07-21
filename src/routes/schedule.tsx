@@ -222,8 +222,8 @@ const navBtnStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: PIN.textSecondary,
 };
 const scheduleBtnStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 999,
-  background: PIN.accent, color: "#FFFFFF", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 6, height: 48, padding: "0 18px", borderRadius: 999,
+  background: PIN.accent, color: "#FFFFFF", fontSize: 15, fontWeight: 600, border: "none", cursor: "pointer",
 };
 
 function StatPill({ tone, label }: { tone: "success" | "rose" | "neutral"; label: string }) {
