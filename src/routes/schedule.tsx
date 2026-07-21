@@ -19,6 +19,7 @@ import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
 import {
   ChevronLeft, ChevronRight, Plus, Star, Check, ImageIcon, ChevronDown, Pencil, CalendarOff,
+  Search, SlidersHorizontal,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
