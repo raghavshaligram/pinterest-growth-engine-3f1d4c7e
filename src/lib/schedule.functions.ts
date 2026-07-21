@@ -10,36 +10,34 @@ export const listScheduled = createServerFn({ method: "GET" })
     z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
   )
   .handler(async ({ data: input, context }) => {
-    // scheduled_pins has no direct site_id column -- resolve via the same
-    // pages -> pin_briefs id-list chain dashboard.functions.ts already
-    // uses for the identical reason (no live PostgREST instance here to
-    // verify a deep embedded dot-path filter against).
+    // scheduled_pins has no direct site_id column. Filter by user_id here
+    // (avoids massive .in(brief_id, [...]) URLs that overflow HTTP headers),
+    // then narrow to the requested site in-memory using the pages join.
     let query = context.supabase
       .from("scheduled_pins")
-      .select("id, scheduled_at, status, pinterest_pin_id, last_error, brief_id, board_id, image_id, pin_briefs(title, description, hashtags, alt_text, cta, page_id, pages(url, title)), boards(name, pinterest_board_id), pin_images(storage_path, width, height)")
+      .select("id, scheduled_at, status, pinterest_pin_id, last_error, brief_id, board_id, image_id, pin_briefs(title, description, hashtags, alt_text, cta, page_id, pages(url, title, site_id)), boards(name, pinterest_board_id), pin_images(storage_path, width, height)")
+      .eq("user_id", context.userId)
       .order("scheduled_at", { ascending: true })
       .limit(500);
-    if (input.siteId) {
-      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
-      const pageIds = (pageRows ?? []).map((r) => r.id);
-      let briefIds: string[] = [];
-      if (pageIds.length > 0) {
-        const { data: briefRows } = await context.supabase.from("pin_briefs").select("id").in("page_id", pageIds);
-        briefIds = (briefRows ?? []).map((r) => r.id);
-      }
-      query = query.in("brief_id", briefIds);
-    }
     const { data, error } = await query;
     if (error) throw error;
+    const filtered = input.siteId
+      ? (data ?? []).filter((r) => {
+          const siteId = (r as { pin_briefs?: { pages?: { site_id?: string } } })
+            .pin_briefs?.pages?.site_id;
+          return siteId === input.siteId;
+        })
+      : (data ?? []);
     // Resolve signed image URLs so the detail view can render them.
-    const paths = Array.from(new Set((data ?? []).map((r) => r.pin_images?.storage_path).filter(Boolean) as string[]));
+    const paths = Array.from(new Set(filtered.map((r) => r.pin_images?.storage_path).filter(Boolean) as string[]));
     const urlMap = new Map<string, string>();
     await Promise.all(paths.map(async (p) => {
       const { data: s } = await context.supabase.storage.from("pins").createSignedUrl(p, 3600);
       if (s?.signedUrl) urlMap.set(p, s.signedUrl);
     }));
-    return (data ?? []).map((r) => ({ ...r, image_url: r.pin_images?.storage_path ? urlMap.get(r.pin_images.storage_path) ?? null : null }));
+    return filtered.map((r) => ({ ...r, image_url: r.pin_images?.storage_path ? urlMap.get(r.pin_images.storage_path) ?? null : null }));
   });
+
 
 export const autoSchedule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
