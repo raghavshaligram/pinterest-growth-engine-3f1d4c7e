@@ -1,3 +1,32 @@
+-- Account-level publishing pace control (superseded two earlier,
+-- never-applied migration files of the same tables -- this is the one
+-- actually run against the live project, so it's the source of truth
+-- going forward; the older files were removed to avoid a duplicate
+-- CREATE TABLE on a fresh `supabase db push`).
+--
+-- account_publishing_profiles: one row per user (user_id itself is the
+-- PK, FK'd to auth.users so it cascades on account deletion). Created
+-- the first time a user answers the post-connect onboarding prompt
+-- (see publishing-profile.functions.ts / settings.integrations.tsx).
+-- reconciled_tier is what the nightly materializer actually sizes daily
+-- caps from (see publishing-profile.server.ts:getEffectiveLimits);
+-- current_daily_cap/cap_mode/manual_cap are the weekly-tuning controls
+-- on top of that (cron/tier-check.ts).
+--
+-- account_cap_events: append-only audit trail of onboarding/tier/cap
+-- changes, surfaced on the Account Health card and folded into the
+-- Dashboard activity feed (dashboard.functions.ts).
+--
+-- Note: every write to both tables goes through the service-role client
+-- (supabaseAdmin) -- see publishing-profile.server.ts and
+-- weekly-tier-check.server.ts -- server-side code never relies on the
+-- permissive "FOR ALL" policy below to write on the user's behalf. That
+-- policy currently lets an authenticated user write their own row
+-- directly too (e.g. via the browser Supabase client), which is wider
+-- than the app's own code path needs -- worth tightening to
+-- SELECT-only-for-authenticated (writes via service role) in a follow-up
+-- if you want the weekly auto-tuning to be the only thing that can move
+-- current_daily_cap.
 
 CREATE TABLE public.account_publishing_profiles (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
