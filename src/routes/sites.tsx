@@ -241,6 +241,14 @@ function BrandEditorFields({
     ? TYPOGRAPHY_PRESETS
     : [{ value: typography, headingFont: undefined, bodyFont: undefined }, ...TYPOGRAPHY_PRESETS];
   const activeSample = TYPOGRAPHY_PRESETS.find((p) => p.value === typography);
+  // Sites created via the DB auto-cycling trigger (see
+  // 20260720120000_site_accent_color.sql) get one of 4 colors
+  // (#4F7A5C/#8067AD/#C68A4B/#4A6C93) that aren't in this picker's 10
+  // presets -- without this, accentColor would match none of them and
+  // no swatch would ever show a selected ring, even though a real
+  // color is saved. Same "inject the current value" approach as
+  // typographyOptions above.
+  const accentSwatches = ACCENT_PRESETS.includes(accentColor) ? ACCENT_PRESETS : [...ACCENT_PRESETS, accentColor];
 
   return (
     <div className="space-y-5">
@@ -258,7 +266,7 @@ function BrandEditorFields({
       <div>
         <Label className="mb-2 block">Brand accent color <span className="font-normal text-muted-foreground">used on pin thumbnails</span></Label>
         <div className="flex flex-wrap gap-2">
-          {ACCENT_PRESETS.map((hex) => {
+          {accentSwatches.map((hex) => {
             const active = accentColor === hex;
             return (
               <button
