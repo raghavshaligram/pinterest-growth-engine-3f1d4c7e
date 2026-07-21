@@ -60,7 +60,7 @@ function TopBar({
       <div
         style={{
           flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
-          borderRadius: 999, padding: "14px 18px", maxWidth: 480, height: 48,
+          borderRadius: 999, padding: "14px 18px", height: 48,
         }}
       >
         <Search size={20} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
