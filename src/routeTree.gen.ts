@@ -11,19 +11,18 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ScheduleRouteImport } from './routes/schedule'
+import { Route as PinsRouteImport } from './routes/pins'
+import { Route as LogsRouteImport } from './routes/logs'
+import { Route as KeywordsRouteImport } from './routes/keywords'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as BoardsRouteImport } from './routes/boards'
 import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedPinsRouteImport } from './routes/_authenticated/pins'
-import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
-import { Route as AuthenticatedKeywordsRouteImport } from './routes/_authenticated/keywords'
-import { Route as AuthenticatedBoardsRouteImport } from './routes/_authenticated/boards'
-import { Route as AuthenticatedPagesIndexRouteImport } from './routes/_authenticated/pages.index'
-import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
-import { Route as AuthenticatedPagesIdRouteImport } from './routes/_authenticated/pages.$id'
+import { Route as PagesIndexRouteImport } from './routes/pages.index'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as PagesIdRouteImport } from './routes/pages.$id'
 import { Route as ApiPublicPinterestCallbackRouteImport } from './routes/api/public/pinterest.callback'
 import { Route as ApiPublicCronTierCheckRouteImport } from './routes/api/public/cron/tier-check'
 import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
@@ -42,9 +41,29 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScheduleRoute = ScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PinsRoute = PinsRouteImport.update({
+  id: '/pins',
+  path: '/pins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogsRoute = LogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KeywordsRoute = KeywordsRouteImport.update({
+  id: '/keywords',
+  path: '/keywords',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -52,13 +71,14 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BoardsRoute = BoardsRouteImport.update({
+  id: '/boards',
+  path: '/boards',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -66,46 +86,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedPinsRoute = AuthenticatedPinsRouteImport.update({
-  id: '/pins',
-  path: '/pins',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedKeywordsRoute = AuthenticatedKeywordsRouteImport.update({
-  id: '/keywords',
-  path: '/keywords',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedBoardsRoute = AuthenticatedBoardsRouteImport.update({
-  id: '/boards',
-  path: '/boards',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedPagesIndexRoute = AuthenticatedPagesIndexRouteImport.update({
+const PagesIndexRoute = PagesIndexRouteImport.update({
   id: '/pages/',
   path: '/pages/',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSettingsIntegrationsRoute =
-  AuthenticatedSettingsIntegrationsRouteImport.update({
-    id: '/integrations',
-    path: '/integrations',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedPagesIdRoute = AuthenticatedPagesIdRouteImport.update({
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const PagesIdRoute = PagesIdRouteImport.update({
   id: '/pages/$id',
   path: '/pages/$id',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicPinterestCallbackRoute =
   ApiPublicPinterestCallbackRouteImport.update({
@@ -148,18 +142,18 @@ const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
+  '/keywords': typeof KeywordsRoute
+  '/logs': typeof LogsRoute
+  '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
-  '/boards': typeof AuthenticatedBoardsRoute
-  '/keywords': typeof AuthenticatedKeywordsRoute
-  '/logs': typeof AuthenticatedLogsRoute
-  '/pins': typeof AuthenticatedPinsRoute
-  '/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/pages/$id': typeof AuthenticatedPagesIdRoute
-  '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
-  '/pages/': typeof AuthenticatedPagesIndexRoute
+  '/pages/$id': typeof PagesIdRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/pages/': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -171,18 +165,18 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
+  '/keywords': typeof KeywordsRoute
+  '/logs': typeof LogsRoute
+  '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
-  '/boards': typeof AuthenticatedBoardsRoute
-  '/keywords': typeof AuthenticatedKeywordsRoute
-  '/logs': typeof AuthenticatedLogsRoute
-  '/pins': typeof AuthenticatedPinsRoute
-  '/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/pages/$id': typeof AuthenticatedPagesIdRoute
-  '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
-  '/pages': typeof AuthenticatedPagesIndexRoute
+  '/pages/$id': typeof PagesIdRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/pages': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -194,20 +188,19 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
+  '/keywords': typeof KeywordsRoute
+  '/logs': typeof LogsRoute
+  '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
-  '/_authenticated/boards': typeof AuthenticatedBoardsRoute
-  '/_authenticated/keywords': typeof AuthenticatedKeywordsRoute
-  '/_authenticated/logs': typeof AuthenticatedLogsRoute
-  '/_authenticated/pins': typeof AuthenticatedPinsRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/_authenticated/pages/$id': typeof AuthenticatedPagesIdRoute
-  '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
-  '/_authenticated/pages/': typeof AuthenticatedPagesIndexRoute
+  '/pages/$id': typeof PagesIdRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/pages/': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -221,15 +214,15 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
-    | '/dashboard'
-    | '/schedule'
-    | '/sitemap.xml'
-    | '/sites'
     | '/boards'
+    | '/dashboard'
     | '/keywords'
     | '/logs'
     | '/pins'
+    | '/schedule'
     | '/settings'
+    | '/sitemap.xml'
+    | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages/'
@@ -244,15 +237,15 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
-    | '/dashboard'
-    | '/schedule'
-    | '/sitemap.xml'
-    | '/sites'
     | '/boards'
+    | '/dashboard'
     | '/keywords'
     | '/logs'
     | '/pins'
+    | '/schedule'
     | '/settings'
+    | '/sitemap.xml'
+    | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages'
@@ -266,20 +259,19 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/_authenticated'
     | '/auth'
+    | '/boards'
     | '/dashboard'
+    | '/keywords'
+    | '/logs'
+    | '/pins'
     | '/schedule'
+    | '/settings'
     | '/sitemap.xml'
     | '/sites'
-    | '/_authenticated/boards'
-    | '/_authenticated/keywords'
-    | '/_authenticated/logs'
-    | '/_authenticated/pins'
-    | '/_authenticated/settings'
-    | '/_authenticated/pages/$id'
-    | '/_authenticated/settings/integrations'
-    | '/_authenticated/pages/'
+    | '/pages/$id'
+    | '/settings/integrations'
+    | '/pages/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
     | '/api/public/cron/materialize'
@@ -291,12 +283,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  BoardsRoute: typeof BoardsRoute
   DashboardRoute: typeof DashboardRoute
+  KeywordsRoute: typeof KeywordsRoute
+  LogsRoute: typeof LogsRoute
+  PinsRoute: typeof PinsRoute
   ScheduleRoute: typeof ScheduleRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SitesRoute: typeof SitesRoute
+  PagesIdRoute: typeof PagesIdRoute
+  PagesIndexRoute: typeof PagesIndexRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
   ApiPublicCronMaterializeRoute: typeof ApiPublicCronMaterializeRoute
@@ -322,11 +320,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedule': {
       id: '/schedule'
       path: '/schedule'
       fullPath: '/schedule'
       preLoaderRoute: typeof ScheduleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pins': {
+      id: '/pins'
+      path: '/pins'
+      fullPath: '/pins'
+      preLoaderRoute: typeof PinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs': {
+      id: '/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/keywords': {
+      id: '/keywords'
+      path: '/keywords'
+      fullPath: '/keywords'
+      preLoaderRoute: typeof KeywordsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -336,18 +362,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/boards': {
+      id: '/boards'
+      path: '/boards'
+      fullPath: '/boards'
+      preLoaderRoute: typeof BoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -357,61 +383,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/pins': {
-      id: '/_authenticated/pins'
-      path: '/pins'
-      fullPath: '/pins'
-      preLoaderRoute: typeof AuthenticatedPinsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/logs': {
-      id: '/_authenticated/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof AuthenticatedLogsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/keywords': {
-      id: '/_authenticated/keywords'
-      path: '/keywords'
-      fullPath: '/keywords'
-      preLoaderRoute: typeof AuthenticatedKeywordsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/boards': {
-      id: '/_authenticated/boards'
-      path: '/boards'
-      fullPath: '/boards'
-      preLoaderRoute: typeof AuthenticatedBoardsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/pages/': {
-      id: '/_authenticated/pages/'
+    '/pages/': {
+      id: '/pages/'
       path: '/pages'
       fullPath: '/pages/'
-      preLoaderRoute: typeof AuthenticatedPagesIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof PagesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/settings/integrations': {
-      id: '/_authenticated/settings/integrations'
+    '/settings/integrations': {
+      id: '/settings/integrations'
       path: '/integrations'
       fullPath: '/settings/integrations'
-      preLoaderRoute: typeof AuthenticatedSettingsIntegrationsRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
     }
-    '/_authenticated/pages/$id': {
-      id: '/_authenticated/pages/$id'
+    '/pages/$id': {
+      id: '/pages/$id'
       path: '/pages/$id'
       fullPath: '/pages/$id'
-      preLoaderRoute: typeof AuthenticatedPagesIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof PagesIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/pinterest/callback': {
       id: '/api/public/pinterest/callback'
@@ -465,51 +456,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AuthenticatedSettingsRouteChildren {
-  AuthenticatedSettingsIntegrationsRoute: typeof AuthenticatedSettingsIntegrationsRoute
+interface SettingsRouteChildren {
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
 }
 
-const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
-  AuthenticatedSettingsIntegrationsRoute:
-    AuthenticatedSettingsIntegrationsRoute,
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
 }
 
-const AuthenticatedSettingsRouteWithChildren =
-  AuthenticatedSettingsRoute._addFileChildren(
-    AuthenticatedSettingsRouteChildren,
-  )
-
-interface AuthenticatedRouteRouteChildren {
-  AuthenticatedBoardsRoute: typeof AuthenticatedBoardsRoute
-  AuthenticatedKeywordsRoute: typeof AuthenticatedKeywordsRoute
-  AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
-  AuthenticatedPinsRoute: typeof AuthenticatedPinsRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
-  AuthenticatedPagesIdRoute: typeof AuthenticatedPagesIdRoute
-  AuthenticatedPagesIndexRoute: typeof AuthenticatedPagesIndexRoute
-}
-
-const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedBoardsRoute: AuthenticatedBoardsRoute,
-  AuthenticatedKeywordsRoute: AuthenticatedKeywordsRoute,
-  AuthenticatedLogsRoute: AuthenticatedLogsRoute,
-  AuthenticatedPinsRoute: AuthenticatedPinsRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
-  AuthenticatedPagesIdRoute: AuthenticatedPagesIdRoute,
-  AuthenticatedPagesIndexRoute: AuthenticatedPagesIndexRoute,
-}
-
-const AuthenticatedRouteRouteWithChildren =
-  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  BoardsRoute: BoardsRoute,
   DashboardRoute: DashboardRoute,
+  KeywordsRoute: KeywordsRoute,
+  LogsRoute: LogsRoute,
+  PinsRoute: PinsRoute,
   ScheduleRoute: ScheduleRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SitesRoute: SitesRoute,
+  PagesIdRoute: PagesIdRoute,
+  PagesIndexRoute: PagesIndexRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
   ApiPublicCronMaterializeRoute: ApiPublicCronMaterializeRoute,
@@ -521,3 +493,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
