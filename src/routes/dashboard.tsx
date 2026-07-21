@@ -14,7 +14,7 @@ import {
   unscheduleScheduledPin, queuePins, replaceScheduledPin, markPosted,
 } from "@/lib/schedule.functions";
 import { dashboardStats } from "@/lib/dashboard.functions";
-import { useSiteContext } from "@/lib/site-context";
+import { useSiteContext, SiteProvider } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
