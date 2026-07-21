@@ -226,6 +226,7 @@ function BrandEditorFields({
   notes, onNotes,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
+  previewHost = "www",
 }: {
   brandName: string; onBrandName: (v: string) => void;
   tagline: string; onTagline: (v: string) => void;
@@ -235,6 +236,7 @@ function BrandEditorFields({
   notes: string; onNotes: (v: string) => void;
   advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
+  previewHost?: string;
 }) {
   const legacyColors = brandColors.filter((c) => !ACCENT_PRESETS.includes(c));
   const typographyOptions = !typography || TYPOGRAPHY_PRESETS.some((p) => p.value === typography)
@@ -244,11 +246,11 @@ function BrandEditorFields({
   // Sites created via the DB auto-cycling trigger (see
   // 20260720120000_site_accent_color.sql) get one of 4 colors
   // (#4F7A5C/#8067AD/#C68A4B/#4A6C93) that aren't in this picker's 10
-  // presets -- without this, accentColor would match none of them and
-  // no swatch would ever show a selected ring, even though a real
-  // color is saved. Same "inject the current value" approach as
-  // typographyOptions above.
-  const accentSwatches = ACCENT_PRESETS.includes(accentColor) ? ACCENT_PRESETS : [...ACCENT_PRESETS, accentColor];
+  // presets. Rendered as an 11th grid swatch this just wraps onto its
+  // own line looking like a stray/broken circle, so instead it's
+  // rendered as a separate labeled "Current" pill next to the row --
+  // reads as intentional whether or not it wraps.
+  const isCustomAccent = !ACCENT_PRESETS.includes(accentColor);
 
   return (
     <div className="space-y-5">
@@ -265,8 +267,8 @@ function BrandEditorFields({
 
       <div>
         <Label className="mb-2 block">Brand accent color <span className="font-normal text-muted-foreground">used on pin thumbnails</span></Label>
-        <div className="flex flex-wrap gap-2">
-          {accentSwatches.map((hex) => {
+        <div className="flex flex-wrap items-center gap-2">
+          {ACCENT_PRESETS.map((hex) => {
             const active = accentColor === hex;
             return (
               <button
@@ -279,6 +281,17 @@ function BrandEditorFields({
               </button>
             );
           })}
+          {isCustomAccent && (
+            <span className="flex items-center gap-1.5 rounded-full border border-border py-1 pl-1 pr-2.5 text-xs text-muted-foreground">
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-full"
+                style={{ background: accentColor, boxShadow: "0 0 0 2px #fff, 0 0 0 3px #111111" }}
+              >
+                <Check className="h-3 w-3 text-white" />
+              </span>
+              Current
+            </span>
+          )}
         </div>
       </div>
 
@@ -288,7 +301,7 @@ function BrandEditorFields({
         </span>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{brandName || previewLabel}</div>
-          <div className="text-xs text-muted-foreground">www</div>
+          <div className="truncate text-xs text-muted-foreground">{previewHost}</div>
         </div>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span className="h-2 w-2 rounded-full" style={{ background: accentColor }} />accent
@@ -509,6 +522,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
+            previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
         )}
 
@@ -668,6 +682,7 @@ function SiteCard({
               notes={notes} onNotes={setNotes}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}
+              previewHost={host}
             />
             <div className="mt-4 flex justify-end">
               <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>Save brand</Button>
