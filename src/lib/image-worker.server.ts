@@ -45,11 +45,18 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     if (!briefId) return;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
-      const { data: brief } = await supabaseAdmin
+      const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
         .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors, brand_font, vertical))")
         .eq("id", briefId)
         .single();
+      // Previously this discarded `error` entirely and always threw the
+      // generic "brief missing" on any failure -- including query errors
+      // that have nothing to do with the brief being missing (e.g. a
+      // PostgREST schema-cache-lag PGRST204 on a newly added column,
+      // which is exactly what silently broke here right after the
+      // vertical-column migration shipped). Surface the real reason.
+      if (briefErr) throw briefErr;
       if (!brief) throw new Error("brief missing");
       const page = (brief as {
         pages?: {
