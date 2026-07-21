@@ -180,36 +180,36 @@ function TopBar({ search, onSearch }: { search: string; onSearch: (v: string) =>
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 12px" }}>
       <div
         style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 8, background: PIN.fieldBg,
-          borderRadius: 999, padding: "10px 16px", maxWidth: 480,
+          flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
+          borderRadius: 999, padding: "14px 18px", maxWidth: 480, height: 48,
         }}
       >
-        <Search size={16} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
+        <Search size={20} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Search your pins..."
-          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, color: PIN.textPrimary, width: "100%" }}
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, color: PIN.textPrimary, width: "100%" }}
         />
       </div>
       <button
         type="button"
         title="Filters"
         style={{
-          width: 40, height: 40, borderRadius: 10, background: PIN.fieldBg, border: "none",
+          width: 48, height: 48, borderRadius: 10, background: PIN.fieldBg, border: "none",
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}
       >
-        <SlidersHorizontal size={17} style={{ color: PIN.textSecondary }} />
+        <SlidersHorizontal size={19} style={{ color: PIN.textSecondary }} />
       </button>
       <Link
         to="/pins"
         style={{
-          display: "flex", alignItems: "center", gap: 6, height: 40, padding: "0 16px", borderRadius: 999,
-          background: PIN.accent, color: "#FFFFFF", fontSize: 14, fontWeight: 600, flexShrink: 0, textDecoration: "none",
+          display: "flex", alignItems: "center", gap: 6, height: 48, padding: "0 18px", borderRadius: 999,
+          background: PIN.accent, color: "#FFFFFF", fontSize: 15, fontWeight: 600, flexShrink: 0, textDecoration: "none",
         }}
       >
-        <Plus size={17} />Create Pin
+        <Plus size={18} />Create Pin
       </Link>
     </div>
   );
