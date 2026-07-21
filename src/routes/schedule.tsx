@@ -48,6 +48,44 @@ const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 // placeholder until real per-slot performance data exists.
 const BEST_HOURS = [12, 19];
 
+function TopBar({
+  search, onSearch, children,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 12px" }}>
+      <div
+        style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
+          borderRadius: 999, padding: "14px 18px", maxWidth: 480, height: 48,
+        }}
+      >
+        <Search size={20} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
+        <input
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search scheduled pins..."
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, color: PIN.textPrimary, width: "100%" }}
+        />
+      </div>
+      <button
+        type="button"
+        title="Filters"
+        style={{
+          width: 48, height: 48, borderRadius: 10, background: PIN.fieldBg, border: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}
+      >
+        <SlidersHorizontal size={19} style={{ color: PIN.textSecondary }} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function SchedulePage() {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
