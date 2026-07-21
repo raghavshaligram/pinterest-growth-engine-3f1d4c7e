@@ -64,6 +64,7 @@ const SITE_TYPE_CONFIG: Record<SiteType, {
   label: string;
   badgeClass: string;
   icon: typeof Globe;
+  emoji: string;
   description: string;
   unitSingular: string;
   unitPlural: string;
@@ -76,6 +77,7 @@ const SITE_TYPE_CONFIG: Record<SiteType, {
     label: "Website",
     badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
     icon: Globe,
+    emoji: "\u{1F310}",
     description: "Any URL with a sitemap — great for blogs, portfolios, or brand sites",
     unitSingular: "post",
     unitPlural: "posts",
@@ -87,6 +89,7 @@ const SITE_TYPE_CONFIG: Record<SiteType, {
     label: "Etsy",
     badgeClass: "bg-orange-50 text-orange-700 border-orange-200",
     icon: Store,
+    emoji: "\u{1F3FA}",
     description: "Connect your Etsy shop and auto-pin your listings",
     unitSingular: "listing",
     unitPlural: "listings",
@@ -99,6 +102,7 @@ const SITE_TYPE_CONFIG: Record<SiteType, {
     label: "eComm",
     badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: ShoppingBag,
+    emoji: "\u{1F6CD}\u{FE0F}",
     description: "Shopify, WooCommerce, or any product catalogue",
     unitSingular: "product",
     unitPlural: "products",
@@ -431,15 +435,18 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
           <div className="grid gap-3 md:grid-cols-3">
             {SITE_TYPES.map((t) => {
               const c = SITE_TYPE_CONFIG[t];
-              const Icon = c.icon;
               const active = siteType === t;
               return (
                 <button
                   key={t} type="button" onClick={() => { setSiteType(t); setStep(2); }}
                   className="rounded-lg border p-4 text-left transition-colors hover:border-neutral-400"
-                  style={{ borderColor: active ? "#111111" : "#E5E5E5", borderWidth: active ? 2 : 1 }}
+                  style={{
+                    borderColor: active ? "#E60023" : "#E5E5E5",
+                    borderWidth: active ? 2 : 1,
+                    background: active ? "#FCE9EA" : "transparent",
+                  }}
                 >
-                  <Icon className="mb-2 h-5 w-5" />
+                  <span className="mb-2 block text-2xl leading-none">{c.emoji}</span>
                   <div className="font-medium">{c.wizardTitle}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{c.description}</div>
                 </button>
