@@ -632,9 +632,7 @@ export type Database = {
           created_at: string
           id: string
           settings: Json
-          site_type: string
           sitemap_url: string | null
-          tagline: string | null
           timezone: string
           updated_at: string
           url: string
@@ -649,9 +647,7 @@ export type Database = {
           created_at?: string
           id?: string
           settings?: Json
-          site_type?: string
           sitemap_url?: string | null
-          tagline?: string | null
           timezone?: string
           updated_at?: string
           url: string
@@ -666,9 +662,7 @@ export type Database = {
           created_at?: string
           id?: string
           settings?: Json
-          site_type?: string
           sitemap_url?: string | null
-          tagline?: string | null
           timezone?: string
           updated_at?: string
           url?: string
