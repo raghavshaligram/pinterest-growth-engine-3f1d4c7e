@@ -18,7 +18,13 @@ export const PIN_STYLES = [
 // photo-real or product-shot mode can be added without a schema change.
 export type SiteVertical = "garden_content" | "general_content" | "etsy_product" | "ecomm_product";
 type GenerationMode = "illustrated";
-type TemplateId = "quick_tip_grid" | "editorial_before_after";
+type TemplateId =
+  | "quick_tip_grid"
+  | "editorial_before_after"
+  | "problem_solution_headline"
+  | "listicle"
+  | "quote_stat_card"
+  | "step_by_step";
 
 interface PinTemplateEntry {
   visual_description: string;
@@ -56,6 +62,49 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
       },
+      // Pass B: Master Strategy template 3/6. Magazine-cover read, not an
+      // info-grid -- deliberately low text density.
+      problem_solution_headline: {
+        visual_description: `THEME FAMILY: PROBLEM/SOLUTION HEADLINE PIN. Magazine-cover layout: one large bold headline stating the problem or question at the very top (e.g. "Why Is My Soil So Compacted?"), a single strong hero illustration or photo filling the middle -- not a grid, not multiple panels -- and a short punchy solution/answer line near the bottom. Deliberately low text density; reads like one confident editorial statement, not an info-grid.`,
+        default_middle_prompt: (topic) =>
+          `One single strong hero illustration or photo capturing ${topic} at a glance -- minimal text overlay, let the visual carry the idea. No supporting icons, no card grid, no bullet list.`,
+        typography_direction: "bold condensed magazine-headline sans",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
+      // Pass B: Master Strategy template 4/6. Numerals + short labels,
+      // not paragraph text -- the fix for the current quick-tip grid's
+      // cluttered feel.
+      listicle: {
+        visual_description: `THEME FAMILY: NUMBERED LISTICLE PIN. Large bold numerals (1, 2, 3...) paired with a small icon and a short 3-5 word label per item -- not paragraph text, not full sentences. Clean vertical or grid arrangement with generous spacing so it reads as a scannable numbered list, not a cluttered info-grid.`,
+        default_middle_prompt: (topic) =>
+          `A numbered list (3-5 items) about ${topic}, each item a large numeral plus one small icon and a short 3-5 word label only -- minimal text overlay, let the visual carry the idea. No sentences, no paragraphs.`,
+        typography_direction: "bold rounded sans with oversized numerals",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
+      // Pass B: Master Strategy template 5/6. The deliberately
+      // lowest-text-density template -- text IS the visual here, so this
+      // is the one entry that doesn't get the "minimal text overlay"
+      // instruction.
+      quote_stat_card: {
+        visual_description: `THEME FAMILY: QUOTE/STAT CARD PIN. One large number or short quote as the single dominant visual element, filling most of the canvas -- minimal surrounding decoration, generous white space. The deliberately lowest-text-density template: one big statement, nothing else competing for attention.`,
+        default_middle_prompt: (topic) =>
+          `One large, bold statistic or short quote about ${topic} as the dominant visual element -- this is the one template where the text IS the visual, so make it big and confident. No supporting icons, no card grid, no extra copy competing with it.`,
+        typography_direction: "oversized bold display serif",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
+      // Pass B: Master Strategy template 6/6. Sequential flow with short
+      // labels only, not sentences.
+      step_by_step: {
+        visual_description: `THEME FAMILY: STEP-BY-STEP SEQUENCE PIN. Sequential numbered steps (1 -> 2 -> 3 -> 4) in a vertical or horizontal flow, one small illustration per step, short 2-4 word step labels only, connected by a simple line or arrow between steps.`,
+        default_middle_prompt: (topic) =>
+          `A sequence of 3-4 numbered steps about ${topic}, each with one small illustration and a short 2-4 word label only, connected by a simple line or arrow -- minimal text overlay, let the visual carry the idea. No sentences, no paragraphs per step.`,
+        typography_direction: "rounded friendly bold sans with a clear numbered sequence",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
     },
   },
   // Minimal placeholder so non-garden sites don't inherit gardening
@@ -83,6 +132,29 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
   ecomm_product: {},
 };
 
+// Style -> template resolution. Ordered rules (first match wins) tested
+// against the free-text style string an LLM returns for a brief (not
+// guaranteed to exactly match a PIN_STYLES literal, hence regex
+// substring matching rather than exact lookup -- same mechanism the
+// original 2-family version used, now spanning all 6 templates instead
+// of collapsing everything into just 2.
+const STYLE_TEMPLATE_RULES: ReadonlyArray<{ test: RegExp; templateId: TemplateId }> = [
+  { test: /problem-solver|faq/i, templateId: "problem_solution_headline" },
+  { test: /how-to|illustration|seasonal/i, templateId: "step_by_step" },
+  { test: /checklist|listicle/i, templateId: "listicle" },
+  { test: /calculator|minimal/i, templateId: "quote_stat_card" },
+  { test: /comparison|before-after|photo/i, templateId: "editorial_before_after" },
+  { test: /mistakes|quick-tip|infographic/i, templateId: "quick_tip_grid" },
+];
+
+function resolveTemplateId(style?: string | null): TemplateId {
+  const s = style ?? "";
+  for (const rule of STYLE_TEMPLATE_RULES) {
+    if (rule.test.test(s)) return rule.templateId;
+  }
+  return "quick_tip_grid";
+}
+
 export function buildThemedPinPrompt(input: {
   title: string;
   cta?: string | null;
@@ -106,8 +178,7 @@ export function buildThemedPinPrompt(input: {
 }) {
   const vertical: SiteVertical = input.vertical ?? "garden_content";
   const generationMode: GenerationMode = "illustrated";
-  const isTipTheme = /quick-tip|checklist|how-to|faq|infographic|listicle|mistakes/i.test(input.style ?? "");
-  const templateId: TemplateId = isTipTheme ? "quick_tip_grid" : "editorial_before_after";
+  const templateId = resolveTemplateId(input.style);
 
   const fallbackEntry = TEMPLATE_REGISTRY.general_content!.illustrated!.quick_tip_grid!;
   const entry = TEMPLATE_REGISTRY[vertical]?.[generationMode]?.[templateId] ?? fallbackEntry;
