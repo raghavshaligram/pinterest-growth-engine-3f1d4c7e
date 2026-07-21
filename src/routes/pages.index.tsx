@@ -1,4 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+// Standalone route -- opts out of the shared _authenticated layout
+// (AppShell) so PinShell renders the Pinterest-native chrome, matching
+// Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
+// _authenticated route's auth guard; keep both in sync if that check
+// ever changes.
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
@@ -13,10 +19,27 @@ import { Sparkles, ImageIcon, Zap, Loader2, EyeOff, Eye, Filter, Check, Clock } 
 import { useEffect, useState } from "react";
 
 
-export const Route = createFileRoute("/_authenticated/pages/")({
+export const Route = createFileRoute("/pages/")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   head: () => ({ meta: [{ title: "Pages — Pinspider" }] }),
-  component: PagesPage,
+  component: () => <PagesRoute />,
 });
+
+function PagesRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="pages" userEmail={user?.email}>
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <PagesPage />
+      </div>
+    </PinShell>
+  );
+}
 
 function PagesPage() {
   const qc = useQueryClient();

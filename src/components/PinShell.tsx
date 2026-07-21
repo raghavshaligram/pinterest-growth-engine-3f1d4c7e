@@ -55,7 +55,7 @@ function railItemStyle(active: boolean): React.CSSProperties {
   };
 }
 
-function Sidebar({ active, userEmail }: { active: "dashboard" | "schedule" | "boards" | "sites"; userEmail?: string | null }) {
+function Sidebar({ active, userEmail }: { active: "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "keywords" | "logs" | "settings"; userEmail?: string | null }) {
   const navigate = useNavigate();
   async function signOut() {
     await supabase.auth.signOut();
@@ -128,7 +128,7 @@ function Avatar({ email }: { email?: string | null }) {
 export function PinShell({
   active, userEmail, children,
 }: {
-  active: "dashboard" | "schedule" | "boards" | "sites";
+  active: "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "keywords" | "logs" | "settings";
   userEmail?: string | null;
   children: ReactNode;
 }) {

@@ -1,4 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+// Standalone route -- opts out of the shared _authenticated layout
+// (AppShell) so PinShell renders the Pinterest-native chrome, matching
+// Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
+// _authenticated route's auth guard; keep both in sync if that check
+// ever changes.
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
+import { PinShell } from "@/components/PinShell";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
@@ -6,16 +13,32 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 
-export const Route = createFileRoute("/_authenticated/pins")({
+export const Route = createFileRoute("/pins")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   head: () => ({ meta: [{ title: "Pins — Pinspider" }] }),
-  component: PinsPage,
+  component: () => <PinsPageRoute />,
 });
+
+function PinsPageRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="pins" userEmail={user?.email}>
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <PinsPage />
+      </div>
+    </PinShell>
+  );
+}
 
 type Brief = Awaited<ReturnType<typeof listBriefs>>[number];
 

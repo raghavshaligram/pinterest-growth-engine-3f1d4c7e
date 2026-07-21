@@ -1,10 +1,17 @@
-import { createFileRoute } from "@tanstack/react-router";
+// Standalone route -- opts out of the shared _authenticated layout
+// (AppShell) so PinShell renders the Pinterest-native chrome, matching
+// Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
+// _authenticated route's auth guard; keep both in sync if that check
+// ever changes.
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { createServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PinShell } from "@/components/PinShell";
 
 const listLogs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -17,10 +24,27 @@ const listLogs = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
-export const Route = createFileRoute("/_authenticated/logs")({
+export const Route = createFileRoute("/logs")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   head: () => ({ meta: [{ title: "Logs — Pinspider" }] }),
-  component: LogsPage,
+  component: () => <LogsRoute />,
 });
+
+function LogsRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="logs" userEmail={user?.email}>
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <LogsPage />
+      </div>
+    </PinShell>
+  );
+}
 
 function LogsPage() {
   const fn = useServerFn(listLogs);

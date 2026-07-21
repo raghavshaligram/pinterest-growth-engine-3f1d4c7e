@@ -1,4 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+// Standalone route -- opts out of the shared _authenticated layout
+// (AppShell) so PinShell renders the Pinterest-native chrome, matching
+// Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
+// _authenticated route's auth guard; keep both in sync if that check
+// ever changes.
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
+import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBoards, upsertBoard, deleteBoard, syncPinterestBoards } from "@/lib/boards.functions";
@@ -12,10 +19,27 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { LayoutGrid, Trash2, RefreshCw, Save } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/boards")({
+export const Route = createFileRoute("/boards")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   head: () => ({ meta: [{ title: "Boards — Pinspider" }] }),
-  component: BoardsPage,
+  component: () => <BoardsPageRoute />,
 });
+
+function BoardsPageRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="boards" userEmail={user?.email}>
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <BoardsPage />
+      </div>
+    </PinShell>
+  );
+}
 
 type BoardRow = Awaited<ReturnType<typeof listBoards>>[number];
 

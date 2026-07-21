@@ -1,4 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+// Standalone route -- opts out of the shared _authenticated layout
+// (AppShell) so PinShell renders the Pinterest-native chrome, matching
+// Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
+// _authenticated route's auth guard; keep both in sync if that check
+// ever changes.
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
+import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestSettings } from "@/lib/integrations.functions";
@@ -23,10 +30,27 @@ import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon } from "l
 
 type Provider = "openai" | "replicate" | "apify" | "pinterest";
 
-export const Route = createFileRoute("/_authenticated/settings/integrations")({
+export const Route = createFileRoute("/settings/integrations")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/auth" });
+    return { user: data.user };
+  },
   head: () => ({ meta: [{ title: "Integrations — Pinspider" }] }),
-  component: IntegrationsPage,
+  component: () => <IntegrationsRoute />,
 });
+
+function IntegrationsRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="settings" userEmail={user?.email}>
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <IntegrationsPage />
+      </div>
+    </PinShell>
+  );
+}
 
 function IntegrationsPage() {
   const qc = useQueryClient();
