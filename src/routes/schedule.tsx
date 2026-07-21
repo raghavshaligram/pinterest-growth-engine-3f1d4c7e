@@ -126,6 +126,11 @@ function SchedulePage() {
   });
 
   const rows = data ?? [];
+  const filteredRows = rows.filter((r) => {
+    if (!search.trim()) return true;
+    const title = r.pin_briefs?.title ?? "";
+    return title.toLowerCase().includes(search.trim().toLowerCase());
+  });
   const weekEnd = addDays(weekStart, 7);
   const weekCounts = countInRange(rows, weekStart, weekEnd);
 
