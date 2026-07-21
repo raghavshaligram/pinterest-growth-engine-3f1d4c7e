@@ -36,7 +36,11 @@ export const Route = createFileRoute("/schedule")({
   head: () => ({ meta: [{ title: "Schedule — Pinspider" }] }),
   // SiteProvider now lives inside PinShell itself (see components/
   // PinShell.tsx).
-  component: () => <SchedulePage />,
+  component: () => (
+    <SiteProvider>
+      <SchedulePage />
+    </SiteProvider>
+  ),
 });
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
