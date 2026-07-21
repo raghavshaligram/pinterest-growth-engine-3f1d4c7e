@@ -6,12 +6,30 @@ import { getErrorMessage } from "@/lib/error-message";
 
 export const listScheduled = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((i?: { siteId?: string | null }) =>
+    z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data: input, context }) => {
+    // scheduled_pins has no direct site_id column -- resolve via the same
+    // pages -> pin_briefs id-list chain dashboard.functions.ts already
+    // uses for the identical reason (no live PostgREST instance here to
+    // verify a deep embedded dot-path filter against).
+    let query = context.supabase
       .from("scheduled_pins")
       .select("id, scheduled_at, status, pinterest_pin_id, last_error, brief_id, board_id, image_id, pin_briefs(title, description, hashtags, alt_text, cta, page_id, pages(url, title)), boards(name, pinterest_board_id), pin_images(storage_path, width, height)")
       .order("scheduled_at", { ascending: true })
       .limit(500);
+    if (input.siteId) {
+      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
+      const pageIds = (pageRows ?? []).map((r) => r.id);
+      let briefIds: string[] = [];
+      if (pageIds.length > 0) {
+        const { data: briefRows } = await context.supabase.from("pin_briefs").select("id").in("page_id", pageIds);
+        briefIds = (briefRows ?? []).map((r) => r.id);
+      }
+      query = query.in("brief_id", briefIds);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     // Resolve signed image URLs so the detail view can render them.
     const paths = Array.from(new Set((data ?? []).map((r) => r.pin_images?.storage_path).filter(Boolean) as string[]));

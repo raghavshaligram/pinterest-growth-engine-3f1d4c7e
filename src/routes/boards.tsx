@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBoards, upsertBoard, deleteBoard, syncPinterestBoards } from "@/lib/boards.functions";
 import { listSites } from "@/lib/sites.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,13 +47,14 @@ type BoardRow = Awaited<ReturnType<typeof listBoards>>[number];
 
 function BoardsPage() {
   const qc = useQueryClient();
+  const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listBoards);
   const listSitesFn = useServerFn(listSites);
   const up = useServerFn(upsertBoard);
   const del = useServerFn(deleteBoard);
   const sync = useServerFn(syncPinterestBoards);
 
-  const { data: boards } = useQuery({ queryKey: ["boards"], queryFn: () => list() });
+  const { data: boards } = useQuery({ queryKey: ["boards", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
 
   const syncMut = useMutation({

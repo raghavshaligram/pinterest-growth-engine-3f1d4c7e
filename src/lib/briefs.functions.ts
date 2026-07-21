@@ -638,12 +638,26 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
 
 export const listBriefs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((i?: { siteId?: string | null }) =>
+    z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data: input, context }) => {
+    // pin_briefs has no direct site_id column -- resolve the site's page
+    // ids first and filter on page_id, same id-list-resolution pattern
+    // dashboard.functions.ts already established for this exact reason
+    // (no live PostgREST instance here to verify a deep embedded
+    // dot-path filter against).
+    let query = context.supabase
       .from("pin_briefs")
       .select("id, style, title, description, hashtags, alt_text, cta, status, page_id, created_at, used_serp_patterns, serp_keyword, serp_patterns_captured_at, pages(url, title), pin_images(storage_path, width, height)")
       .order("created_at", { ascending: false })
       .limit(500);
+    if (input.siteId) {
+      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
+      const pageIds = (pageRows ?? []).map((r) => r.id);
+      query = query.in("page_id", pageIds);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     return data ?? [];
   });

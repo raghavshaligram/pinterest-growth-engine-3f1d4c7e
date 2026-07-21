@@ -11,6 +11,7 @@ import {
   deleteAllScheduled, replaceScheduledPin, publishNow, markPosted, duplicateScheduledPin,
   unscheduleScheduledPin,
 } from "@/lib/schedule.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor } from "@/lib/pin-shell-tokens";
@@ -87,6 +88,7 @@ function TopBar({
 function SchedulePage() {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listScheduled);
   const auto = useServerFn(autoSchedule);
   const pub = useServerFn(runPublisher);
@@ -99,7 +101,7 @@ function SchedulePage() {
   const duplicateFn = useServerFn(duplicateScheduledPin);
   const unscheduleFn = useServerFn(unscheduleScheduledPin);
 
-  const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
+  const { data } = useQuery({ queryKey: ["scheduled", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [open, setOpen] = useState<ScheduledRow | null>(null);
   const [search, setSearch] = useState("");

@@ -8,6 +8,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { generateBriefs, runImageWorker, renderImagesForPage } from "@/lib/briefs.functions";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,7 @@ function PagesRoute() {
 
 function PagesPage() {
   const qc = useQueryClient();
+  const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listPages);
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
@@ -59,7 +61,7 @@ function PagesPage() {
   const stopRef = useState({ v: false })[0];
 
 
-  const { data } = useQuery({ queryKey: ["pages"], queryFn: () => list() });
+  const { data } = useQuery({ queryKey: ["pages", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["pages"] });
 
   const active = (data ?? []).filter((p) => !p.excluded);

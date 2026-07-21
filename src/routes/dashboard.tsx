@@ -14,6 +14,7 @@ import {
   unscheduleScheduledPin, queuePins, replaceScheduledPin, markPosted,
 } from "@/lib/schedule.functions";
 import { dashboardStats } from "@/lib/dashboard.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
@@ -45,6 +46,7 @@ type Pill = "all" | "week" | "published" | "scheduled";
 function DashboardPage() {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const { selectedSiteId } = useSiteContext();
   const listFn = useServerFn(listScheduled);
   const statsFn = useServerFn(dashboardStats);
   const publishNowFn = useServerFn(publishNow);
@@ -55,8 +57,11 @@ function DashboardPage() {
   const replaceFn = useServerFn(replaceScheduledPin);
   const markPostedFn = useServerFn(markPosted);
 
-  const { data, isLoading: rowsLoading } = useQuery({ queryKey: ["scheduled"], queryFn: () => listFn() });
-  const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ["dash-logs"], queryFn: () => statsFn({ data: { siteId: null } }) });
+  const { data, isLoading: rowsLoading } = useQuery({ queryKey: ["scheduled", selectedSiteId], queryFn: () => listFn({ data: { siteId: selectedSiteId } }) });
+  // Previously hardcoded siteId: null regardless of the switcher's
+  // selection -- dashboardStats already had real server-side site
+  // scoping (see dashboard.functions.ts), it just wasn't being used.
+  const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ["dash-logs", selectedSiteId], queryFn: () => statsFn({ data: { siteId: selectedSiteId } }) });
   // Both queries feed the same feed (rows -> pin tiles + "published this
   // week" stat; stats -> webhook-error stat), so treat them as one
   // loading unit -- otherwise we'd flash a half-skeleton, half-real feed

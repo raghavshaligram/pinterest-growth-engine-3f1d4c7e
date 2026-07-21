@@ -5,12 +5,21 @@ import { getErrorMessage } from "@/lib/error-message";
 
 export const listPages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((i?: { siteId?: string | null }) =>
+    z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data: input, context }) => {
+    // pages carries site_id directly -- a plain .eq() filter, unlike
+    // pin_briefs/keywords/scheduled_pins below which need an id-list
+    // resolution first (see briefs.functions.ts/keywords.functions.ts/
+    // schedule.functions.ts).
+    let query = context.supabase
       .from("pages")
       .select("id, url, title, status, last_crawled_at, last_analyzed_at, excluded, pin_briefs(id, status, pin_images(storage_path))")
       .order("last_crawled_at", { ascending: false })
       .limit(200);
+    if (input.siteId) query = query.eq("site_id", input.siteId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data ?? []).map((p) => {
       const briefs = (p as { pin_briefs?: { id: string; status: string; pin_images?: { storage_path: string }[] }[] }).pin_briefs ?? [];

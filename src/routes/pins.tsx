@@ -9,6 +9,7 @@ import { PinShell } from "@/components/PinShell";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,12 +45,13 @@ function PinsPageRoute() {
 type Brief = Awaited<ReturnType<typeof listBriefs>>[number];
 
 function PinsPage() {
+  const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listBriefs);
   const worker = useServerFn(runImageWorker);
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["briefs"], queryFn: () => list() });
+  const { data } = useQuery({ queryKey: ["briefs", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ ok: number; fail: number }>({ ok: 0, fail: 0 });
   const [open, setOpen] = useState<Brief | null>(null);

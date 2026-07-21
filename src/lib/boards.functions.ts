@@ -5,10 +5,27 @@ import { getErrorMessage } from "@/lib/error-message";
 
 export const listBoards = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i?: { siteId?: string | null }) =>
+    z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data: input, context }) => {
     const { data, error } = await context.supabase.from("boards").select("*").order("name");
     if (error) throw error;
-    return data ?? [];
+    const rows = data ?? [];
+    if (!input.siteId) return rows;
+    // boards.site_ids is an array -- a board can serve multiple sites, or
+    // none (see upsertBoard/suggestBoards) -- not a single site_id column,
+    // so this can't be a plain .eq() filter. Filtered here in JS instead
+    // of a Postgres array-contains/OR filter string with no live
+    // PostgREST instance to verify it against (same reasoning as the
+    // id-list resolution in briefs/keywords/schedule.functions.ts). A
+    // board with an empty site_ids counts as usable by every site --
+    // the same "no assignment = universal" rule suggestBoards already applies.
+    const siteId = input.siteId;
+    return rows.filter((b) => {
+      const siteIds = Array.isArray(b.site_ids) ? (b.site_ids as string[]) : [];
+      return siteIds.length === 0 || siteIds.includes(siteId);
+    });
   });
 
 export const upsertBoard = createServerFn({ method: "POST" })

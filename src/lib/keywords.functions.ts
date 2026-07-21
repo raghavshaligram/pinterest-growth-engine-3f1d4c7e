@@ -60,7 +60,27 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
 
 export const listKeywords = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i?: { siteId?: string | null }) =>
+    z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data: input, context }) => {
+    // keywords has no direct site_id column -- resolve the site's page
+    // ids first and filter on page_id, same id-list-resolution pattern
+    // used in briefs/schedule.functions.ts. serp_snapshots itself is NOT
+    // filtered -- it only enriches the (already site-filtered) keyword
+    // rows below by matching on free-text keyword, so unrelated snapshot
+    // rows are simply unused, not shown.
+    let pageIds: string[] | null = null;
+    if (input.siteId) {
+      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
+      pageIds = (pageRows ?? []).map((r) => r.id);
+    }
+    let keywordsQuery = context.supabase
+      .from("keywords")
+      .select("id, keyword, kind, tracked, page_id, pages(url, title)")
+      .order("keyword")
+      .limit(1000);
+    if (pageIds) keywordsQuery = keywordsQuery.in("page_id", pageIds);
     // serp_snapshots is keyed by free-text `keyword`, not a keyword_id FK
     // (multiple snapshot rows can exist per keyword, one per sweep run),
     // so there's no embeddable relationship to join here. Fetch the
@@ -68,11 +88,7 @@ export const listKeywords = createServerFn({ method: "GET" })
     // reduce to "most recent per keyword" in JS instead -- same pattern
     // used for dashboard.functions.ts's pins-by-board tally.
     const [{ data, error }, { data: snapRows }] = await Promise.all([
-      context.supabase
-        .from("keywords")
-        .select("id, keyword, kind, tracked, page_id, pages(url, title)")
-        .order("keyword")
-        .limit(1000),
+      keywordsQuery,
       context.supabase
         .from("serp_snapshots")
         .select("keyword, captured_at")

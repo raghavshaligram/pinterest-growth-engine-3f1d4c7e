@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { listKeywords, setKeywordTracked, runSerpSweep, getSerpSnapshot } from "@/lib/keywords.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,10 +57,11 @@ function formatSwept(iso: string): string {
 
 function KeywordsPage() {
   const qc = useQueryClient();
+  const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listKeywords);
   const set = useServerFn(setKeywordTracked);
   const sweep = useServerFn(runSerpSweep);
-  const { data } = useQuery({ queryKey: ["keywords"], queryFn: () => list() });
+  const { data } = useQuery({ queryKey: ["keywords", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const setMut = useMutation({ mutationFn: (v: { id: string; tracked: boolean }) => set({ data: v }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["keywords"] }) });
   const sweepMut = useMutation({ mutationFn: () => sweep(),
