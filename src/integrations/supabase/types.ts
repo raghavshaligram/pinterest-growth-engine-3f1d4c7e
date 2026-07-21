@@ -632,7 +632,9 @@ export type Database = {
           created_at: string
           id: string
           settings: Json
+          site_type: Database["public"]["Enums"]["site_type"]
           sitemap_url: string | null
+          tagline: string | null
           timezone: string
           updated_at: string
           url: string
@@ -647,7 +649,9 @@ export type Database = {
           created_at?: string
           id?: string
           settings?: Json
+          site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
+          tagline?: string | null
           timezone?: string
           updated_at?: string
           url: string
@@ -662,7 +666,9 @@ export type Database = {
           created_at?: string
           id?: string
           settings?: Json
+          site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
+          tagline?: string | null
           timezone?: string
           updated_at?: string
           url?: string
@@ -704,6 +710,7 @@ export type Database = {
         | "failed"
         | "exported"
         | "canceled"
+      site_type: "website" | "etsy" | "ecomm"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -860,6 +867,7 @@ export const Constants = {
         "exported",
         "canceled",
       ],
+      site_type: ["website", "etsy", "ecomm"],
     },
   },
 } as const
