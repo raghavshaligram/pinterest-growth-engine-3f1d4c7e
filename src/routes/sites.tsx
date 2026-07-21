@@ -178,11 +178,11 @@ function SitesPage() {
           <p className="text-sm text-muted-foreground">{rows.length} connected · {totalPins} total pins created</p>
         </div>
         {wizardOpen ? (
-          <Button variant="outline" onClick={() => setWizardOpen(false)}>
+          <Button className="bg-black text-white hover:bg-neutral-900" onClick={() => setWizardOpen(false)}>
             <X className="mr-1.5 h-4 w-4" />Cancel
           </Button>
         ) : (
-          <Button className="bg-black text-white hover:bg-neutral-800" onClick={() => setWizardOpen(true)}>
+          <Button className="bg-[#E60023] text-white hover:bg-[#E60023]/90" onClick={() => setWizardOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" />Add a site
           </Button>
         )}
@@ -449,7 +449,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
         )}
 
         {step === 2 && (
-          <div className="max-w-2xl space-y-4">
+          <div className="space-y-4">
             <div className={siteType === "website" ? "grid grid-cols-2 gap-6" : ""}>
               <div>
                 <Label className="font-semibold">{cfg.urlLabel}</Label>
