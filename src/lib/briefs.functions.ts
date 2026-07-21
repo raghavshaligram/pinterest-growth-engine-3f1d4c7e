@@ -62,23 +62,33 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
       },
-      // Pass B: Master Strategy template 3/6. Magazine-cover read, not an
-      // info-grid -- deliberately low text density.
+      // Pass B: Master Strategy template 3/6. Rewritten after an audit
+      // found the original relied on a negative instruction ("not a
+      // grid, not multiple panels") plus an unanchored text-placement
+      // claim with no locked layout to back it -- too easily converges
+      // toward editorial_before_after's "hero photo" register. New
+      // device: a single diagonal peel/reveal cut, not a symmetric
+      // panel split -- a different KIND of transition, not a
+      // re-angled version of the two-panel mechanism.
       problem_solution_headline: {
-        visual_description: `THEME FAMILY: PROBLEM/SOLUTION HEADLINE PIN. Magazine-cover layout: one large bold headline stating the problem or question at the very top (e.g. "Why Is My Soil So Compacted?"), a single strong hero illustration or photo filling the middle -- not a grid, not multiple panels -- and a short punchy solution/answer line near the bottom. Deliberately low text density; reads like one confident editorial statement, not an info-grid.`,
+        visual_description: `THEME FAMILY: DIAGONAL REVEAL HEADLINE PIN. One large bold headline stating the problem as a question sits across the top. Below it, a single diagonal peel line cuts across the canvas at roughly a 20-25 degree angle, like a page corner lifting: the muted, desaturated "problem" visual sits above/behind the peel, and lifting it reveals a vivid, full-color "solution" visual beneath, with a soft drop-shadow along the peeled edge. This is a single diagonal cut, not a side-by-side split -- no vertical panels, no symmetric left/right divide, no grid.`,
         default_middle_prompt: (topic) =>
-          `One single strong hero illustration or photo capturing ${topic} at a glance -- minimal text overlay, let the visual carry the idea. No supporting icons, no card grid, no bullet list.`,
+          `A single diagonal peel/reveal about ${topic}: a muted, desaturated version of the problem sits above the peel line, lifting away to reveal a vivid full-color version of the solution beneath it, with a soft drop-shadow along the diagonal peeled edge -- minimal text overlay, let the visual carry the idea. No side-by-side panels, no grid.`,
         typography_direction: "bold condensed magazine-headline sans",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
       },
-      // Pass B: Master Strategy template 4/6. Numerals + short labels,
-      // not paragraph text -- the fix for the current quick-tip grid's
-      // cluttered feel.
+      // Pass B: Master Strategy template 4/6. Rewritten after an audit
+      // found "vertical or grid arrangement" left the composition
+      // ambiguous instead of locking one -- an image model can't
+      // consistently "lock onto" an either/or choice. Committed to one
+      // specific device: a single stacked column of full-width rows
+      // (leaderboard/scoreboard), distinct in kind from
+      // quick_tip_grid's discrete 2-column card tiles.
       listicle: {
-        visual_description: `THEME FAMILY: NUMBERED LISTICLE PIN. Large bold numerals (1, 2, 3...) paired with a small icon and a short 3-5 word label per item -- not paragraph text, not full sentences. Clean vertical or grid arrangement with generous spacing so it reads as a scannable numbered list, not a cluttered info-grid.`,
+        visual_description: `THEME FAMILY: STACKED NUMBERED ROWS LISTICLE PIN. A single vertical column of full-width horizontal rows stacked top to bottom, like a leaderboard or scoreboard -- one row per list item. Each row: a large bold numeral flush against the left edge, a small icon just beside it, then a short 3-5 word label filling the rest of the row, with a thin horizontal divider line separating each row from the next. This is one continuous stacked list, not a grid of cards or tiles.`,
         default_middle_prompt: (topic) =>
-          `A numbered list (3-5 items) about ${topic}, each item a large numeral plus one small icon and a short 3-5 word label only -- minimal text overlay, let the visual carry the idea. No sentences, no paragraphs.`,
+          `A vertical stack of 3-5 full-width numbered rows about ${topic}, leaderboard-style -- each row one large numeral flush left, one small icon, and a short 3-5 word label only, separated by thin divider lines -- minimal text overlay, let the visual carry the idea. No sentences, no paragraphs, no card grid.`,
         typography_direction: "bold rounded sans with oversized numerals",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
@@ -95,12 +105,18 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
       },
-      // Pass B: Master Strategy template 6/6. Sequential flow with short
-      // labels only, not sentences.
+      // Pass B: Master Strategy template 6/6. Rewritten after an audit
+      // found "vertical or horizontal flow" + "a simple line or arrow"
+      // too loosely specified to lock onto consistently. Committed to
+      // one device: a single continuous vertical thread running down
+      // the canvas threading through numbered nodes -- distinct in kind
+      // from listicle's discrete stacked rows, and a deliberate nod to
+      // the Pinspider brand mark's thread/node motif per the original
+      // template brief.
       step_by_step: {
-        visual_description: `THEME FAMILY: STEP-BY-STEP SEQUENCE PIN. Sequential numbered steps (1 -> 2 -> 3 -> 4) in a vertical or horizontal flow, one small illustration per step, short 2-4 word step labels only, connected by a simple line or arrow between steps.`,
+        visual_description: `THEME FAMILY: THREADED STEP PATH PIN. One continuous vertical path line runs down the center of the canvas from top to bottom, threading through 3-4 circular numbered step nodes spaced evenly along it (a deliberate nod to the Pinspider brand mark's thread-and-node motif). Each node carries one small illustration and a short 2-4 word step label beside it. This is a single continuous vertical thread connecting the steps in sequence -- not a grid, not stacked rows, not separate panels.`,
         default_middle_prompt: (topic) =>
-          `A sequence of 3-4 numbered steps about ${topic}, each with one small illustration and a short 2-4 word label only, connected by a simple line or arrow -- minimal text overlay, let the visual carry the idea. No sentences, no paragraphs per step.`,
+          `A single continuous vertical thread about ${topic}, threading through 3-4 numbered step nodes down the center of the canvas, each node with one small illustration and a short 2-4 word label -- minimal text overlay, let the visual carry the idea. No grid, no stacked rows -- one continuous vertical path.`,
         typography_direction: "rounded friendly bold sans with a clear numbered sequence",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
