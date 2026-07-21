@@ -270,6 +270,7 @@ export type Database = {
           last_analyzed_at: string | null
           last_crawled_at: string | null
           meta_description: string | null
+          recent_styles: Json
           site_id: string
           status: Database["public"]["Enums"]["page_status"]
           title: string | null
@@ -290,6 +291,7 @@ export type Database = {
           last_analyzed_at?: string | null
           last_crawled_at?: string | null
           meta_description?: string | null
+          recent_styles?: Json
           site_id: string
           status?: Database["public"]["Enums"]["page_status"]
           title?: string | null
@@ -310,6 +312,7 @@ export type Database = {
           last_analyzed_at?: string | null
           last_crawled_at?: string | null
           meta_description?: string | null
+          recent_styles?: Json
           site_id?: string
           status?: Database["public"]["Enums"]["page_status"]
           title?: string | null
@@ -631,6 +634,7 @@ export type Database = {
           brand_notes: string | null
           created_at: string
           id: string
+          recent_styles: Json
           settings: Json
           site_type: Database["public"]["Enums"]["site_type"]
           sitemap_url: string | null
@@ -649,6 +653,7 @@ export type Database = {
           brand_notes?: string | null
           created_at?: string
           id?: string
+          recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
@@ -667,6 +672,7 @@ export type Database = {
           brand_notes?: string | null
           created_at?: string
           id?: string
+          recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
@@ -693,6 +699,7 @@ export type Database = {
         | "ready"
         | "scheduled"
         | "archived"
+        | "failed"
       integration_provider: "openai" | "replicate" | "apify" | "pinterest"
       integration_status: "unconfigured" | "ok" | "error"
       job_kind:
@@ -847,6 +854,7 @@ export const Constants = {
         "ready",
         "scheduled",
         "archived",
+        "failed",
       ],
       integration_provider: ["openai", "replicate", "apify", "pinterest"],
       integration_status: ["unconfigured", "ok", "error"],
