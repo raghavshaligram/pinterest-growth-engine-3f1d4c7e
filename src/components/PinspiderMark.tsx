@@ -1,65 +1,55 @@
-// Pinspider logo mark: a spider-web (radial threads + concentric arcs)
-// with a small pin/thumbtack anchored at the center. Literal to the
-// product name ("pin" + "spider") and visually unrelated to Pinterest's
-// script "P" -- no red-circle-with-white-letter shape, no wordmark.
+// Pinspider logo mark: red squircle containing a 6-spoke pin-and-thread
+// network — a central white node with 6 thin white threads radiating to
+// 6 smaller white nodes. Matches the node-and-thread grammar used in
+// the Dashboard pipeline visualization.
 
 export function PinspiderMark({
-  size = 22,
-  color = "var(--accent)",
-  bg = "var(--bg-card)",
+  size = 32,
   className,
 }: {
   size?: number;
-  color?: string;
-  bg?: string;
   className?: string;
 }) {
-  // 8 radial threads, evenly spaced
-  const threads = Array.from({ length: 8 }, (_, i) => {
-    const rad = (i * Math.PI) / 4;
-    return { x: 12 + 10.5 * Math.cos(rad), y: 12 + 10.5 * Math.sin(rad) };
+  // viewBox 100 for easy proportional math
+  const cx = 50;
+  const cy = 50;
+  const centerR = 11; // ~11% of container
+  const nodeR = 6;
+  const spokeR = 34; // distance from center to outer nodes
+  const stroke = 4.5; // ~4.5% of container
+
+  const nodes = Array.from({ length: 6 }, (_, i) => {
+    const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+    return { x: cx + spokeR * Math.cos(a), y: cy + spokeR * Math.sin(a) };
   });
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox="0 0 100 100"
       fill="none"
       role="img"
       aria-label="Pinspider"
       className={className}
     >
-      {/* radial threads */}
-      {threads.map((t, i) => (
+      <rect x="0" y="0" width="100" height="100" rx="28" ry="28" fill="#E60023" />
+      {nodes.map((n, i) => (
         <line
-          key={`t-${i}`}
-          x1={12}
-          y1={12}
-          x2={t.x}
-          y2={t.y}
-          stroke={color}
-          strokeWidth={0.9}
+          key={`l-${i}`}
+          x1={cx}
+          y1={cy}
+          x2={n.x}
+          y2={n.y}
+          stroke="#FFFFFF"
+          strokeWidth={stroke}
           strokeLinecap="round"
-          opacity={0.55}
         />
       ))}
-      {/* concentric web arcs (top hemisphere only for asymmetric, poster-like feel) */}
-      {[4, 7, 10].map((r, i) => (
-        <circle
-          key={`c-${i}`}
-          cx={12}
-          cy={12}
-          r={r}
-          stroke={color}
-          strokeWidth={0.8}
-          opacity={0.45}
-          strokeDasharray="1.5 1.8"
-        />
+      {nodes.map((n, i) => (
+        <circle key={`n-${i}`} cx={n.x} cy={n.y} r={nodeR} fill="#FFFFFF" />
       ))}
-      {/* pin head + shaft anchored at center */}
-      <circle cx={12} cy={12} r={2.6} fill={color} />
-      <circle cx={11.2} cy={11.2} r={0.7} fill={bg} opacity={0.85} />
+      <circle cx={cx} cy={cy} r={centerR} fill="#FFFFFF" />
     </svg>
   );
 }

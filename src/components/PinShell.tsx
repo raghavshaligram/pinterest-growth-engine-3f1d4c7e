@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
+import { PinspiderMark } from "@/components/PinspiderMark";
 import type { ReactNode } from "react";
 
 const PRIMARY_NAV = [
@@ -40,23 +41,7 @@ const MORE_NAV = [
 ] as const;
 
 function RedMark({ size = 34 }: { size?: number }) {
-  return (
-    <div
-      style={{
-        width: size, height: size, borderRadius: "50%", background: PIN.accent,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      }}
-      role="img"
-      aria-label="Pinspider"
-    >
-      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none">
-        <path
-          d="M12 2C6.48 2 2 6.13 2 11.23c0 3.9 2.44 7.23 5.9 8.57-.08-.73-.15-1.85.03-2.65.17-.72 1.1-4.6 1.1-4.6s-.28-.56-.28-1.38c0-1.29.75-2.26 1.68-2.26.79 0 1.17.6 1.17 1.31 0 .8-.51 2-.77 3.11-.22.93.47 1.69 1.39 1.69 1.67 0 2.96-1.76 2.96-4.31 0-2.25-1.62-3.83-3.94-3.83-2.68 0-4.26 2.01-4.26 4.09 0 .81.31 1.68.7 2.15a.28.28 0 0 1 .06.27c-.07.3-.23.93-.26 1.06-.04.17-.14.21-.32.13-1.2-.56-1.95-2.31-1.95-3.72 0-3.03 2.2-5.81 6.34-5.81 3.33 0 5.92 2.37 5.92 5.54 0 3.31-2.08 5.97-4.98 5.97-.97 0-1.88-.5-2.2-1.1l-.6 2.28c-.22.83-.8 1.87-1.19 2.5.9.28 1.85.43 2.85.43 5.52 0 10-4.13 10-9.23S17.52 2 12 2Z"
-          fill="#FFFFFF"
-        />
-      </svg>
-    </div>
-  );
+  return <PinspiderMark size={size} />;
 }
 
 function railItemStyle(active: boolean): React.CSSProperties {
