@@ -57,8 +57,13 @@ function DashboardPage() {
   const replaceFn = useServerFn(replaceScheduledPin);
   const markPostedFn = useServerFn(markPosted);
 
-  const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => listFn() });
-  const { data: stats } = useQuery({ queryKey: ["dash-logs"], queryFn: () => statsFn({ data: { siteId: null } }) });
+  const { data, isLoading: rowsLoading } = useQuery({ queryKey: ["scheduled"], queryFn: () => listFn() });
+  const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ["dash-logs"], queryFn: () => statsFn({ data: { siteId: null } }) });
+  // Both queries feed the same feed (rows -> pin tiles + "published this
+  // week" stat; stats -> webhook-error stat), so treat them as one
+  // loading unit -- otherwise we'd flash a half-skeleton, half-real feed
+  // depending on which query happens to resolve first.
+  const loading = rowsLoading || statsLoading;
 
   const [pill, setPill] = useState<Pill>("week");
   const [search, setSearch] = useState("");
@@ -149,6 +154,7 @@ function DashboardPage() {
           lastWebhookError={lastWebhookError ? { message: lastWebhookError.message, domain: lastWebhookError.pageUrl ? hostOf(lastWebhookError.pageUrl) : "unknown source" } : null}
           onOpen={setOpen}
           onUnschedule={(id) => unscheduleMut.mutate(id)}
+          loading={loading}
         />
       </div>
 
@@ -269,7 +275,7 @@ type FeedItem =
   | { kind: "stat"; key: "published" | "errors" | "saves" };
 
 function MasonryFeed({
-  rows, publishedThisWeek, publishedDelta, webhookErrorCount, lastWebhookError, onOpen, onUnschedule,
+  rows, publishedThisWeek, publishedDelta, webhookErrorCount, lastWebhookError, onOpen, onUnschedule, loading,
 }: {
   rows: ScheduledRow[];
   publishedThisWeek: number;
@@ -278,7 +284,35 @@ function MasonryFeed({
   lastWebhookError: { message: string; domain: string } | null;
   onOpen: (row: ScheduledRow) => void;
   onUnschedule: (id: string) => void;
+  loading: boolean;
 }) {
+  // While either query is still in flight, `rows` is only the "?? []"
+  // fallback, not a real answer -- rendering off it here would flash a
+  // false "0 published" / "Nothing to show" before the real numbers
+  // arrive. Skeletons stand in until we actually know the answer.
+  if (loading) {
+    const skelStatKeys = ["published", "errors", "saves"] as const;
+    let skelStatIdx = 0;
+    const skelItems: { kind: "pin" | "stat"; key: string }[] = [];
+    for (let i = 0; i < 10; i++) {
+      skelItems.push({ kind: "pin", key: `pin-${i}` });
+      if ((i + 1) % 5 === 0 && skelStatIdx < skelStatKeys.length) {
+        skelItems.push({ kind: "stat", key: skelStatKeys[skelStatIdx++] });
+      }
+    }
+    while (skelStatIdx < skelStatKeys.length) skelItems.push({ kind: "stat", key: skelStatKeys[skelStatIdx++] });
+
+    return (
+      <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-3">
+        {skelItems.map((it, i) => (
+          <div key={`skel-${it.kind}-${it.key}-${i}`} className="mb-3 break-inside-avoid">
+            {it.kind === "pin" ? <PinTileSkeleton /> : <StatTileSkeleton />}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   const items: FeedItem[] = [];
   const statKeys: Extract<FeedItem, { kind: "stat" }>["key"][] = ["published", "errors", "saves"];
   let statIdx = 0;
@@ -361,6 +395,25 @@ function StatTile({
   return to ? <Link to={to} style={{ display: "block" }}>{body}</Link> : body;
 }
 
+// Neutral shimmer placeholder matching StatTile's shape -- shown instead
+// of "0" while the query is in flight, so "loading" and "genuinely zero"
+// never look the same.
+function StatTileSkeleton() {
+  return (
+    <div
+      className="animate-pulse"
+      style={{
+        borderRadius: 16, border: `1px solid ${PIN.border}`, background: PIN.card, padding: 18,
+        display: "flex", flexDirection: "column", gap: 10,
+      }}
+    >
+      <div style={{ width: 36, height: 36, borderRadius: "50%", background: PIN.fieldBg }} />
+      <div style={{ width: "45%", height: 22, borderRadius: 6, background: PIN.fieldBg }} />
+      <div style={{ width: "75%", height: 12, borderRadius: 6, background: PIN.fieldBg }} />
+    </div>
+  );
+}
+
 // ---------- Pin tile ----------
 
 // Two-action hover for anything still draft/scheduled: Edit (opens the
@@ -378,12 +431,28 @@ function PinTile({
   const published = row.status === "published";
   const color = boardColor(row.board_id ?? row.boards?.name ?? null);
   const title = row.pin_briefs?.title ?? "Untitled";
+  // Reserve the same "2 / 3" box the no-image placeholder below already
+  // uses, so there's no blank/zero-height gap while the image is still
+  // in flight -- then correct to the image's real proportions once
+  // they're known, instead of staying locked to a guessed ratio forever
+  // (Pinterest pins are all different heights). One reflow max, at load,
+  // not a continuous one as bytes trickle in.
+  const [aspect, setAspect] = useState("2 / 3");
 
   return (
     <div className="group" style={{ borderRadius: 16, overflow: "hidden", background: PIN.fieldBg, position: "relative" }}>
       <div style={{ position: "relative" }}>
         {row.image_url ? (
-          <img src={row.image_url} alt={title} style={{ width: "100%", height: "auto", display: "block" }} loading="lazy" />
+          <img
+            src={row.image_url}
+            alt={title}
+            style={{ width: "100%", height: "auto", display: "block", aspectRatio: aspect, objectFit: "cover", background: PIN.fieldBg }}
+            loading="lazy"
+            onLoad={(e) => {
+              const el = e.currentTarget;
+              if (el.naturalWidth && el.naturalHeight) setAspect(`${el.naturalWidth} / ${el.naturalHeight}`);
+            }}
+          />
         ) : (
           <div style={{ aspectRatio: "2 / 3", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ImageIcon size={22} style={{ color: PIN.textMuted }} />
@@ -433,6 +502,21 @@ function PinTile({
 // counts. Swap this for real numbers once that pipeline exists.
 function PerformanceLine() {
   return <span style={{ color: PIN.textMuted }}>No data yet</span>;
+}
+
+// Matches PinTile's rounded shape and default "2 / 3" image box exactly,
+// so swapping skeleton -> real tile doesn't itself cause a size change --
+// only the shimmer fill differs.
+function PinTileSkeleton() {
+  return (
+    <div className="animate-pulse" style={{ borderRadius: 16, overflow: "hidden", background: PIN.fieldBg }}>
+      <div style={{ aspectRatio: "2 / 3", background: PIN.border }} />
+      <div style={{ padding: "8px 2px 4px", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ width: "78%", height: 12, borderRadius: 4, background: PIN.border }} />
+        <div style={{ width: "45%", height: 10, borderRadius: 4, background: PIN.border }} />
+      </div>
+    </div>
+  );
 }
 
 function IconBtn({
