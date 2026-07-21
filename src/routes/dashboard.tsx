@@ -37,8 +37,13 @@ export const Route = createFileRoute("/dashboard")({
   // SiteProvider now lives inside PinShell itself (see components/
   // PinShell.tsx) -- one shared instance for the whole app instead of
   // Dashboard/Schedule/Sites each mounting their own.
-  component: () => <DashboardPage />,
+  component: () => (
+    <SiteProvider>
+      <DashboardPage />
+    </SiteProvider>
+  ),
 });
+
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
 type Pill = "all" | "week" | "published" | "scheduled";
