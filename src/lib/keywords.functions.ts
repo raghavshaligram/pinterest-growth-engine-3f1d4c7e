@@ -64,23 +64,22 @@ export const listKeywords = createServerFn({ method: "GET" })
     z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
   )
   .handler(async ({ data: input, context }) => {
-    // keywords has no direct site_id column -- resolve the site's page
-    // ids first and filter on page_id, same id-list-resolution pattern
-    // used in briefs/schedule.functions.ts. serp_snapshots itself is NOT
-    // filtered -- it only enriches the (already site-filtered) keyword
-    // rows below by matching on free-text keyword, so unrelated snapshot
-    // rows are simply unused, not shown.
-    let pageIds: string[] | null = null;
-    if (input.siteId) {
-      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
-      pageIds = (pageRows ?? []).map((r) => r.id);
-    }
-    let keywordsQuery = context.supabase
+    // keywords has no direct site_id column. Previously this resolved the
+    // site's page ids first and filtered with .in("page_id", pageIds) --
+    // the same pattern that crashed listScheduled in production with a
+    // HeadersOverflowError once the id list got large enough to blow past
+    // the HTTP layer's URL/header size limit. Fixed the same way: filter
+    // by user_id on the main query, narrow to the requested site
+    // in-memory using the pages join afterward. serp_snapshots itself is
+    // NOT filtered -- it only enriches the (already site-filtered)
+    // keyword rows below by matching on free-text keyword, so unrelated
+    // snapshot rows are simply unused, not shown.
+    const keywordsQuery = context.supabase
       .from("keywords")
-      .select("id, keyword, kind, tracked, page_id, pages(url, title)")
+      .select("id, keyword, kind, tracked, page_id, pages(url, title, site_id)")
+      .eq("user_id", context.userId)
       .order("keyword")
       .limit(1000);
-    if (pageIds) keywordsQuery = keywordsQuery.in("page_id", pageIds);
     // serp_snapshots is keyed by free-text `keyword`, not a keyword_id FK
     // (multiple snapshot rows can exist per keyword, one per sweep run),
     // so there's no embeddable relationship to join here. Fetch the
@@ -100,7 +99,10 @@ export const listKeywords = createServerFn({ method: "GET" })
     for (const s of (snapRows ?? []) as { keyword: string; captured_at: string }[]) {
       if (!lastSweptMap.has(s.keyword)) lastSweptMap.set(s.keyword, s.captured_at);
     }
-    return (data ?? []).map((k) => ({ ...k, lastSweptAt: lastSweptMap.get(k.keyword) ?? null }));
+    const rows = input.siteId
+      ? (data ?? []).filter((k) => (k as { pages?: { site_id?: string } }).pages?.site_id === input.siteId)
+      : (data ?? []);
+    return rows.map((k) => ({ ...k, lastSweptAt: lastSweptMap.get(k.keyword) ?? null }));
   });
 
 // Most recent serp_snapshots row for one keyword -- fetched lazily when a

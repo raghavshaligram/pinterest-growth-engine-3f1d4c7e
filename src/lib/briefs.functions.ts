@@ -642,24 +642,26 @@ export const listBriefs = createServerFn({ method: "GET" })
     z.object({ siteId: z.string().uuid().nullable().optional() }).parse(i ?? {}),
   )
   .handler(async ({ data: input, context }) => {
-    // pin_briefs has no direct site_id column -- resolve the site's page
-    // ids first and filter on page_id, same id-list-resolution pattern
-    // dashboard.functions.ts already established for this exact reason
-    // (no live PostgREST instance here to verify a deep embedded
-    // dot-path filter against).
-    let query = context.supabase
+    // pin_briefs has no direct site_id column. Previously this resolved
+    // the site's page ids first and filtered with .in("page_id", pageIds)
+    // -- that exact pattern crashed listScheduled in production with a
+    // HeadersOverflowError once the resolved id list got large enough to
+    // blow past the HTTP layer's URL/header size limit (a GET request
+    // encodes .in() as a giant comma-separated query string). Fixed the
+    // same way Lovable fixed listScheduled: filter by user_id on the main
+    // query instead, then narrow to the requested site in-memory using
+    // the pages join, so no id list is ever round-tripped through a URL.
+    const { data, error } = await context.supabase
       .from("pin_briefs")
-      .select("id, style, title, description, hashtags, alt_text, cta, status, page_id, created_at, used_serp_patterns, serp_keyword, serp_patterns_captured_at, pages(url, title), pin_images(storage_path, width, height)")
+      .select("id, style, title, description, hashtags, alt_text, cta, status, page_id, created_at, used_serp_patterns, serp_keyword, serp_patterns_captured_at, pages(url, title, site_id), pin_images(storage_path, width, height)")
+      .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (input.siteId) {
-      const { data: pageRows } = await context.supabase.from("pages").select("id").eq("site_id", input.siteId);
-      const pageIds = (pageRows ?? []).map((r) => r.id);
-      query = query.in("page_id", pageIds);
-    }
-    const { data, error } = await query;
     if (error) throw error;
-    return data ?? [];
+    const rows = data ?? [];
+    if (!input.siteId) return rows;
+    const siteId = input.siteId;
+    return rows.filter((r) => (r as { pages?: { site_id?: string } }).pages?.site_id === siteId);
   });
 
 // Was hardcoded to 8, well under realistic batch sizes (default 10,
