@@ -473,7 +473,26 @@ export const rerenderBrief = createServerFn({ method: "POST" })
     });
     // Kick the worker inline for THIS brief only, so other queued jobs don't steal the slot
     const { processImageQueueForUser } = await import("./image-worker.server");
-    await processImageQueueForUser(context.userId, 1, { briefId: data.briefId });
+    const result = await processImageQueueForUser(context.userId, 1, { briefId: data.briefId });
+    // processImageQueueForUser swallows per-job errors internally (so a
+    // bulk queue run doesn't abort on one bad brief) and always resolves
+    // without throwing -- previously this meant rerenderBrief returned
+    // { ok: true } unconditionally even when the render had actually
+    // failed, so the UI showed a false "Re-rendered" success toast while
+    // the brief stayed stuck at status="image_pending" forever. Check the
+    // outcome explicitly here and surface the real failure reason.
+    if (result.fail) {
+      const { data: failedJob } = await supabaseAdmin
+        .from("jobs")
+        .select("last_error")
+        .eq("user_id", context.userId)
+        .eq("kind", "generate_image")
+        .filter("payload->>brief_id", "eq", data.briefId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      throw new Error(failedJob?.last_error || "Image generation failed. Check your Replicate integration and try again.");
+    }
     // Repoint any scheduled_pins for this brief at the freshly rendered image
     // so the schedule view shows the new artwork instead of a blank slot.
     const { data: newImg } = await supabaseAdmin

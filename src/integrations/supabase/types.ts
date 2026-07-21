@@ -702,6 +702,7 @@ export type Database = {
         | "ready"
         | "scheduled"
         | "archived"
+        | "failed"
       integration_provider: "openai" | "replicate" | "apify" | "pinterest"
       integration_status: "unconfigured" | "ok" | "error"
       job_kind:
@@ -861,6 +862,7 @@ export const Constants = {
         "ready",
         "scheduled",
         "archived",
+        "failed",
       ],
       integration_provider: ["openai", "replicate", "apify", "pinterest"],
       integration_status: ["unconfigured", "ok", "error"],

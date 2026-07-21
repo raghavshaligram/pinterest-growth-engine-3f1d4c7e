@@ -124,6 +124,10 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     } catch (e) {
       const msg = getErrorMessage(e);
       await supabaseAdmin.from("jobs").update({ status: "failed", last_error: msg }).eq("id", job.id);
+      // Without this, a brief whose render already failed stays stuck at
+      // status="image_pending" forever -- indistinguishable in the UI
+      // from one that's still queued/rendering ("Waiting to render...").
+      await supabaseAdmin.from("pin_briefs").update({ status: "failed" }).eq("id", briefId);
       await markIntegration(userId, "replicate", "error", msg);
       fail++;
     }

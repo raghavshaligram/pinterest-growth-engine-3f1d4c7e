@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
+import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
@@ -159,8 +159,17 @@ function BriefCard({ b }: {
               <img src={url} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
             </button>
           ) : (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {b.status === "image_pending" ? "Waiting to render…" : "No image"}
+            <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center text-xs text-muted-foreground">
+              {b.status === "failed" ? (
+                <>
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <span className="text-destructive">Render failed — tap Rerender to retry</span>
+                </>
+              ) : b.status === "image_pending" ? (
+                "Waiting to render…"
+              ) : (
+                "No image"
+              )}
             </div>
           )}
           <div className="absolute right-2 top-2 flex gap-1">
@@ -188,7 +197,7 @@ function BriefCard({ b }: {
           <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
           <div className="line-clamp-2 text-sm font-medium">{b.title}</div>
           <div className="flex items-center gap-1.5">
-            <Badge variant="outline">{b.status}</Badge>
+            <Badge variant={b.status === "failed" ? "destructive" : "outline"}>{b.status}</Badge>
             <SerpTraceBadge
               usedSerpPatterns={b.used_serp_patterns}
               serpKeyword={b.serp_keyword}
