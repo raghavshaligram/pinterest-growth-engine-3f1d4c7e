@@ -1,0 +1,16 @@
+-- Force PostgREST to reload its cached schema.
+--
+-- The preceding migration (20260721093128_sites_type_and_tagline.sql)
+-- added `sites.site_type`/`sites.tagline` via ALTER TABLE, but PostgREST
+-- caches the DB schema in memory and only refreshes it on its own DDL
+-- event trigger firing -- which observed to lag or not fire reliably in
+-- this environment, producing runtime errors like:
+--   "Could not find the 'site_type' column of 'sites' in the schema
+--   cache (code: PGRST204)"
+-- immediately after a column-adding migration, even though the column
+-- genuinely exists in Postgres.
+--
+-- This is the standard fix: explicitly NOTIFY the pgrst channel so
+-- PostgREST reloads its schema cache right away instead of waiting on
+-- the (apparently unreliable) automatic trigger.
+NOTIFY pgrst, 'reload schema';
