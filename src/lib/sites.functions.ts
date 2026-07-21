@@ -29,7 +29,7 @@ export type SiteOverviewRow = {
   brand_name: string | null;
   tagline: string | null;
   accent_color: string | null;
-  brand_colors: unknown;
+  brand_colors: string[] | null;
   brand_font: string | null;
   brand_notes: string | null;
   created_at: string;
