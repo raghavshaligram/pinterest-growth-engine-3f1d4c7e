@@ -305,24 +305,23 @@ function DayColumn({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: PIN.textMuted }}>{label}</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-          <span
-            style={{
-              width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 15, fontWeight: 700, color: isToday ? "#FFFFFF" : PIN.textPrimary,
-              background: isToday ? PIN.accent : "transparent",
-            }}
-          >
-            {day.getDate()}
-          </span>
-          <span style={{ fontSize: 11, color: PIN.textMuted }}>
-            {counts.published > 0 && <span style={{ color: "#1E7B3D", fontWeight: 600 }}>{counts.published} done  </span>}
-            {counts.scheduled > 0 && `${counts.scheduled} up`}
-          </span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: isToday ? PIN.accent : PIN.textMuted }}>{label}</div>
+        <span
+          style={{
+            width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 700, color: isToday ? "#FFFFFF" : PIN.textPrimary,
+            background: isToday ? PIN.accent : "transparent",
+          }}
+        >
+          {day.getDate()}
+        </span>
+        <div style={{ fontSize: 11, color: PIN.textMuted, display: "flex", gap: 6, minHeight: 16 }}>
+          {counts.published > 0 && <span style={{ color: "#1E7B3D", fontWeight: 600 }}>{counts.published} done</span>}
+          {counts.scheduled > 0 && <span>{counts.scheduled} up</span>}
         </div>
       </div>
+
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {dayRows.map((r) => (
