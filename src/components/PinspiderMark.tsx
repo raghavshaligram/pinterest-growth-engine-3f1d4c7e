@@ -1,4 +1,4 @@
-// Pinspider logo mark: red squircle with a white node-and-thread mark —
+// Pinspider logo mark: red circle with a white node-and-thread mark —
 // a central node connected by six thin threads to six outer nodes.
 
 export function PinspiderMark({
@@ -27,7 +27,7 @@ export function PinspiderMark({
       aria-label="Pinspider"
       className={className}
     >
-      <rect x="0" y="0" width="100" height="100" rx="26" ry="26" fill="#E60023" />
+      <circle cx="50" cy="50" r="50" fill="#E60023" />
       {/* threads */}
       <g stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round">
         {outer.map((p, i) => (
