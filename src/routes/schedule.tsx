@@ -34,10 +34,6 @@ export const Route = createFileRoute("/schedule")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Schedule — Pinspider" }] }),
-  // SiteProvider lives inside PinShell itself (see components/
-  // PinShell.tsx) -- Lovable's own tooling re-added a per-route wrap
-  // here independently (see git history), which would decouple this
-  // page's data queries from the header switcher. Removed again.
   component: () => <SchedulePage />,
 });
 
@@ -53,6 +49,14 @@ const BEST_HOURS = [12, 19];
 
 function SchedulePage() {
   const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="schedule" userEmail={user?.email}>
+      <ScheduleContent />
+    </PinShell>
+  );
+}
+
+function ScheduleContent() {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listScheduled);
@@ -152,7 +156,7 @@ function SchedulePage() {
   }
 
   return (
-    <PinShell active="schedule" userEmail={user?.email}>
+    <>
       <TopBar search={search} onSearch={setSearch} placeholder="Search scheduled pins...">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -219,7 +223,7 @@ function SchedulePage() {
         publishing={publishNowMut.isPending}
         marking={markPostedMut.isPending}
       />
-    </PinShell>
+    </>
   );
 }
 

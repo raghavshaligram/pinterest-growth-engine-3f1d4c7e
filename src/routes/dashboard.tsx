@@ -35,12 +35,6 @@ export const Route = createFileRoute("/dashboard")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Dashboard — Pinspider" }] }),
-  // SiteProvider lives inside PinShell itself (see components/
-  // PinShell.tsx) -- one shared instance for the whole app. Lovable's
-  // own tooling re-added a per-route wrap here independently (see git
-  // history) -- that would decouple this page's data queries from the
-  // header switcher, since useContext resolves to the nearest
-  // Provider, not the outer PinShell one. Removed again.
   component: () => <DashboardPage />,
 });
 
@@ -50,6 +44,14 @@ type Pill = "all" | "week" | "published" | "scheduled";
 
 function DashboardPage() {
   const { user } = Route.useRouteContext();
+  return (
+    <PinShell active="dashboard" userEmail={user?.email}>
+      <DashboardContent />
+    </PinShell>
+  );
+}
+
+function DashboardContent() {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
   const listFn = useServerFn(listScheduled);
@@ -150,7 +152,7 @@ function DashboardPage() {
     .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
 
   return (
-    <PinShell active="dashboard" userEmail={user?.email}>
+    <>
       <TopBar search={search} onSearch={setSearch} placeholder="Search your pins...">
         <Link
           to="/pins"
@@ -193,7 +195,7 @@ function DashboardPage() {
         publishing={publishNowMut.isPending}
         marking={markPostedMut.isPending}
       />
-    </PinShell>
+    </>
   );
 }
 
