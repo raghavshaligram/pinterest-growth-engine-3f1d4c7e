@@ -14,7 +14,7 @@ import {
   unscheduleScheduledPin, queuePins, replaceScheduledPin, markPosted,
 } from "@/lib/schedule.functions";
 import { dashboardStats } from "@/lib/dashboard.functions";
-import { useSiteContext } from "@/lib/site-context";
+import { useSiteContext, SiteProvider } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
@@ -37,8 +37,13 @@ export const Route = createFileRoute("/dashboard")({
   // SiteProvider now lives inside PinShell itself (see components/
   // PinShell.tsx) -- one shared instance for the whole app instead of
   // Dashboard/Schedule/Sites each mounting their own.
-  component: () => <DashboardPage />,
+  component: () => (
+    <SiteProvider>
+      <DashboardPage />
+    </SiteProvider>
+  ),
 });
+
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
 type Pill = "all" | "week" | "published" | "scheduled";
