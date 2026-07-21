@@ -1,6 +1,7 @@
 // Server-only. Image generation worker driving Replicate + Storage.
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
+import type { SiteVertical } from "@/lib/briefs.functions";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -46,25 +47,39 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors))")
+        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors, brand_font, vertical))")
         .eq("id", briefId)
         .single();
       if (!brief) throw new Error("brief missing");
-      const page = (brief as { pages?: { url?: string; title?: string | null; analysis?: unknown; sites?: { url?: string; brand_colors?: unknown } } }).pages;
+      const page = (brief as {
+        pages?: {
+          url?: string; title?: string | null; analysis?: unknown;
+          sites?: { url?: string; brand_colors?: unknown; brand_font?: string | null; vertical?: SiteVertical | null };
+        };
+      }).pages;
       const siteUrl = page?.sites?.url ?? page?.url ?? "";
       const brandHost = siteUrl ? new URL(siteUrl).hostname.replace(/^www\./, "") : "";
       const brandColors = Array.isArray(page?.sites?.brand_colors) ? page!.sites!.brand_colors as string[] : [];
       const analysis = (page?.analysis ?? {}) as { topic?: string; primary_keyword?: string };
-      const themedPrompt = buildThemedPinPrompt({
-        title: brief.title,
-        cta: brief.cta,
-        style: brief.style,
-        topic: analysis.topic,
-        primaryKeyword: analysis.primary_keyword,
-        brandHost,
-        brandColors,
-        middlePrompt: brief.image_prompt,
-      });
+      // If image_prompt was manually edited after the brief was created
+      // (image_prompt_edited_at set -- see trg_pin_briefs_image_prompt_edit),
+      // it's already final/themed: use it as-is instead of re-deriving via
+      // buildThemedPinPrompt, which would silently discard the edit.
+      const briefRow = brief as { image_prompt_edited_at?: string | null };
+      const themedPrompt = briefRow.image_prompt_edited_at
+        ? brief.image_prompt
+        : buildThemedPinPrompt({
+            title: brief.title,
+            cta: brief.cta,
+            style: brief.style,
+            topic: analysis.topic,
+            primaryKeyword: analysis.primary_keyword,
+            brandHost,
+            brandColors,
+            brandFont: page?.sites?.brand_font,
+            vertical: page?.sites?.vertical,
+            middlePrompt: brief.image_prompt,
+          });
 
       const promptHash = createHash("sha1").update(themedPrompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
       if (!payload.force) {

@@ -3,11 +3,85 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
 
-const PIN_STYLES = [
+export const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
   "mistakes-to-avoid", "before-after", "listicle", "faq", "quick-tip",
   "infographic", "photo", "illustration", "minimal", "seasonal",
 ] as const;
+
+// ============ PIN TEMPLATE REGISTRY ============
+// Keyed by (vertical, generation_mode, template_id). Replaces the old
+// hardcoded two-family if/else in buildThemedPinPrompt so new site
+// verticals (Etsy/e-commerce/general content) can get their own visual
+// templates without touching shared code. `generation_mode` only has
+// one value today ("illustrated") -- the axis exists so a future
+// photo-real or product-shot mode can be added without a schema change.
+export type SiteVertical = "garden_content" | "general_content" | "etsy_product" | "ecomm_product";
+type GenerationMode = "illustrated";
+type TemplateId = "quick_tip_grid" | "editorial_before_after";
+
+interface PinTemplateEntry {
+  visual_description: string;
+  default_middle_prompt: (topic: string) => string;
+  typography_direction: string;
+  palette_fallback: string;
+  // Appended after "...Pinterest-native" in the global rules block, e.g.
+  // "gardening/home-improvement friendly". Omitted entirely for verticals
+  // that shouldn't inherit a genre lock (see general_content below).
+  genre_lock?: string;
+}
+
+type TemplateRegistry = Partial<
+  Record<SiteVertical, Partial<Record<GenerationMode, Partial<Record<TemplateId, PinTemplateEntry>>>>>
+>;
+
+const TEMPLATE_REGISTRY: TemplateRegistry = {
+  garden_content: {
+    illustrated: {
+      // Today's Family A, verbatim.
+      quick_tip_grid: {
+        visual_description: `THEME FAMILY: CLEAN ILLUSTRATED QUICK-TIP CARD GRID, matching the uploaded rainwater example. Light airy background, rounded white cards in a neat 2-column educational grid, thin teal/blue line icons, small leaf/water decorative accents at edges, crisp hierarchy, no photorealism.`,
+        default_middle_prompt: (topic) =>
+          `Create 4-6 compact visual tips about ${topic}, each with one simple icon and one short phrase. Keep text minimal and legible.`,
+        typography_direction: "rounded friendly bold sans",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
+      // Today's Family B, verbatim.
+      editorial_before_after: {
+        visual_description: `THEME FAMILY: EDITORIAL PHOTO BEFORE/AFTER PIN, matching the uploaded soil calculator example. Cream top title band, large dark-green elegant serif title, two vertical photo panels separated by a thin cream gutter, natural garden realism, refined magazine look.`,
+        default_middle_prompt: (topic) =>
+          `Show a compelling garden transformation related to ${topic}: left side problem/unfinished/dry, right side lush/finished/healthy.`,
+        typography_direction: "bold elegant editorial serif",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+      },
+    },
+  },
+  // Minimal placeholder so non-garden sites don't inherit gardening
+  // imagery/palette/genre lock -- neutral until real general-content
+  // templates are designed.
+  general_content: {
+    illustrated: {
+      quick_tip_grid: {
+        visual_description: `THEME FAMILY: CLEAN ILLUSTRATED QUICK-TIP CARD GRID. Light airy background, rounded white cards in a neat 2-column educational grid, thin line icons, crisp hierarchy, no photorealism.`,
+        default_middle_prompt: (topic) =>
+          `Create 4-6 compact visual tips about ${topic}, each with one simple icon and one short phrase. Keep text minimal and legible.`,
+        typography_direction: "rounded friendly bold sans",
+        palette_fallback: "charcoal #2B2B2B, warm white #FAF9F6, muted teal #3E7C7A, soft gray #D9D6D0, accent coral #E4633F",
+        // Deliberately no genre_lock -- neutral/general content shouldn't
+        // be pinned to any one industry look.
+      },
+    },
+  },
+  // No entries yet for etsy_product / ecomm_product -- out of scope for
+  // this pass (see task: "add the vertical field", not "design every
+  // vertical's templates"). buildThemedPinPrompt falls back to the
+  // general_content placeholder above for these until real templates
+  // land, rather than throwing.
+  etsy_product: {},
+  ecomm_product: {},
+};
 
 export function buildThemedPinPrompt(input: {
   title: string;
@@ -17,31 +91,51 @@ export function buildThemedPinPrompt(input: {
   primaryKeyword?: string | null;
   brandHost: string;
   brandColors?: string[];
+  /** Overrides the registry entry's default typography_direction when present. */
+  brandFont?: string | null;
   middlePrompt?: string | null;
+  /** Defaults to "garden_content" when unset so existing callers/sites keep today's behavior. */
+  vertical?: SiteVertical | null;
+  /**
+   * Hooks for a future pass (no SERP/trend data source exists yet) --
+   * unused/undefined today, but the injection point exists so wiring
+   * real data in later doesn't require touching this function again.
+   */
+  visualThemeHint?: string | null;
+  trendSignal?: string | null;
 }) {
+  const vertical: SiteVertical = input.vertical ?? "garden_content";
+  const generationMode: GenerationMode = "illustrated";
+  const isTipTheme = /quick-tip|checklist|how-to|faq|infographic|listicle|mistakes/i.test(input.style ?? "");
+  const templateId: TemplateId = isTipTheme ? "quick_tip_grid" : "editorial_before_after";
+
+  const fallbackEntry = TEMPLATE_REGISTRY.general_content!.illustrated!.quick_tip_grid!;
+  const entry = TEMPLATE_REGISTRY[vertical]?.[generationMode]?.[templateId] ?? fallbackEntry;
+
   const colors = input.brandColors?.filter(Boolean) ?? [];
-  const palette = colors.length
-    ? colors.join(", ")
-    : "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C";
+  const palette = colors.length ? colors.join(", ") : entry.palette_fallback;
   const cta = input.cta || "Read More →";
   const title = input.title.replace(/\s+/g, " ").trim();
   const topic = input.topic || input.primaryKeyword || title;
-  const isTipTheme = /quick-tip|checklist|how-to|faq|infographic|listicle|mistakes/i.test(input.style ?? "");
-  const theme = isTipTheme
-    ? `THEME FAMILY: CLEAN ILLUSTRATED QUICK-TIP CARD GRID, matching the uploaded rainwater example. Light airy background, rounded white cards in a neat 2-column educational grid, thin teal/blue line icons, small leaf/water decorative accents at edges, crisp hierarchy, no photorealism.`
-    : `THEME FAMILY: EDITORIAL PHOTO BEFORE/AFTER PIN, matching the uploaded soil calculator example. Cream top title band, large dark-green elegant serif title, two vertical photo panels separated by a thin cream gutter, natural garden realism, refined magazine look.`;
-  const middle = input.middlePrompt?.trim() || (isTipTheme
-    ? `Create 4-6 compact visual tips about ${topic}, each with one simple icon and one short phrase. Keep text minimal and legible.`
-    : `Show a compelling garden transformation related to ${topic}: left side problem/unfinished/dry, right side lush/finished/healthy.`);
+  const typography = input.brandFont?.trim() || entry.typography_direction;
+  const genreSuffix = entry.genre_lock ? `, ${entry.genre_lock}` : "";
+
+  let middle = input.middlePrompt?.trim() || entry.default_middle_prompt(topic);
+  if (input.visualThemeHint) {
+    middle += ` Trending visual approach for this topic: ${input.visualThemeHint}. Incorporate where it fits the brand's identity.`;
+  }
+  if (input.trendSignal) {
+    middle += ` Current trend signal: ${input.trendSignal}.`;
+  }
 
   return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
 
-${theme}
+${entry.visual_description}
 
 GLOBAL BRAND RULES:
 - Palette only: ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
-- Typography: headline is bold elegant editorial serif for photo/comparison pins; rounded friendly bold sans for quick-tip card-grid pins. Text must be large, correctly spelled, fully inside the canvas.
-- Keep the entire design clean, bright, Pinterest-native, gardening/home-improvement friendly.
+- Typography: headline is ${typography}. Text must be large, correctly spelled, fully inside the canvas.
+- Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
 LOCKED LAYOUT:
 - Top 16-18% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
@@ -138,7 +232,19 @@ Title patterns seen: ${JSON.stringify(patterns.title_patterns ?? [])}
 Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `\nSummary: ${patterns.summary}` : ""}`
       : "";
 
-    const stylesSubset = [...PIN_STYLES].sort(() => Math.random() - 0.5).slice(0, Math.min(data.count, PIN_STYLES.length));
+    // Style rotation memory: deprioritize (don't hard-exclude) styles used
+    // in the last few briefs for this page, so back-to-back batches don't
+    // keep landing on the same style. Falls back to the site's rolling
+    // history when the page's own is too sparse to be meaningful yet
+    // (e.g. the first batch generated for a brand-new page).
+    const pageRecent = Array.isArray(page.recent_styles) ? (page.recent_styles as string[]) : [];
+    const siteRecent = Array.isArray(site?.recent_styles) ? (site!.recent_styles as string[]) : [];
+    const recentStyles = pageRecent.length >= 3 ? pageRecent : siteRecent;
+    const recentSet = new Set(recentStyles);
+    const shuffle = <T,>(arr: readonly T[]) => [...arr].sort(() => Math.random() - 0.5);
+    const freshStyles = shuffle(PIN_STYLES.filter((s) => !recentSet.has(s)));
+    const staleStyles = shuffle(PIN_STYLES.filter((s) => recentSet.has(s)));
+    const stylesSubset = [...freshStyles, ...staleStyles].slice(0, Math.min(data.count, PIN_STYLES.length));
     const chosenStyles = stylesSubset.length >= data.count
       ? stylesSubset.slice(0, data.count)
       : [...stylesSubset, ...Array(data.count - stylesSubset.length).fill("how-to")];
@@ -207,6 +313,8 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
           primaryKeyword: analysis.primary_keyword,
           brandHost,
           brandColors,
+          brandFont,
+          vertical: site?.vertical,
           middlePrompt: b.image_prompt,
         }),
         status: "image_pending" as const,
@@ -228,6 +336,21 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
         payload: { brief_id: r.id },
       }));
       await supabaseAdmin.from("jobs").insert(jobs);
+
+      // Roll the style-rotation memory forward: newest styles first,
+      // deduped, capped at 5. Page-level always updates; site-level is
+      // the shared fallback other pages on the same site can draw on.
+      const ROTATION_MEMORY = 5;
+      const dedupeCapped = (styles: string[]) =>
+        styles.filter((s, i, arr) => arr.indexOf(s) === i).slice(0, ROTATION_MEMORY);
+      await supabaseAdmin.from("pages")
+        .update({ recent_styles: dedupeCapped([...chosenStyles, ...pageRecent]) })
+        .eq("id", page.id);
+      if (site) {
+        await supabaseAdmin.from("sites")
+          .update({ recent_styles: dedupeCapped([...chosenStyles, ...siteRecent]) })
+          .eq("id", site.id);
+      }
 
       await markIntegration(context.userId, "openai", "ok");
       return { created: inserted!.length };
@@ -300,6 +423,26 @@ export const renderImagesForPage = createServerFn({ method: "POST" })
   });
 
 
+
+// Lets a caller store an already-final, manually-edited image_prompt
+// (e.g. from a future brief-editing UI). The DB trigger
+// trg_pin_briefs_image_prompt_edit stamps image_prompt_edited_at
+// automatically on this update, which is what tells the image worker to
+// use the prompt as-is instead of re-deriving it via
+// buildThemedPinPrompt (see image-worker.server.ts).
+export const updateBriefImagePrompt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { briefId: string; imagePrompt: string }) =>
+    z.object({ briefId: z.string().uuid(), imagePrompt: z.string().min(1) }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("pin_briefs")
+      .update({ image_prompt: data.imagePrompt })
+      .eq("id", data.briefId);
+    if (error) throw error;
+    return { ok: true };
+  });
 
 export const rerenderBrief = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

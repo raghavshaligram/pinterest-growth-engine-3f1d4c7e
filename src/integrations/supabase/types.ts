@@ -270,6 +270,7 @@ export type Database = {
           last_analyzed_at: string | null
           last_crawled_at: string | null
           meta_description: string | null
+          recent_styles: string[]
           site_id: string
           status: Database["public"]["Enums"]["page_status"]
           title: string | null
@@ -290,6 +291,7 @@ export type Database = {
           last_analyzed_at?: string | null
           last_crawled_at?: string | null
           meta_description?: string | null
+          recent_styles?: string[]
           site_id: string
           status?: Database["public"]["Enums"]["page_status"]
           title?: string | null
@@ -310,6 +312,7 @@ export type Database = {
           last_analyzed_at?: string | null
           last_crawled_at?: string | null
           meta_description?: string | null
+          recent_styles?: string[]
           site_id?: string
           status?: Database["public"]["Enums"]["page_status"]
           title?: string | null
@@ -337,6 +340,7 @@ export type Database = {
           hashtags: string[]
           id: string
           image_prompt: string
+          image_prompt_edited_at: string | null
           intent: string
           page_id: string
           serp_keyword: string | null
@@ -357,6 +361,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt: string
+          image_prompt_edited_at?: string | null
           intent?: string
           page_id: string
           serp_keyword?: string | null
@@ -377,6 +382,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt?: string
+          image_prompt_edited_at?: string | null
           intent?: string
           page_id?: string
           serp_keyword?: string | null
@@ -631,6 +637,7 @@ export type Database = {
           brand_notes: string | null
           created_at: string
           id: string
+          recent_styles: string[]
           settings: Json
           site_type: Database["public"]["Enums"]["site_type"]
           sitemap_url: string | null
@@ -639,6 +646,7 @@ export type Database = {
           updated_at: string
           url: string
           user_id: string
+          vertical: Database["public"]["Enums"]["site_vertical"]
         }
         Insert: {
           accent_color?: string | null
@@ -648,6 +656,7 @@ export type Database = {
           brand_notes?: string | null
           created_at?: string
           id?: string
+          recent_styles?: string[]
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
@@ -656,6 +665,7 @@ export type Database = {
           updated_at?: string
           url: string
           user_id: string
+          vertical?: Database["public"]["Enums"]["site_vertical"]
         }
         Update: {
           accent_color?: string | null
@@ -665,6 +675,7 @@ export type Database = {
           brand_notes?: string | null
           created_at?: string
           id?: string
+          recent_styles?: string[]
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
@@ -673,6 +684,7 @@ export type Database = {
           updated_at?: string
           url?: string
           user_id?: string
+          vertical?: Database["public"]["Enums"]["site_vertical"]
         }
         Relationships: []
       }
@@ -711,6 +723,11 @@ export type Database = {
         | "exported"
         | "canceled"
       site_type: "website" | "etsy" | "ecomm"
+      site_vertical:
+        | "garden_content"
+        | "general_content"
+        | "etsy_product"
+        | "ecomm_product"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -868,6 +885,12 @@ export const Constants = {
         "canceled",
       ],
       site_type: ["website", "etsy", "ecomm"],
+      site_vertical: [
+        "garden_content",
+        "general_content",
+        "etsy_product",
+        "ecomm_product",
+      ],
     },
   },
 } as const
