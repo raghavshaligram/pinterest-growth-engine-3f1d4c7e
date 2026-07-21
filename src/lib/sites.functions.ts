@@ -116,7 +116,7 @@ export const upsertSite = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const row = { ...data, user_id: context.userId };
-    const { data: out, error } = await context.supabase.from("sites").upsert(row).select().single();
+    const { data: out, error } = await context.supabase.from("sites").upsert(row as never).select().single();
     if (error) throw error;
     return out;
   });
