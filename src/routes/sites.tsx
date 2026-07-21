@@ -21,7 +21,7 @@ import {
   type SiteOverviewRow, type SiteType,
 } from "@/lib/sites.functions";
 
-export const Route = createFileRoute("/_authenticated/sites")({
+export const Route = createFileRoute("/sites")({
   head: () => ({ meta: [{ title: "Sites — Pinspider" }] }),
   component: SitesPage,
 });

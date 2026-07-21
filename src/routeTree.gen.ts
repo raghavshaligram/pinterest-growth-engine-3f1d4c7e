@@ -9,13 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedSitesRouteImport } from './routes/_authenticated/sites'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedPinsRouteImport } from './routes/_authenticated/pins'
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
@@ -32,6 +32,11 @@ import { Route as ApiPublicCronMaterializeRouteImport } from './routes/api/publi
 import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
 import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
 
+const SitesRoute = SitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -60,11 +65,6 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedSitesRoute = AuthenticatedSitesRouteImport.update({
-  id: '/sites',
-  path: '/sites',
-  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -151,12 +151,12 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/sites': typeof SitesRoute
   '/boards': typeof AuthenticatedBoardsRoute
   '/keywords': typeof AuthenticatedKeywordsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/pins': typeof AuthenticatedPinsRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/sites': typeof AuthenticatedSitesRoute
   '/pages/$id': typeof AuthenticatedPagesIdRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/pages/': typeof AuthenticatedPagesIndexRoute
@@ -174,12 +174,12 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/sites': typeof SitesRoute
   '/boards': typeof AuthenticatedBoardsRoute
   '/keywords': typeof AuthenticatedKeywordsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/pins': typeof AuthenticatedPinsRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/sites': typeof AuthenticatedSitesRoute
   '/pages/$id': typeof AuthenticatedPagesIdRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/pages': typeof AuthenticatedPagesIndexRoute
@@ -199,12 +199,12 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/sites': typeof SitesRoute
   '/_authenticated/boards': typeof AuthenticatedBoardsRoute
   '/_authenticated/keywords': typeof AuthenticatedKeywordsRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/pins': typeof AuthenticatedPinsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/_authenticated/sites': typeof AuthenticatedSitesRoute
   '/_authenticated/pages/$id': typeof AuthenticatedPagesIdRoute
   '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/_authenticated/pages/': typeof AuthenticatedPagesIndexRoute
@@ -224,12 +224,12 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/schedule'
     | '/sitemap.xml'
+    | '/sites'
     | '/boards'
     | '/keywords'
     | '/logs'
     | '/pins'
     | '/settings'
-    | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages/'
@@ -247,12 +247,12 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/schedule'
     | '/sitemap.xml'
+    | '/sites'
     | '/boards'
     | '/keywords'
     | '/logs'
     | '/pins'
     | '/settings'
-    | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages'
@@ -271,12 +271,12 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/schedule'
     | '/sitemap.xml'
+    | '/sites'
     | '/_authenticated/boards'
     | '/_authenticated/keywords'
     | '/_authenticated/logs'
     | '/_authenticated/pins'
     | '/_authenticated/settings'
-    | '/_authenticated/sites'
     | '/_authenticated/pages/$id'
     | '/_authenticated/settings/integrations'
     | '/_authenticated/pages/'
@@ -296,6 +296,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   ScheduleRoute: typeof ScheduleRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  SitesRoute: typeof SitesRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
   ApiPublicCronMaterializeRoute: typeof ApiPublicCronMaterializeRoute
@@ -307,6 +308,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sites': {
+      id: '/sites'
+      path: '/sites'
+      fullPath: '/sites'
+      preLoaderRoute: typeof SitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -348,13 +356,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/sites': {
-      id: '/_authenticated/sites'
-      path: '/sites'
-      fullPath: '/sites'
-      preLoaderRoute: typeof AuthenticatedSitesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -484,7 +485,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedPinsRoute: typeof AuthenticatedPinsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
-  AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
   AuthenticatedPagesIdRoute: typeof AuthenticatedPagesIdRoute
   AuthenticatedPagesIndexRoute: typeof AuthenticatedPagesIndexRoute
 }
@@ -495,7 +495,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedPinsRoute: AuthenticatedPinsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
-  AuthenticatedSitesRoute: AuthenticatedSitesRoute,
   AuthenticatedPagesIdRoute: AuthenticatedPagesIdRoute,
   AuthenticatedPagesIndexRoute: AuthenticatedPagesIndexRoute,
 }
@@ -510,6 +509,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   ScheduleRoute: ScheduleRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  SitesRoute: SitesRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
   ApiPublicCronMaterializeRoute: ApiPublicCronMaterializeRoute,
