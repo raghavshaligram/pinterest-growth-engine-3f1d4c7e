@@ -316,9 +316,27 @@ function DayColumn({
         >
           {day.getDate()}
         </span>
-        <div style={{ fontSize: 11, color: PIN.textMuted, display: "flex", gap: 6, minHeight: 16 }}>
-          {counts.published > 0 && <span style={{ color: "#1E7B3D", fontWeight: 600 }}>{counts.published} done</span>}
-          {counts.scheduled > 0 && <span>{counts.scheduled} up</span>}
+        <div style={{ display: "flex", gap: 6, minHeight: 20, alignItems: "center", justifyContent: "center" }}>
+          {counts.published > 0 && <span style={{ fontSize: 11, color: "#1E7B3D", fontWeight: 600 }}>{counts.published} done</span>}
+          {counts.scheduled > 0 && (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: PIN.textSecondary,
+                background: PIN.fieldBg,
+                minWidth: 20,
+                height: 20,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 6px",
+              }}
+            >
+              {counts.scheduled} up
+            </span>
+          )}
         </div>
       </div>
 
