@@ -8,7 +8,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
+import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +47,7 @@ function PageDetail() {
   const get = useServerFn(getPage);
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
-  const img = useServerFn(runImageWorker);
+  const renderPage = useServerFn(renderImagesForPage);
 
   const { data } = useQuery({ queryKey: ["page", id], queryFn: () => get({ data: { id } }) });
 
@@ -55,11 +55,49 @@ function PageDetail() {
     onSuccess: () => { toast.success("Analyzed"); qc.invalidateQueries({ queryKey: ["page", id] }); },
     onError: (e) => toast.error(getErrorMessage(e)) });
   const genMut = useMutation({ mutationFn: (n: number) => gen({ data: { pageId: id, count: n } }),
-    onSuccess: (r) => { toast.success(`Created ${r.created} briefs. Run image worker to render.`); qc.invalidateQueries({ queryKey: ["page", id] }); },
+    onSuccess: (r) => {
+      // r.created can be less than r.requested even after generateBriefs'
+      // internal retry -- surface that honestly instead of only ever
+      // printing the (possibly short) created count on its own.
+      const msg = r.created < r.requested
+        ? `Created ${r.created} of ${r.requested} requested briefs. Run image worker to render.`
+        : `Created ${r.created} briefs. Run image worker to render.`;
+      if (r.created < r.requested) toast.warning(msg); else toast.success(msg);
+      qc.invalidateQueries({ queryKey: ["page", id] });
+    },
     onError: (e) => toast.error(getErrorMessage(e)) });
-  const imgMut = useMutation({ mutationFn: () => img(),
-    onSuccess: (r) => { toast.success(JSON.stringify(r)); qc.invalidateQueries({ queryKey: ["page", id] }); },
-    onError: (e) => toast.error(getErrorMessage(e)) });
+  const imgMut = useMutation({
+    mutationFn: async () => {
+      // Loop until THIS page's image queue is actually drained, instead
+      // of processing one fixed-size page of jobs per click and stopping
+      // (previously: a single non-looping call into the non-page-scoped
+      // runImageWorker, hardcoded to a limit of 8 -- a page with more
+      // than 8 queued jobs would silently leave the rest at
+      // status='queued' after one click). renderImagesForPage is
+      // page-scoped, so this only ever touches this page's jobs.
+      // Capped at 5 passes as a safety valve, not because 5 is expected
+      // to be hit in normal use -- flag it honestly if it is.
+      const MAX_PASSES = 5;
+      let ok = 0, fail = 0, passes = 0, drained = false;
+      for (; passes < MAX_PASSES; passes++) {
+        const r = (await renderPage({ data: { pageId: id, limit: 20 } })) as { processed: number; ok?: number; fail?: number };
+        ok += r.ok ?? 0;
+        fail += r.fail ?? 0;
+        if (!r.processed) { drained = true; break; }
+      }
+      return { ok, fail, passes, drained };
+    },
+    onSuccess: (r) => {
+      const base = `Rendered ${r.ok} image${r.ok === 1 ? "" : "s"}${r.fail ? ` (${r.fail} failed)` : ""}`;
+      if (r.drained) {
+        toast.success(base);
+      } else {
+        toast.warning(`${base} -- queue not fully drained after ${r.passes} passes, click again to continue`);
+      }
+      qc.invalidateQueries({ queryKey: ["page", id] });
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
 
   if (!data) return <p>Loading…</p>;
   const { page, briefs } = data;

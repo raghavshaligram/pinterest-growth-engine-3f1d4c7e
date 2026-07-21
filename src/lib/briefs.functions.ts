@@ -495,10 +495,14 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
           image_prompt: string;
         }>;
       };
-      const resp = await openaiJSON<BriefsResp>({
-        apiKey: cfg.api_key,
-        model: "gpt-4o-mini",
-        system: `You are a Pinterest SEO strategist and visual-template classifier. Return strict JSON. Every pin has:
+      // First line of defense: the model is told explicitly, twice
+      // (system + user), to return exactly data.count items. This alone
+      // is NOT relied on to guarantee the count -- see the length check
+      // and retry immediately below, which is the real fix. A prompt
+      // instruction can be (and has been observed to be) under-fulfilled
+      // by the model, especially as per-item constraints add up (copy +
+      // CTA-pool compliance + template classification all at once).
+      const system = `You are a Pinterest SEO strategist and visual-template classifier. Return strict JSON. Every pin has:
 - title: <=100 chars, PRIMARY KEYWORD in the first 40 chars, curiosity-driven, no clickbait, no ALL CAPS.
 - description: 150-450 chars, natural sentences, primary keyword in first 50 chars, weave in 2-3 secondary keywords, end with the CTA phrase as a call to action.
 - alt_text: <=250 chars, LITERAL visual description of what's in the image, include primary keyword once, NOT marketing copy.
@@ -507,8 +511,9 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
 - intent: one of informational|tool|list|commercial.
 - template_id: the single best-fitting visual template for THIS brief's specific content angle, chosen from the template catalog given in the user message (use the id exactly as written). Judge fit by what the brief is actually about, not by its style label -- e.g. a brief that corrects a common misconception belongs in myth_vs_fact regardless of which style tag it also carries.
 - image_prompt: a SHORT description of ONLY the middle visual content specific to this brief (subject matter and mood) -- the chosen template supplies its own composition, typography, palette, and border/URL-bar automatically, so do not describe layout, frame, or text placement yourself.
-If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`,
-        user: `Create ${data.count} unique Pinterest pin briefs for this page. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
+The briefs array in your JSON response MUST contain EXACTLY the requested number of items -- never fewer. If you run low on genuinely distinct angles, vary style, intent, or template_id more aggressively rather than returning an incomplete array.
+If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`;
+      const user = `Create ${data.count} unique Pinterest pin briefs for this page. You MUST return exactly ${data.count} items in the briefs array -- no fewer. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
 
 Return JSON: { briefs: [{ style, template_id, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
 
@@ -527,8 +532,26 @@ Topic: ${analysis.topic ?? ""}
 Primary keyword: ${analysis.primary_keyword}
 Secondary: ${JSON.stringify(analysis.secondary_keywords ?? [])}
 Audience: ${analysis.audience ?? ""}
-Category: ${analysis.category ?? ""}${competitiveBlock}`,
-      });
+Category: ${analysis.category ?? ""}${competitiveBlock}`;
+
+      let resp = await openaiJSON<BriefsResp>({ apiKey: cfg.api_key, model: "gpt-4o-mini", system, user });
+
+      // The real fix: don't trust the prompt instruction alone. If the
+      // model returned fewer than requested, retry ONCE with an amended
+      // prompt that states exactly how short the first attempt was. If
+      // still short after the retry, accept what we have rather than
+      // looping indefinitely or failing the whole batch -- but report
+      // the shortfall honestly in the return value instead of silently
+      // persisting fewer briefs than the user asked for (see `requested`
+      // vs `created` below, and the toast update in pages.$id.tsx).
+      if (resp.briefs.length < data.count) {
+        const shortBy = data.count - resp.briefs.length;
+        const retryUser = `${user}
+
+IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} of the required ${data.count} items (${shortBy} short). This time you MUST return exactly ${data.count} complete items in the briefs array. Do not stop early, and do not omit items for being "similar enough" to earlier ones -- vary style, intent, and template_id further if needed to reach the full count.`;
+        const retryResp = await openaiJSON<BriefsResp>({ apiKey: cfg.api_key, model: "gpt-4o-mini", system, user: retryUser });
+        resp = retryResp;
+      }
 
       const rows = resp.briefs.slice(0, data.count).map((b) => {
         // Defensive fallback only: an LLM occasionally returns a
@@ -600,7 +623,12 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`,
       }
 
       await markIntegration(context.userId, "openai", "ok");
-      return { created: inserted!.length };
+      // Report both numbers -- created can legitimately be less than
+      // requested even after the retry above (rare, but the retry is a
+      // best-effort, not a guarantee). Callers/UI must not assume
+      // created === requested silently; pages.$id.tsx surfaces this
+      // explicitly in its toast.
+      return { requested: data.count, created: inserted!.length };
     } catch (e) {
       const msg = getErrorMessage(e);
       await markIntegration(context.userId, "openai", "error", msg);
@@ -620,17 +648,27 @@ export const listBriefs = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+// Was hardcoded to 8, well under realistic batch sizes (default 10,
+// max 30 -- see generateBriefs' count validator) -- meant a single
+// worker/render-images click could never clear a normal-sized batch in
+// one pass even when nothing was actually wrong. Raised to comfortably
+// cover a full max-size batch in one query; the page-scoped render flow
+// additionally loops passes until the queue is drained (see
+// renderImagesForPage callers in pages.$id.tsx), so this number just
+// needs to be a reasonable per-pass size, not an absolute ceiling.
+const DEFAULT_IMAGE_WORKER_LIMIT = 20;
+
 export const runImageWorker = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { processImageQueueForUser } = await import("./image-worker.server");
-    return await processImageQueueForUser(context.userId, 8);
+    return await processImageQueueForUser(context.userId, DEFAULT_IMAGE_WORKER_LIMIT);
   });
 
 export const renderImagesForPage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { pageId: string; limit?: number }) =>
-    z.object({ pageId: z.string().uuid(), limit: z.number().int().min(1).max(20).default(8) }).parse(i),
+    z.object({ pageId: z.string().uuid(), limit: z.number().int().min(1).max(30).default(DEFAULT_IMAGE_WORKER_LIMIT) }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
