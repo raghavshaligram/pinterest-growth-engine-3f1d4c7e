@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
-  Globe, Store, ShoppingBag, Trash2, RefreshCcw, ChevronDown, Plus, X, Check, BookOpen,
+  Globe, Store, ShoppingBag, Trash2, RefreshCcw, ChevronDown, Plus, X, Check, BookOpen, Link2, Map,
 } from "lucide-react";
 import {
   getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES,
@@ -390,14 +390,14 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
   const cfg = SITE_TYPE_CONFIG[siteType];
 
   return (
-    <Card className="p-6">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#E60023" }}>
-            <Plus className="h-4 w-4 text-white" />
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-4 border-b border-border px-6 py-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
+            <Plus className="h-4 w-4" style={{ color: "#E60023" }} />
           </span>
           <div>
-            <h2 className="text-lg font-semibold">Add a site</h2>
+            <h2 className="text-base font-semibold">Add a site</h2>
             <p className="text-sm text-muted-foreground">
               {step === 1 && "Choose your site type"}
               {step === 2 && "Enter your site URL"}
@@ -405,87 +405,117 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-2">
           {([1, 2, 3] as const).map((n) => (
-            <span key={n} className="h-2 w-2 rounded-full" style={{ background: n <= step ? "#E60023" : "#E5E5E5" }} />
+            <span
+              key={n}
+              className="h-2 rounded-full"
+              style={{
+                width: n === step ? 24 : 8,
+                background: n <= step ? "#E60023" : "#E5E5E5",
+              }}
+            />
           ))}
-          <Button variant="ghost" size="icon" className="h-7 w-7 ml-1" onClick={onCancel}><X className="h-4 w-4" /></Button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
-      {step === 1 && (
-        <div className="grid gap-3 md:grid-cols-3">
-          {SITE_TYPES.map((t) => {
-            const c = SITE_TYPE_CONFIG[t];
-            const Icon = c.icon;
-            const active = siteType === t;
-            return (
-              <button
-                key={t} type="button" onClick={() => { setSiteType(t); setStep(2); }}
-                className="rounded-lg border p-4 text-left transition-colors hover:border-neutral-400"
-                style={{ borderColor: active ? "#111111" : "#E5E5E5", borderWidth: active ? 2 : 1 }}
-              >
-                <Icon className="mb-2 h-5 w-5" />
-                <div className="font-medium">{c.wizardTitle}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{c.description}</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="max-w-2xl space-y-4">
-          <div className={siteType === "website" ? "grid grid-cols-2 gap-6" : ""}>
-            <div>
-              <Label>{cfg.urlLabel}</Label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={cfg.urlPlaceholder} />
-            </div>
-            {siteType === "website" && (
-              <div>
-                <Label>Sitemap URL <span className="text-muted-foreground">(optional)</span></Label>
-                <Input value={sitemapUrl} onChange={(e) => setSitemapUrl(e.target.value)} placeholder="https://yoursite.com/sitemap.xml" />
-              </div>
-            )}
+      <div className="p-6">
+        {step === 1 && (
+          <div className="grid gap-3 md:grid-cols-3">
+            {SITE_TYPES.map((t) => {
+              const c = SITE_TYPE_CONFIG[t];
+              const Icon = c.icon;
+              const active = siteType === t;
+              return (
+                <button
+                  key={t} type="button" onClick={() => { setSiteType(t); setStep(2); }}
+                  className="rounded-lg border p-4 text-left transition-colors hover:border-neutral-400"
+                  style={{ borderColor: active ? "#111111" : "#E5E5E5", borderWidth: active ? 2 : 1 }}
+                >
+                  <Icon className="mb-2 h-5 w-5" />
+                  <div className="font-medium">{c.wizardTitle}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{c.description}</div>
+                </button>
+              );
+            })}
           </div>
-          {cfg.tip && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">💡 {cfg.tip}</p>}
-        </div>
-      )}
+        )}
 
-      {step === 3 && (
-        <BrandEditorFields
-          brandName={brandName} onBrandName={setBrandName}
-          tagline={tagline} onTagline={setTagline}
-          accentColor={accentColor} onAccentColor={setAccentColor}
-          brandColors={brandColors}
-          onToggleBrandColor={(hex) => setBrandColors((cur) => (cur.includes(hex) ? cur.filter((c) => c !== hex) : [...cur, hex]))}
-          onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
-          typography={typography} onTypography={setTypography}
-          notes={notes} onNotes={setNotes}
-          advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
-        />
-      )}
-
-      <div className="mt-6 flex justify-end gap-2">
-        {step > 1 && <Button variant="outline" onClick={() => setStep((s) => (s - 1) as WizardStep)}>Back</Button>}
         {step === 2 && (
-          <Button
-            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-            onClick={() => setStep(3)}
-            disabled={!url.trim()}
-          >
-            Next: Brand info →
-          </Button>
+          <div className="max-w-2xl space-y-4">
+            <div className={siteType === "website" ? "grid grid-cols-2 gap-6" : ""}>
+              <div>
+                <Label className="font-semibold">{cfg.urlLabel}</Label>
+                <div className="relative mt-1.5">
+                  <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={url} onChange={(e) => setUrl(e.target.value)} placeholder={cfg.urlPlaceholder}
+                    className="h-11 rounded-xl border-none bg-muted/60 pl-9"
+                  />
+                </div>
+              </div>
+              {siteType === "website" && (
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <Label className="font-semibold">Sitemap URL</Label>
+                    <span className="text-xs text-muted-foreground">optional</span>
+                  </div>
+                  <div className="relative mt-1.5">
+                    <Map className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={sitemapUrl} onChange={(e) => setSitemapUrl(e.target.value)} placeholder="https://yoursite.com/sitemap.xml"
+                      className="h-11 rounded-xl border-none bg-muted/60 pl-9"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            {cfg.tip && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">💡 {cfg.tip}</p>}
+          </div>
         )}
+
         {step === 3 && (
-          <Button
-            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-            onClick={() => createMut.mutate()}
-            disabled={!brandName.trim() || createMut.isPending}
-          >
-            <Plus className="mr-1.5 h-4 w-4" />Add site
-          </Button>
+          <BrandEditorFields
+            brandName={brandName} onBrandName={setBrandName}
+            tagline={tagline} onTagline={setTagline}
+            accentColor={accentColor} onAccentColor={setAccentColor}
+            brandColors={brandColors}
+            onToggleBrandColor={(hex) => setBrandColors((cur) => (cur.includes(hex) ? cur.filter((c) => c !== hex) : [...cur, hex]))}
+            onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
+            typography={typography} onTypography={setTypography}
+            notes={notes} onNotes={setNotes}
+            advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
+          />
         )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          {step > 1 && <Button variant="outline" className="rounded-full" onClick={() => setStep((s) => (s - 1) as WizardStep)}>Back</Button>}
+          {step === 2 && (
+            <Button
+              className="rounded-full bg-[#E60023] text-white hover:bg-[#E60023]/90"
+              onClick={() => setStep(3)}
+              disabled={!url.trim()}
+            >
+              Next: Brand info →
+            </Button>
+          )}
+          {step === 3 && (
+            <Button
+              className="rounded-full bg-[#E60023] text-white hover:bg-[#E60023]/90"
+              onClick={() => createMut.mutate()}
+              disabled={!brandName.trim() || createMut.isPending}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />Add site
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );
