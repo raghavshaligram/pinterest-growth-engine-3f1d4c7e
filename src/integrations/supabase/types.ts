@@ -340,6 +340,7 @@ export type Database = {
           hashtags: string[]
           id: string
           image_prompt: string
+          image_prompt_edited_at: string | null
           intent: string
           page_id: string
           serp_keyword: string | null
@@ -361,6 +362,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt: string
+          image_prompt_edited_at?: string | null
           intent?: string
           page_id: string
           serp_keyword?: string | null
@@ -382,6 +384,7 @@ export type Database = {
           hashtags?: string[]
           id?: string
           image_prompt?: string
+          image_prompt_edited_at?: string | null
           intent?: string
           page_id?: string
           serp_keyword?: string | null
