@@ -181,35 +181,35 @@ function TopBar({ search, onSearch }: { search: string; onSearch: (v: string) =>
       <div
         style={{
           flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
-          borderRadius: 999, padding: "14px 18px", height: 48,
+          borderRadius: 999, padding: "0 14px", height: 36,
         }}
       >
-        <Search size={20} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
+        <Search size={18} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Search your pins..."
-          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, color: PIN.textPrimary, width: "100%" }}
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 14, color: PIN.textPrimary, width: "100%" }}
         />
       </div>
       <button
         type="button"
         title="Filters"
         style={{
-          width: 48, height: 48, borderRadius: 10, background: PIN.fieldBg, border: "none",
+          width: 36, height: 36, borderRadius: 10, background: PIN.fieldBg, border: "none",
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}
       >
-        <SlidersHorizontal size={19} style={{ color: PIN.textSecondary }} />
+        <SlidersHorizontal size={17} style={{ color: PIN.textSecondary }} />
       </button>
       <Link
         to="/pins"
         style={{
-          display: "flex", alignItems: "center", gap: 6, height: 48, padding: "0 18px", borderRadius: 999,
-          background: PIN.accent, color: "#FFFFFF", fontSize: 15, fontWeight: 600, flexShrink: 0, textDecoration: "none",
+          display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 999,
+          background: PIN.accent, color: "#FFFFFF", fontSize: 14, fontWeight: 600, flexShrink: 0, textDecoration: "none",
         }}
       >
-        <Plus size={18} />Create Pin
+        <Plus size={16} />Create Pin
       </Link>
     </div>
   );
