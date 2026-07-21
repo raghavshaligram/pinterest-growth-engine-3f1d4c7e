@@ -24,7 +24,12 @@ type TemplateId =
   | "problem_solution_headline"
   | "listicle"
   | "quote_stat_card"
-  | "step_by_step";
+  | "step_by_step"
+  | "myth_vs_fact"
+  | "definition_card"
+  | "scale_comparison"
+  | "seasonal_timeline"
+  | "tool_result_preview";
 
 interface PinTemplateEntry {
   visual_description: string;
@@ -35,6 +40,12 @@ interface PinTemplateEntry {
   // "gardening/home-improvement friendly". Omitted entirely for verticals
   // that shouldn't inherit a genre lock (see general_content below).
   genre_lock?: string;
+  // One-line description of what kind of page content this template
+  // suits best. Not consumed by any selection logic yet -- there is no
+  // content-aware classifier in this codebase (only the style-label
+  // regex below). This field exists so that metadata is ready the
+  // moment one gets built, without re-touching every entry again.
+  content_fit: string;
 }
 
 type TemplateRegistry = Partial<
@@ -52,6 +63,7 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         typography_direction: "rounded friendly bold sans",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for general list-of-tips or how-to content with several short, roughly equal-weight points -- no single dominant idea.",
       },
       // Today's Family B, verbatim.
       editorial_before_after: {
@@ -61,6 +73,7 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         typography_direction: "bold elegant editorial serif",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for transformation/renovation content where a literal before-and-after visual comparison tells the story.",
       },
       // Pass B: Master Strategy template 3/6. Rewritten after an audit
       // found the original relied on a negative instruction ("not a
@@ -77,6 +90,7 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         typography_direction: "bold condensed magazine-headline sans",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for content framed as answering a single specific problem or question, where one clear visual can carry the whole idea.",
       },
       // Pass B: Master Strategy template 4/6. Rewritten after an audit
       // found "vertical or grid arrangement" left the composition
@@ -92,18 +106,20 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         typography_direction: "bold rounded sans with oversized numerals",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for ranked or countable list content (top N, X tips/mistakes) where each item deserves its own short label.",
       },
       // Pass B: Master Strategy template 5/6. The deliberately
       // lowest-text-density template -- text IS the visual here, so this
       // is the one entry that doesn't get the "minimal text overlay"
       // instruction.
       quote_stat_card: {
-        visual_description: `THEME FAMILY: QUOTE/STAT CARD PIN. One large number or short quote as the single dominant visual element, filling most of the canvas -- minimal surrounding decoration, generous white space. The deliberately lowest-text-density template: one big statement, nothing else competing for attention.`,
+        visual_description: `THEME FAMILY: QUOTE/STAT CARD PIN. One large number or short quote as the single dominant visual element, filling most of the canvas -- minimal surrounding decoration, generous white space. The deliberately lowest-text-density template: one big statement, nothing else competing for attention. Bare typographic treatment only -- no interface chrome, no input fields, no browser-window framing, no card border (see tool_result_preview for the UI-mimicry version of a large number).`,
         default_middle_prompt: (topic) =>
-          `One large, bold statistic or short quote about ${topic} as the dominant visual element -- this is the one template where the text IS the visual, so make it big and confident. No supporting icons, no card grid, no extra copy competing with it.`,
+          `One large, bold statistic or short quote about ${topic} as the dominant visual element -- this is the one template where the text IS the visual, so make it big and confident. No supporting icons, no card grid, no extra copy competing with it, no UI chrome or input fields.`,
         typography_direction: "oversized bold display serif",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for content anchored on one compelling statistic, fact, or quotable claim.",
       },
       // Pass B: Master Strategy template 6/6. Rewritten after an audit
       // found "vertical or horizontal flow" + "a simple line or arrow"
@@ -120,6 +136,73 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         typography_direction: "rounded friendly bold sans with a clear numbered sequence",
         palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
         genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for sequential how-to/process content where steps must happen in a specific order.",
+      },
+      // Pass C: bringing the total to 10, then 11 with tool_result_preview.
+      // Fact-check graphic, not a transformation -- stamped MYTH/FACT
+      // badges + strike-through/checkmark iconography + a bold solid
+      // divider (not a blank gutter) distinguish it from
+      // editorial_before_after's photo-realist two-panel split.
+      myth_vs_fact: {
+        visual_description: `THEME FAMILY: MYTH VS FACT CORRECTION PIN. Two columns divided by a bold solid vertical divider line (not a thin blank gutter). The left column is stamped with a "MYTH" badge label at the top and a large diagonal red strike-through/X mark drawn across its illustration, rendered in muted grayscale tones. The right column is stamped with a "FACT" badge label at the top and a large green checkmark badge beside its illustration, rendered in full vivid color. This is a fact-check/correction graphic, not a transformation -- the left side is marked FALSE, not "before," and the right side is marked TRUE, not "after."`,
+        default_middle_prompt: (topic) =>
+          `A myth-vs-fact correction about ${topic}: left column stamped "MYTH" with a red strike-through/X over a muted grayscale illustration of the misconception, right column stamped "FACT" with a green checkmark beside a vivid full-color illustration of the truth, divided by a bold solid vertical line -- minimal text overlay beyond the two badge labels, let the visual carry the correction.`,
+        typography_direction: "bold condensed sans for the MYTH/FACT badge labels",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for content that corrects a common misconception -- pages framed around debunking a myth or clarifying what's actually true.",
+      },
+      // Dictionary/glossary-entry hierarchy (headword, then a distinct
+      // definition block, then one icon) distinguishes it from
+      // quote_stat_card's single unbroken statement with nothing else
+      // competing for attention.
+      definition_card: {
+        visual_description: `THEME FAMILY: DEFINITION CARD PIN. Dictionary/glossary-entry layout: the term itself set in large bold type as a headword at the top, directly followed by one clear definition block in smaller body-weight type immediately below it -- a two-tier text hierarchy, term then definition, not a single unbroken statement -- plus exactly one supporting icon positioned to the side of the definition block. Clean reference-card feel, explanatory in tone rather than a punchy claim.`,
+        default_middle_prompt: (topic) =>
+          `A dictionary-style definition card for ${topic}: the term as a large bold headword, one clear definition sentence in smaller body type directly below it, and exactly one supporting icon beside the definition -- minimal text overlay beyond the headword and definition themselves, let the two-tier hierarchy carry the explanation. No card grid, no numbered list.`,
+        typography_direction: "bold serif headword over clean sans-serif definition body text",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for glossary/definition-style content explaining what a term means.",
+      },
+      // A graduated axis with markers at PROPORTIONAL heights (magnitude
+      // encoded by position) distinguishes it from step_by_step's
+      // equally-weighted sequential nodes -- this is about relative
+      // size, not order of action.
+      scale_comparison: {
+        visual_description: `THEME FAMILY: SCALE COMPARISON PIN. A single graduated axis -- like a ruler or thermometer -- runs the length of the canvas (vertical orientation) with visible tick marks at regular intervals. 2-4 icons are placed directly on the axis at heights proportional to the magnitude or size they represent (larger values sit higher, smaller values sit lower), each with a short label beside its tick mark. Unlike a sequence of equally-weighted steps, position along the axis encodes actual relative size or quantity, not order of action.`,
+        default_middle_prompt: (topic) =>
+          `A graduated ruler/thermometer-style axis with visible tick marks about ${topic}, with 2-4 icons positioned at heights proportional to the size or magnitude each represents, each with a short label at its tick mark -- minimal text overlay, let the proportional positioning carry the comparison. No connecting path or arrows between icons -- position on the axis alone encodes the comparison.`,
+        typography_direction: "bold rounded sans for axis labels",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for measurement, sizing, or quantity-comparison content, especially calculator/estimator pages comparing magnitudes.",
+      },
+      // A horizontal calendar strip of flush, equal-width, unconnected
+      // segments distinguishes it from step_by_step's vertical threaded
+      // path -- adjacency along a calendar ribbon, not a connecting
+      // line between action nodes.
+      seasonal_timeline: {
+        visual_description: `THEME FAMILY: SEASONAL TIMELINE PIN. A single horizontal strip spans the full width of the canvas, divided into equal-width adjacent segments -- one segment per month or season -- like a calendar strip. Each segment contains one small icon and a short label (the month or season name) directly beneath it. Segments sit flush against each other with a thin vertical divider between them; there is no connecting thread, path, or arrow linking them -- adjacency along the calendar strip alone conveys the passage of time.`,
+        default_middle_prompt: (topic) =>
+          `A horizontal calendar strip about ${topic}, divided into 3-4 equal-width month/season segments sitting flush side by side, each with one small icon and a short month/season label beneath it -- minimal text overlay, let the calendar segments carry the timing. No connecting thread or arrows between segments, no vertical stacking.`,
+        typography_direction: "rounded friendly bold sans for month/season labels",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for content organized around a calendar (monthly/seasonal planting or maintenance schedules).",
+      },
+      // The only template depicting UI/interface chrome -- distinguishes
+      // it from quote_stat_card (which also has one large prominent
+      // number) via browser-chrome framing and labeled input fields,
+      // which quote_stat_card explicitly rules out.
+      tool_result_preview: {
+        visual_description: `THEME FAMILY: TOOL RESULT PREVIEW PIN. A stylized mock interface: a rounded card with browser-chrome framing (a thin top bar with 3 small circular dots, like a window's title bar) containing 2-3 labeled input fields with plausible sample values already filled in, and one large, visually highlighted result output area below the inputs showing a computed answer -- styled to look like a real tool that was just used, not a generic screenshot or icon. This is the only template depicting UI/interface chrome; no other template uses input fields, browser-window framing, or a filled-in form.`,
+        default_middle_prompt: (topic) =>
+          `A stylized mock tool interface for ${topic}: a rounded browser-chrome-framed card with 2-3 labeled input fields showing plausible sample values already entered, and one large highlighted result area below showing a computed answer -- make it look like a real calculator/tool that was just used, not a blank form or generic screenshot. Minimal text overlay beyond the field labels and result themselves.`,
+        typography_direction: "clean modern UI sans, like a real app interface",
+        palette_fallback: "deep garden green #2F5D1E, fresh blue #0B78B6, soft sky #EAF7FA, cream #FFFDF6, leaf green #49A35C",
+        genre_lock: "gardening/home-improvement friendly",
+        content_fit: "best for pages describing or centered on an interactive calculator/tool, where showing the tool in use is the strongest visual.",
       },
     },
   },
@@ -136,6 +219,7 @@ const TEMPLATE_REGISTRY: TemplateRegistry = {
         palette_fallback: "charcoal #2B2B2B, warm white #FAF9F6, muted teal #3E7C7A, soft gray #D9D6D0, accent coral #E4633F",
         // Deliberately no genre_lock -- neutral/general content shouldn't
         // be pinned to any one industry look.
+        content_fit: "general-purpose fallback -- used for any content when no vertical-specific template exists yet.",
       },
     },
   },
