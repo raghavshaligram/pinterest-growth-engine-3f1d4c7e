@@ -19,6 +19,7 @@ import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
 import {
   ChevronLeft, ChevronRight, Plus, Star, Check, ImageIcon, ChevronDown, Pencil, CalendarOff,
+  Search, SlidersHorizontal,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -47,6 +48,44 @@ const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 // placeholder until real per-slot performance data exists.
 const BEST_HOURS = [12, 19];
 
+function TopBar({
+  search, onSearch, children,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 12px" }}>
+      <div
+        style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 10, background: PIN.fieldBg,
+          borderRadius: 999, padding: "14px 18px", height: 48,
+        }}
+      >
+        <Search size={20} style={{ color: PIN.textSecondary, flexShrink: 0 }} />
+        <input
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search scheduled pins..."
+          style={{ border: "none", outline: "none", background: "transparent", fontSize: 15, color: PIN.textPrimary, width: "100%" }}
+        />
+      </div>
+      <button
+        type="button"
+        title="Filters"
+        style={{
+          width: 48, height: 48, borderRadius: 10, background: PIN.fieldBg, border: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}
+      >
+        <SlidersHorizontal size={19} style={{ color: PIN.textSecondary }} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function SchedulePage() {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
@@ -65,6 +104,7 @@ function SchedulePage() {
   const { data } = useQuery({ queryKey: ["scheduled"], queryFn: () => list() });
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [open, setOpen] = useState<ScheduledRow | null>(null);
+  const [search, setSearch] = useState("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled"] });
 
@@ -124,6 +164,11 @@ function SchedulePage() {
   });
 
   const rows = data ?? [];
+  const filteredRows = rows.filter((r) => {
+    if (!search.trim()) return true;
+    const title = r.pin_briefs?.title ?? "";
+    return title.toLowerCase().includes(search.trim().toLowerCase());
+  });
   const weekEnd = addDays(weekStart, 7);
   const weekCounts = countInRange(rows, weekStart, weekEnd);
 
@@ -142,6 +187,24 @@ function SchedulePage() {
 
   return (
     <PinShell active="schedule" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" style={scheduleBtnStyle}>
+              <Plus size={18} />Schedule<ChevronDown size={16} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onClick={() => autoMut.mutate({ days: 14, perDay: 5 })}>Auto-fill next 14 days</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => pubMut.mutate()}>Publish everything due now</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => queueMut.mutate(undefined)}>Queue all drafts</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => { if (window.confirm(`Delete all ${rows.length} scheduled pins? Published pins are kept.`)) wipeMut.mutate(); }}>
+              Delete all scheduled
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TopBar>
       <div style={{ padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button type="button" onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtnStyle}><ChevronLeft size={16} /></button>
@@ -152,22 +215,6 @@ function SchedulePage() {
           <StatPill tone="success" label={`${weekCounts.published} published`} />
           <StatPill tone="rose" label={`${weekCounts.scheduled} scheduled`} />
           <StatPill tone="neutral" label={`${weekCounts.total} this week`} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" style={scheduleBtnStyle}>
-                <Plus size={15} />Schedule<ChevronDown size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuItem onClick={() => autoMut.mutate({ days: 14, perDay: 5 })}>Auto-fill next 14 days</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => pubMut.mutate()}>Publish everything due now</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => queueMut.mutate(undefined)}>Queue all drafts</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { if (window.confirm(`Delete all ${rows.length} scheduled pins? Published pins are kept.`)) wipeMut.mutate(); }}>
-                Delete all scheduled
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
@@ -179,7 +226,7 @@ function SchedulePage() {
               label={DAY_LABELS[i]}
               day={day}
               isLast={i === 6}
-              rows={rows}
+              rows={filteredRows}
               onOpen={setOpen}
               onUnschedule={(id) => unscheduleMut.mutate(id)}
               onAddSlot={addSlot}
@@ -215,8 +262,8 @@ const navBtnStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: PIN.textSecondary,
 };
 const scheduleBtnStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 999,
-  background: PIN.accent, color: "#FFFFFF", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 6, height: 48, padding: "0 18px", borderRadius: 999,
+  background: PIN.accent, color: "#FFFFFF", fontSize: 15, fontWeight: 600, border: "none", cursor: "pointer",
 };
 
 function StatPill({ tone, label }: { tone: "success" | "rose" | "neutral"; label: string }) {
