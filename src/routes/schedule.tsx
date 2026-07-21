@@ -187,6 +187,24 @@ function SchedulePage() {
 
   return (
     <PinShell active="schedule" userEmail={user?.email}>
+      <TopBar search={search} onSearch={setSearch}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" style={scheduleBtnStyle}>
+              <Plus size={18} />Schedule<ChevronDown size={16} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onClick={() => autoMut.mutate({ days: 14, perDay: 5 })}>Auto-fill next 14 days</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => pubMut.mutate()}>Publish everything due now</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => queueMut.mutate(undefined)}>Queue all drafts</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => { if (window.confirm(`Delete all ${rows.length} scheduled pins? Published pins are kept.`)) wipeMut.mutate(); }}>
+              Delete all scheduled
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TopBar>
       <div style={{ padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button type="button" onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtnStyle}><ChevronLeft size={16} /></button>
@@ -197,22 +215,6 @@ function SchedulePage() {
           <StatPill tone="success" label={`${weekCounts.published} published`} />
           <StatPill tone="rose" label={`${weekCounts.scheduled} scheduled`} />
           <StatPill tone="neutral" label={`${weekCounts.total} this week`} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" style={scheduleBtnStyle}>
-                <Plus size={15} />Schedule<ChevronDown size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuItem onClick={() => autoMut.mutate({ days: 14, perDay: 5 })}>Auto-fill next 14 days</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => pubMut.mutate()}>Publish everything due now</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => queueMut.mutate(undefined)}>Queue all drafts</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { if (window.confirm(`Delete all ${rows.length} scheduled pins? Published pins are kept.`)) wipeMut.mutate(); }}>
-                Delete all scheduled
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
