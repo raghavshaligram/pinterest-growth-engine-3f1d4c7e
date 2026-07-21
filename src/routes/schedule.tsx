@@ -11,7 +11,6 @@ import {
   deleteAllScheduled, replaceScheduledPin, publishNow, markPosted, duplicateScheduledPin,
   unscheduleScheduledPin,
 } from "@/lib/schedule.functions";
-import { SiteProvider } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor } from "@/lib/pin-shell-tokens";
@@ -34,11 +33,9 @@ export const Route = createFileRoute("/schedule")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Schedule — Pinspider" }] }),
-  component: () => (
-    <SiteProvider>
-      <SchedulePage />
-    </SiteProvider>
-  ),
+  // SiteProvider now lives inside PinShell itself (see components/
+  // PinShell.tsx).
+  component: () => <SchedulePage />,
 });
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];

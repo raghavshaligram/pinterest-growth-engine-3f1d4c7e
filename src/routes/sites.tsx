@@ -26,7 +26,6 @@ import {
   type SiteOverviewRow, type SiteType,
 } from "@/lib/sites.functions";
 import { PinShell } from "@/components/PinShell";
-import { SiteProvider } from "@/lib/site-context";
 import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/sites")({
@@ -37,11 +36,9 @@ export const Route = createFileRoute("/sites")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Sites — Pinspider" }] }),
-  component: () => (
-    <SiteProvider>
-      <SitesRoute />
-    </SiteProvider>
-  ),
+  // SiteProvider now lives inside PinShell itself (see components/
+  // PinShell.tsx).
+  component: () => <SitesRoute />,
 });
 
 function SitesRoute() {

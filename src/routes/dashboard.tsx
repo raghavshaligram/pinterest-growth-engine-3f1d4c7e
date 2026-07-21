@@ -14,7 +14,6 @@ import {
   unscheduleScheduledPin, queuePins, replaceScheduledPin, markPosted,
 } from "@/lib/schedule.functions";
 import { dashboardStats } from "@/lib/dashboard.functions";
-import { SiteProvider, useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
@@ -34,11 +33,10 @@ export const Route = createFileRoute("/dashboard")({
     return { user: data.user };
   },
   head: () => ({ meta: [{ title: "Dashboard — Pinspider" }] }),
-  component: () => (
-    <SiteProvider>
-      <DashboardPage />
-    </SiteProvider>
-  ),
+  // SiteProvider now lives inside PinShell itself (see components/
+  // PinShell.tsx) -- one shared instance for the whole app instead of
+  // Dashboard/Schedule/Sites each mounting their own.
+  component: () => <DashboardPage />,
 });
 
 type ScheduledRow = Awaited<ReturnType<typeof listScheduled>>[number];
@@ -47,7 +45,6 @@ type Pill = "all" | "week" | "published" | "scheduled";
 function DashboardPage() {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
-  const { selectedSite } = useSiteContext();
   const listFn = useServerFn(listScheduled);
   const statsFn = useServerFn(dashboardStats);
   const publishNowFn = useServerFn(publishNow);
@@ -145,7 +142,7 @@ function DashboardPage() {
   return (
     <PinShell active="dashboard" userEmail={user?.email}>
       <TopBar search={search} onSearch={setSearch} />
-      <FilterPillsRow siteLabel={selectedSite?.brand_name || (selectedSite ? hostOf(selectedSite.url) : "All sites")} siteColor={selectedSite?.accent_color} pill={pill} onPill={setPill} />
+      <FilterPillsRow pill={pill} onPill={setPill} />
       <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 32px" }}>
         <MasonryFeed
           rows={filtered}
@@ -231,21 +228,19 @@ const PILLS: { key: Pill; label: string }[] = [
   { key: "scheduled", label: "Scheduled" },
 ];
 
+// Previously this row also carried a static, non-interactive site
+// label + colored dot -- that indicator now lives globally in
+// PinShell's ShellHeader (see SiteSwitcher.tsx), visible on every page
+// instead of just here, so it was dropped from here to avoid showing
+// the same site twice stacked on top of each other on this one page.
 function FilterPillsRow({
-  siteLabel, siteColor, pill, onPill,
+  pill, onPill,
 }: {
-  siteLabel: string;
-  siteColor?: string | null;
   pill: Pill;
   onPill: (p: Pill) => void;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 24px 16px", flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: PIN.textPrimary, fontWeight: 500 }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: siteColor ?? PIN.textMuted, flexShrink: 0 }} />
-        {siteLabel}
-      </div>
-      <div style={{ width: 1, height: 14, background: PIN.border }} />
       <div style={{ display: "flex", gap: 6 }}>
         {PILLS.map((p) => {
           const activePill = pill === p.key;
