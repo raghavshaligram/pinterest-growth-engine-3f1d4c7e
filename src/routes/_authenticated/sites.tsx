@@ -482,7 +482,7 @@ function SiteCard({
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   });
 
-  const cfg = SITE_TYPE_CONFIG[site.site_type];
+  const cfg = SITE_TYPE_CONFIG[site.site_type as SiteType] ?? SITE_TYPE_CONFIG.website;
   const Icon = cfg.icon;
   const host = hostFromUrl(site.url);
   const swatches = Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : [];

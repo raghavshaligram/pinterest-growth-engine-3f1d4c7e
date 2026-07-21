@@ -3,15 +3,17 @@
 // shared _authenticated layout (AppShell) entirely -- own beforeLoad auth
 // guard duplicated from _authenticated/route.tsx -- so this sidebar can
 // go fully icon-rail/Pinterest-native without restyling
-// Sites/Pages/Pins/Boards/Keywords/Logs/Settings, which all still render
+// Pages/Pins/Boards/Keywords/Logs/Settings, which all still render
 // through the untouched AppShell.
 //
 // The reference Figma only shows 3 icons (dashboard/schedule/boards) --
 // intentional for a 2-screen mockup, but this app has more real
-// destinations than that. Rather than strand the user once they're on
-// Dashboard/Schedule, the remaining nav (Sites, Pages, Pins, Keywords,
-// Logs, Settings) lives behind a compact "more" icon at the bottom of
-// the rail, so nothing that works today stops working.
+// destinations than that. Sites is promoted into the primary rail
+// alongside them since it's a first-class, frequently-used destination
+// (site management/brand config). Rather than strand the user once
+// they're on Dashboard/Schedule, the remaining nav (Pages, Pins,
+// Keywords, Logs, Settings) lives behind a compact "more" icon at the
+// bottom of the rail, so nothing that works today stops working.
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard, Calendar, Layers, MoreHorizontal, Globe, FileText, Images,
@@ -29,10 +31,10 @@ const PRIMARY_NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/schedule", label: "Schedule", icon: Calendar },
   { to: "/boards", label: "Boards", icon: Layers },
+  { to: "/sites", label: "Sites", icon: Globe },
 ] as const;
 
 const MORE_NAV = [
-  { to: "/sites", label: "Sites", icon: Globe },
   { to: "/pages", label: "Pages", icon: FileText },
   { to: "/pins", label: "Pins", icon: Images },
   { to: "/keywords", label: "Keywords", icon: KeyRound },
@@ -53,7 +55,7 @@ function railItemStyle(active: boolean): React.CSSProperties {
   };
 }
 
-function Sidebar({ active, userEmail }: { active: "dashboard" | "schedule" | "boards"; userEmail?: string | null }) {
+function Sidebar({ active, userEmail }: { active: "dashboard" | "schedule" | "boards" | "sites"; userEmail?: string | null }) {
   const navigate = useNavigate();
   async function signOut() {
     await supabase.auth.signOut();
@@ -73,7 +75,7 @@ function Sidebar({ active, userEmail }: { active: "dashboard" | "schedule" | "bo
 
       <nav style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 8 }}>
         {PRIMARY_NAV.map(({ to, label, icon: Icon }) => {
-          const key = to === "/dashboard" ? "dashboard" : to === "/schedule" ? "schedule" : "boards";
+          const key = to === "/dashboard" ? "dashboard" : to === "/schedule" ? "schedule" : to === "/boards" ? "boards" : "sites";
           return (
             <Link key={to} to={to} title={label} style={railItemStyle(active === key)}>
               <Icon size={19} />
@@ -126,7 +128,7 @@ function Avatar({ email }: { email?: string | null }) {
 export function PinShell({
   active, userEmail, children,
 }: {
-  active: "dashboard" | "schedule" | "boards";
+  active: "dashboard" | "schedule" | "boards" | "sites";
   userEmail?: string | null;
   children: ReactNode;
 }) {
