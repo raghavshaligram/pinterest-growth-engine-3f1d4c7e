@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as PinsRouteImport } from './routes/pins'
 import { Route as LogsRouteImport } from './routes/logs'
@@ -39,11 +38,6 @@ const SitesRoute = SitesRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScheduleRoute = ScheduleRouteImport.update({
@@ -92,9 +86,9 @@ const PagesIndexRoute = PagesIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
-  getParentRoute: () => SettingsRoute,
+  id: '/settings/integrations',
+  path: '/settings/integrations',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PagesIdRoute = PagesIdRouteImport.update({
   id: '/pages/$id',
@@ -148,7 +142,6 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
@@ -171,7 +164,6 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
@@ -195,7 +187,6 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
@@ -220,7 +211,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
@@ -243,7 +233,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
@@ -266,7 +255,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
@@ -290,10 +278,10 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   PinsRoute: typeof PinsRoute
   ScheduleRoute: typeof ScheduleRoute
-  SettingsRoute: typeof SettingsRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SitesRoute: typeof SitesRoute
   PagesIdRoute: typeof PagesIdRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   PagesIndexRoute: typeof PagesIndexRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
@@ -318,13 +306,6 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule': {
@@ -392,10 +373,10 @@ declare module '@tanstack/react-router' {
     }
     '/settings/integrations': {
       id: '/settings/integrations'
-      path: '/integrations'
+      path: '/settings/integrations'
       fullPath: '/settings/integrations'
       preLoaderRoute: typeof SettingsIntegrationsRouteImport
-      parentRoute: typeof SettingsRoute
+      parentRoute: typeof rootRouteImport
     }
     '/pages/$id': {
       id: '/pages/$id'
@@ -456,18 +437,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface SettingsRouteChildren {
-  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
-}
-
-const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
-}
-
-const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
-  SettingsRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
@@ -477,10 +446,10 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   PinsRoute: PinsRoute,
   ScheduleRoute: ScheduleRoute,
-  SettingsRoute: SettingsRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SitesRoute: SitesRoute,
   PagesIdRoute: PagesIdRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   PagesIndexRoute: PagesIndexRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
