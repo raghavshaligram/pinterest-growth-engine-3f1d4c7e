@@ -3,21 +3,27 @@
 // Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
 // _authenticated route's auth guard; keep both in sync if that check
 // ever changes.
-import { createFileRoute, redirect } from "@tanstack/react-router";
+//
+// Rebuilt to match the Figma "Page detail" reference: breadcrumb +
+// status badges header, title/meta chip row, a left sidebar (Content
+// Analysis kept exactly as previously built, plus a new "Pin angles"
+// list), and a Pin Assets grid with per-pin template tags. The
+// template tag is the first place in the app that surfaces
+// pin_briefs.template_id -- see TEMPLATE_LABELS in briefs.functions.ts,
+// read directly here rather than re-derived from the style label.
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { toast } from "sonner";
-import { Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 import { getErrorMessage } from "@/lib/error-message";
+import { PIN, PIN_FONT, hostOf } from "@/lib/pin-shell-tokens";
 
 export const Route = createFileRoute("/pages/$id")({
   ssr: false,
@@ -34,11 +40,28 @@ function PageDetailRoute() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="pages" userEmail={user?.email}>
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto" style={{ padding: "20px 24px 40px" }}>
         <PageDetail />
       </div>
     </PinShell>
   );
+}
+
+type PageDetailData = Awaited<ReturnType<typeof getPage>>;
+type Brief = PageDetailData["briefs"][number];
+
+const ANALYSIS_FIELDS: { key: string; label: string }[] = [
+  { key: "topic", label: "Topic" },
+  { key: "primary_keyword", label: "Primary keyword" },
+  { key: "intent", label: "Intent" },
+  { key: "category", label: "Category" },
+  { key: "audience", label: "Audience" },
+  { key: "seasonality", label: "Seasonality" },
+];
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function PageDetail() {
@@ -48,6 +71,8 @@ function PageDetail() {
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
   const renderPage = useServerFn(renderImagesForPage);
+
+  const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
 
   const { data } = useQuery({ queryKey: ["page", id], queryFn: () => get({ data: { id } }) });
 
@@ -69,14 +94,11 @@ function PageDetail() {
   const imgMut = useMutation({
     mutationFn: async () => {
       // Loop until THIS page's image queue is actually drained, instead
-      // of processing one fixed-size page of jobs per click and stopping
-      // (previously: a single non-looping call into the non-page-scoped
-      // runImageWorker, hardcoded to a limit of 8 -- a page with more
-      // than 8 queued jobs would silently leave the rest at
-      // status='queued' after one click). renderImagesForPage is
-      // page-scoped, so this only ever touches this page's jobs.
-      // Capped at 5 passes as a safety valve, not because 5 is expected
-      // to be hit in normal use -- flag it honestly if it is.
+      // of processing one fixed-size page of jobs per click and stopping.
+      // renderImagesForPage is page-scoped, so this only ever touches
+      // this page's jobs. Capped at 5 passes as a safety valve, not
+      // because 5 is expected to be hit in normal use -- flag it
+      // honestly if it is.
       const MAX_PASSES = 5;
       let ok = 0, fail = 0, passes = 0, drained = false;
       for (; passes < MAX_PASSES; passes++) {
@@ -99,59 +121,254 @@ function PageDetail() {
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  if (!data) return <p>Loading…</p>;
+  const angles = useMemo(() => {
+    if (!data) return [];
+    // "Pin angles" reuses each brief's own title -- the short angle
+    // idea the classifier/generator already produced per pin, deduped
+    // rather than backed by a separate angles field (none exists).
+    const seen = new Set<string>();
+    return data.briefs.filter((b) => {
+      if (seen.has(b.title)) return false;
+      seen.add(b.title);
+      return true;
+    });
+  }, [data]);
+
+  if (!data) return <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textMuted, padding: 24 }}>Loading…</p>;
   const { page, briefs } = data;
   const analysis = (page.analysis ?? {}) as Record<string, unknown>;
 
-  return (
-    <div className="space-y-8">
-      <header>
-        <div className="text-xs text-muted-foreground">{page.url}</div>
-        <h1 className="font-display text-3xl">{page.title ?? "(no title)"}</h1>
-      </header>
+  const analyzed = !!page.last_analyzed_at;
+  const briefReady = briefs.length > 0;
+  const pendingRender = briefs.filter((b) => b.status === "image_pending").length;
+  const domain = hostOf(page.url);
+  const contentType = typeof analysis.category === "string" ? analysis.category : null;
 
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => anaMut.mutate()} disabled={anaMut.isPending}><Sparkles className="mr-2 h-4 w-4" />Analyze</Button>
-        <Button onClick={() => genMut.mutate(10)} disabled={genMut.isPending || !page.last_analyzed_at}><Wand2 className="mr-2 h-4 w-4" />Generate 10 pins</Button>
-        <Button variant="outline" onClick={() => imgMut.mutate()} disabled={imgMut.isPending}><ImageIcon className="mr-2 h-4 w-4" />Render images</Button>
+  const filtered = briefs.filter((b) => {
+    if (tab === "all") return true;
+    if (tab === "ready") return b.status === "ready" || b.status === "scheduled";
+    if (tab === "rendering") return b.status === "image_pending" || b.is_rendering;
+    if (tab === "scheduled") return b.status === "scheduled";
+    return true;
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Breadcrumb + status badges */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <Link
+          to="/pages"
+          style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, color: PIN.textSecondary, textDecoration: "none" }}
+        >
+          <ChevronLeft size={15} />
+          Pages
+          <span style={{ color: PIN.textMuted, fontWeight: 400 }}>· {domain}</span>
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <StatusBadge done={analyzed} label="Analyzed" />
+          <StatusBadge done={briefReady} label="Brief ready" />
+          {pendingRender > 0 && (
+            <button
+              type="button"
+              onClick={() => imgMut.mutate()}
+              disabled={imgMut.isPending}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", borderRadius: 999,
+                border: "none", background: PIN.accent, color: "#fff", fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              {imgMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+              Render Images ({pendingRender})
+            </button>
+          )}
+        </div>
       </div>
 
-      {page.last_analyzed_at && (
-        <Card className="p-6">
-          <h2 className="mb-2 text-lg font-semibold">Analysis</h2>
-          <dl className="grid gap-3 text-sm md:grid-cols-2">
-            {["topic","primary_keyword","intent","category","audience","seasonality"].map((k) => (
-              <div key={k}><dt className="text-xs uppercase text-muted-foreground">{k}</dt><dd>{String(analysis[k] ?? "—")}</dd></div>
-            ))}
-          </dl>
-          {Array.isArray(analysis.secondary_keywords) && (
-            <div className="mt-4">
-              <div className="mb-1 text-xs uppercase text-muted-foreground">Secondary keywords</div>
-              <div className="flex flex-wrap gap-1">
-                {(analysis.secondary_keywords as string[]).map((k) => <Badge key={k} variant="outline">{k}</Badge>)}
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-
+      {/* Title + meta chips */}
       <div>
-        <h2 className="mb-3 text-lg font-semibold">Pin briefs ({briefs.length})</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {briefs.map((b) => <BriefCard key={b.id} b={b} />)}
+        <h1 style={{ fontFamily: PIN_FONT, fontSize: 24, fontWeight: 700, color: PIN.textPrimary, letterSpacing: "-0.02em", margin: "0 0 8px" }}>
+          {page.title ?? "(no title)"}
+        </h1>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <MetaChip text={page.url} />
+          <MetaChip text={`Updated ${formatDate(page.updated_at)}`} />
+          {contentType && <MetaChip text={contentType} accent />}
+        </div>
+      </div>
+
+      {/* Analyze / Generate actions -- granular per-page controls now
+          live here instead of the Pages list header (see pages.index.tsx). */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <ActionButton icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} label="Analyze" onClick={() => anaMut.mutate()} disabled={anaMut.isPending} />
+        <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => genMut.mutate(10)} disabled={genMut.isPending || !analyzed} />
+      </div>
+
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        {/* Sidebar */}
+        <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+          {analyzed && (
+            <SidebarCard title="Content Analysis">
+              <dl style={{ display: "grid", gap: 10 }}>
+                {ANALYSIS_FIELDS.map(({ key, label }) => (
+                  <div key={key}>
+                    <dt style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted }}>{label}</dt>
+                    <dd style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textPrimary, margin: "2px 0 0" }}>{String(analysis[key] ?? "—")}</dd>
+                  </div>
+                ))}
+              </dl>
+              {Array.isArray(analysis.secondary_keywords) && (analysis.secondary_keywords as string[]).length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 6 }}>
+                    Secondary keywords
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {(analysis.secondary_keywords as string[]).map((k) => (
+                      <span key={k} style={{ fontFamily: PIN_FONT, fontSize: 11, padding: "3px 8px", borderRadius: 999, background: PIN.fieldBg, color: PIN.textSecondary }}>{k}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </SidebarCard>
+          )}
+
+          {angles.length > 0 && (
+            <SidebarCard title="Pinterest Brief">
+              <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 8 }}>
+                Pin angles
+              </div>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+                {angles.map((a) => (
+                  <li key={a.id} style={{ display: "flex", gap: 8, fontFamily: PIN_FONT, fontSize: 12.5, color: PIN.textPrimary, lineHeight: 1.4 }}>
+                    <span style={{ color: PIN.accent, flexShrink: 0 }}>•</span>
+                    {a.title}
+                  </li>
+                ))}
+              </ul>
+            </SidebarCard>
+          )}
+        </div>
+
+        {/* Main: Pin Assets */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h2 style={{ fontFamily: PIN_FONT, fontSize: 16, fontWeight: 700, color: PIN.textPrimary, margin: 0 }}>Pin Assets</h2>
+              <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary, background: PIN.fieldBg, borderRadius: 999, padding: "2px 9px" }}>
+                {briefs.length}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <TabButton label="All" active={tab === "all"} onClick={() => setTab("all")} />
+              <TabButton label="Ready" active={tab === "ready"} onClick={() => setTab("ready")} />
+              <TabButton label="Rendering" active={tab === "rendering"} onClick={() => setTab("rendering")} />
+              <TabButton label="Scheduled" active={tab === "scheduled"} onClick={() => setTab("scheduled")} />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+            {filtered.map((b) => <BriefCard key={b.id} b={b} />)}
+          </div>
+          {!filtered.length && (
+            <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textMuted, padding: "24px 4px" }}>Nothing here yet.</p>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function BriefCard({ b }: {
-  b: {
-    id: string; title: string; style: string; status: string;
-    pin_images: { storage_path: string }[];
-    used_serp_patterns?: boolean | null; serp_keyword?: string | null; serp_patterns_captured_at?: string | null;
-  };
-}) {
+function StatusBadge({ done, label }: { done: boolean; label: string }) {
+  return (
+    <span
+      style={{
+        display: "flex", alignItems: "center", gap: 5, height: 28, padding: "0 11px", borderRadius: 999,
+        background: done ? "#E6F4EA" : PIN.fieldBg, color: done ? "#1E7B3D" : PIN.textMuted,
+        fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
+      }}
+    >
+      {done ? "✓" : "—"} {label}
+    </span>
+  );
+}
+
+function MetaChip({ text, accent }: { text: string; accent?: boolean }) {
+  return (
+    <span
+      style={{
+        fontFamily: PIN_FONT, fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 999,
+        background: accent ? "#FDECEC" : PIN.fieldBg, color: accent ? PIN.accent : PIN.textSecondary,
+        maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 999,
+        border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: PIN.textPrimary,
+        fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {icon}{label}
+    </button>
+  );
+}
+
+function SidebarCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div style={{ border: `1px solid #E4E1D9`, borderRadius: 16, padding: 16, background: PIN.card }}>
+      <h3 style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 700, color: PIN.textPrimary, margin: "0 0 12px" }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        height: 28, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer",
+        background: active ? PIN.accent : "transparent", color: active ? "#fff" : PIN.textSecondary,
+        fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function templateTag(templateId: string | null | undefined): { label: string; color: string } {
+  if (templateId && templateId in TEMPLATE_LABELS) return TEMPLATE_LABELS[templateId as TemplateId];
+  // Legacy briefs generated before template_id was wired up (or any
+  // future id not yet in the registry) have no stored shape decision --
+  // shown as a distinct, honest "Unclassified" tag rather than guessed
+  // from the style label, per the correctness requirement for this view.
+  return { label: "Unclassified", color: "#9C978A" };
+}
+
+function briefStatusLine(b: Brief): { text: string; tone: "ready" | "rendering" | "scheduled" | "failed" | "pending" } {
+  if (b.status === "failed") return { text: "✕ Failed", tone: "failed" };
+  if (b.status === "scheduled") {
+    const upcoming = (b.scheduled_pins ?? []).find((s) => s.status !== "canceled");
+    return { text: upcoming ? `↑ Scheduled ${formatDate(upcoming.scheduled_at)}` : "↑ Scheduled", tone: "scheduled" };
+  }
+  if (b.status === "ready") return { text: "✓ Ready", tone: "ready" };
+  if (b.is_rendering || b.status === "image_pending") return { text: "↻ Rendering", tone: "rendering" };
+  return { text: "Draft", tone: "pending" };
+}
+
+function BriefCard({ b }: { b: Brief }) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
@@ -183,59 +400,85 @@ function BriefCard({ b }: {
     onError: (e) => toast.error(getErrorMessage(e)),
   });
   const [open, setOpen] = useState(false);
+  const tag = templateTag(b.template_id);
+  const statusLine = briefStatusLine(b);
+  const rendering = b.is_rendering || b.status === "image_pending";
+
   return (
     <>
-      <Card className="overflow-hidden">
-        <div className="relative aspect-[2/3] w-full bg-muted">
+      <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card }}>
+        <div style={{ position: "relative", aspectRatio: "2 / 3", width: "100%", background: PIN.fieldBg }}>
+          <span
+            style={{
+              position: "absolute", top: 8, left: 8, zIndex: 2, fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700,
+              padding: "3px 8px", borderRadius: 999, background: tag.color, color: "#fff",
+            }}
+          >
+            {tag.label}
+          </span>
           {url ? (
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              className="group block h-full w-full cursor-zoom-in"
-              aria-label="Enlarge pin"
-            >
+            <button type="button" onClick={() => setOpen(true)} className="group block h-full w-full cursor-zoom-in" aria-label="Enlarge pin" style={{ position: "absolute", inset: 0 }}>
               <img src={url} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
             </button>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-1 px-3 text-center text-xs text-muted-foreground">
+            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 12px", textAlign: "center" }}>
               {b.status === "failed" ? (
                 <>
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
-                  <span className="text-destructive">Render failed — tap Rerender to retry</span>
+                  <AlertTriangle size={16} color={PIN.roseIcon} />
+                  <span style={{ fontFamily: PIN_FONT, fontSize: 11, color: PIN.roseIcon }}>Render failed — tap Rerender to retry</span>
                 </>
-              ) : b.status === "image_pending" ? (
-                "Waiting to render…"
+              ) : rendering ? (
+                <span
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
+                    color: PIN.amberIcon, background: PIN.amberTint, borderRadius: 999, padding: "5px 12px",
+                  }}
+                >
+                  <Loader2 size={12} className="animate-spin" />
+                  Rendering…
+                </span>
               ) : (
-                "No image"
+                <span style={{ fontFamily: PIN_FONT, fontSize: 11.5, color: PIN.textMuted }}>No image</span>
               )}
             </div>
           )}
-          <div className="absolute right-2 top-2 flex gap-1">
-            <Button
-              size="sm" variant="secondary" className="h-8 gap-1"
-              onClick={(e) => { e.stopPropagation(); reMut.mutate(); }} disabled={reMut.isPending}
+          <div style={{ position: "absolute", right: 6, top: 6, display: "flex", gap: 4, zIndex: 2 }}>
+            <button
+              type="button"
+              title="Rerender"
+              onClick={(e) => { e.stopPropagation(); reMut.mutate(); }}
+              disabled={reMut.isPending}
+              style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${reMut.isPending ? "animate-spin" : ""}`} />
-              Rerender
-            </Button>
-            <Button
-              size="icon" variant="destructive" className="h-8 w-8"
+              <RefreshCw size={12} className={reMut.isPending ? "animate-spin" : undefined} style={{ color: PIN.textSecondary }} />
+            </button>
+            <button
+              type="button"
               title="Delete pin"
               onClick={(e) => {
                 e.stopPropagation();
                 if (confirm("Delete this pin? This removes the brief, image, and any scheduled entries.")) delMut.mutate();
               }}
               disabled={delMut.isPending}
+              style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+              <Trash2 size={12} style={{ color: PIN.roseIcon }} />
+            </button>
           </div>
         </div>
-        <div className="space-y-1 p-3">
-          <div className="text-xs uppercase text-muted-foreground">{b.style}</div>
-          <div className="line-clamp-2 text-sm font-medium">{b.title}</div>
-          <div className="flex items-center gap-1.5">
-            <Badge variant={b.status === "failed" ? "destructive" : "outline"}>{b.status}</Badge>
+        <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, color: PIN.textPrimary, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {b.title}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span
+              style={{
+                fontFamily: PIN_FONT, fontSize: 11, fontWeight: 600,
+                color: statusLine.tone === "ready" ? "#1E7B3D" : statusLine.tone === "failed" ? PIN.roseIcon : statusLine.tone === "rendering" ? PIN.amberIcon : PIN.textSecondary,
+              }}
+            >
+              {statusLine.text}
+            </span>
             <SerpTraceBadge
               usedSerpPatterns={b.used_serp_patterns}
               serpKeyword={b.serp_keyword}
@@ -243,7 +486,7 @@ function BriefCard({ b }: {
             />
           </div>
         </div>
-      </Card>
+      </div>
 
       {open && url && (
         <div
@@ -252,12 +495,7 @@ function BriefCard({ b }: {
           role="dialog"
           aria-modal="true"
         >
-          <img
-            src={url}
-            alt={b.title}
-            className="max-h-full max-w-full rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <img src={url} alt={b.title} className="max-h-full max-w-full rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
           <button
             type="button"
             onClick={() => setOpen(false)}

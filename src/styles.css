@@ -192,3 +192,25 @@
   .font-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.03em; }
   h1, h2, h3 { letter-spacing: -0.025em; }
 }
+
+/* Stage-status dot pulse, used by the Pages list's Analyze/Brief/Images
+   status pills (src/routes/pages.index.tsx) to indicate a stage is
+   actively processing right now. Deliberately not Tailwind's built-in
+   animate-pulse (2s, opacity 1<->0.5) -- kept as its own small keyframe
+   so the cycle length matches the ~1.5s spec exactly. Applied only to
+   pills whose status is genuinely "in_progress" (backed by either a
+   live jobs-table row for the Images stage, or an in-flight batch
+   mutation for Analyze/Brief -- see pages.index.tsx for exactly which);
+   done/error/not_started pills never get this class, so the dot only
+   ever moves while something real is happening. */
+@keyframes stage-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.stage-dot-pulse { animation: stage-dot-pulse 1.5s ease-in-out infinite; }
+
+/* Subtle row hover for the Pages list (src/routes/pages.index.tsx) --
+   each row is a Link wrapping the whole row, so this is a plain
+   background swap rather than a Tailwind hover: utility, to keep the
+   row's styling fully inline-style-driven like the rest of that page. */
+.pages-row-hover:hover { background-color: #FBFBFA; }

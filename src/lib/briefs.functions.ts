@@ -39,6 +39,27 @@ export type TemplateId =
   | "seasonal_timeline"
   | "tool_result_preview";
 
+// Human-readable label + tag color per shape, for surfaces that display
+// which template produced a given pin (first one: the Pages detail
+// view's Pin Assets grid). Colors are hand-picked to stay visually
+// distinct from each other at a glance, not derived from a formula --
+// editorial_before_after and scale_comparison intentionally share the
+// word "Comparison" (both really are comparison-framed content) but get
+// different colors so they're still distinguishable as tags.
+export const TEMPLATE_LABELS: Record<TemplateId, { label: string; color: string }> = {
+  quick_tip_grid: { label: "Quick-tip", color: "#3E7C7A" },
+  editorial_before_after: { label: "Comparison", color: "#946B3E" },
+  problem_solution_headline: { label: "Problem/Solution", color: "#B0475E" },
+  listicle: { label: "Listicle", color: "#7A8B5C" },
+  quote_stat_card: { label: "Quote card", color: "#7B5EA7" },
+  step_by_step: { label: "How-to", color: "#2F6F6B" },
+  myth_vs_fact: { label: "Myth/Fact", color: "#C23B22" },
+  definition_card: { label: "Educational", color: "#4F7A5C" },
+  scale_comparison: { label: "Comparison", color: "#3E6B8A" },
+  seasonal_timeline: { label: "Seasonal", color: "#C9970B" },
+  tool_result_preview: { label: "Product shot", color: "#D97B3F" },
+};
+
 interface ShapeTemplateEntry {
   visual_description: string;
   default_middle_prompt: (topic: string) => string;

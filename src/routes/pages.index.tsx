@@ -3,24 +3,35 @@
 // Dashboard/Schedule/Boards/Sites. beforeLoad duplicates the
 // _authenticated route's auth guard; keep both in sync if that check
 // ever changes.
+//
+// Rebuilt to match the Figma "Pages list" reference: header with
+// site-scoped subtitle + Crawl now/Generate All actions, a filter-pill
+// row, and a row-based list with 4 stage-status columns
+// (Analyze/Brief/Images/Pins) instead of the previous card grid. The
+// previous header also exposed granular "Analyze all" / "Generate
+// briefs" / "Render pins" / "Auto-exclude" buttons that the Figma
+// header doesn't show -- rather than delete that functionality, Auto-
+// exclude moved into the excluded-pages banner below the filters, and
+// the granular per-page Analyze/Generate/Render actions now live on the
+// page detail view (src/routes/pages.$id.tsx), which already has its
+// own Analyze/Generate/Render buttons. "Generate All" here maps to the
+// existing runFullPipeline server fn (analyze + briefs + images in one
+// pass), which is what "Generate All" means in the reference.
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listPages, analyzePage, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
+import { listPages, setPageExcluded, autoExcludePages } from "@/lib/pages.functions";
+import { crawlSite } from "@/lib/sites.functions";
 import { useSiteContext } from "@/lib/site-context";
 import { TopBar } from "@/components/PinTopBar";
-import { generateBriefs, runImageWorker, renderImagesForPage } from "@/lib/briefs.functions";
 import { runFullPipeline } from "@/lib/schedule.functions";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Sparkles, ImageIcon, Zap, Loader2, EyeOff, Eye, Filter, Check, Clock } from "lucide-react";
+import { ChevronRight, RefreshCw, Zap, Loader2, EyeOff, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getErrorMessage } from "@/lib/error-message";
-
+import { PIN, PIN_FONT, hostOf } from "@/lib/pin-shell-tokens";
 
 export const Route = createFileRoute("/pages/")({
   ssr: false,
@@ -39,130 +50,65 @@ function PagesRoute() {
   return (
     <PinShell active="pages" userEmail={user?.email}>
       <TopBar search={search} onSearch={setSearch} placeholder="Search pages..." />
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto" style={{ padding: "8px 24px 32px" }}>
         <PagesPage search={search} />
       </div>
     </PinShell>
   );
 }
 
+type PageRow = Awaited<ReturnType<typeof listPages>>[number];
+type PipelineStatus = "images_ready" | "in_progress" | "not_started" | "error";
+type FilterKey = "all" | PipelineStatus;
+
 function PagesPage({ search }: { search: string }) {
   const qc = useQueryClient();
-  const { selectedSiteId } = useSiteContext();
+  const { selectedSiteId, selectedSite } = useSiteContext();
   const list = useServerFn(listPages);
-  const analyze = useServerFn(analyzePage);
-  const gen = useServerFn(generateBriefs);
-  const imgFn = useServerFn(runImageWorker);
-  const renderPage = useServerFn(renderImagesForPage);
+  const crawl = useServerFn(crawlSite);
   const pipeline = useServerFn(runFullPipeline);
   const setExcluded = useServerFn(setPageExcluded);
   const autoExclude = useServerFn(autoExcludePages);
 
   const [showExcluded, setShowExcluded] = useState(false);
-  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
-  const [renderAllRunning, setRenderAllRunning] = useState(false);
-  const stopRef = useState({ v: false })[0];
-
+  const [filter, setFilter] = useState<FilterKey>("all");
 
   const { data } = useQuery({ queryKey: ["pages", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["pages"] });
 
-  const active = (data ?? []).filter((p) => !p.excluded);
-  const excluded = (data ?? []).filter((p) => p.excluded);
-  const visible = (showExcluded ? excluded : active).filter((p) =>
-    !search.trim() || (p.title ?? p.url).toLowerCase().includes(search.trim().toLowerCase())
-  );
+  const rows = (data ?? []) as PageRow[];
+  const active = rows.filter((p) => !p.excluded);
+  const excluded = rows.filter((p) => p.excluded);
 
-  const pipelineM = useMutation({
-    mutationFn: () => pipeline({ data: { maxAnalyze: 25, maxBriefs: 15, maxImages: 30 } }),
-    onSuccess: (r) => { toast.success(`Pipeline: analyzed ${r.analyzed}, briefs for ${r.briefsFor}, queued ${r.imagesQueued} images`); invalidate(); },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
-  const analyzeAllM = useMutation({
-    mutationFn: async () => {
-      const targets = active.filter((p) => !p.last_analyzed_at).slice(0, 25);
-      let ok = 0, fail = 0;
-      for (const p of targets) {
-        try { await analyze({ data: { pageId: p.id } }); ok++; } catch { fail++; }
-      }
-      return { ok, fail, total: targets.length };
+  const crawlM = useMutation({
+    mutationFn: () => {
+      if (!selectedSiteId) throw new Error("Select a site first");
+      return crawl({ data: { siteId: selectedSiteId } });
     },
-    onSuccess: (r) => { toast.success(`Analyzed ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`); invalidate(); },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
-  const briefsAllM = useMutation({
-    mutationFn: async () => {
-      const targets = active.filter((p) => p.last_analyzed_at && p.briefs_total === 0).slice(0, 25);
-      if (!targets.length) return { ok: 0, fail: 0, total: 0, skipped: true as const };
-      let ok = 0, fail = 0;
-      const errors: string[] = [];
-      for (const p of targets) {
-        try { await gen({ data: { pageId: p.id, count: 10 } }); ok++; invalidate(); }
-        catch (e) { fail++; errors.push(getErrorMessage(e)); }
-      }
-      return { ok, fail, total: targets.length, skipped: false as const, errors };
-    },
-    onSuccess: (r) => {
-      if (r.skipped) { toast.info("No pages need briefs. Analyze pages first, or all analyzed pages already have briefs."); return; }
-      if (r.fail && r.errors?.length) toast.error(r.errors[0]);
-      toast.success(`Briefs for ${r.ok}/${r.total}${r.fail ? ` (${r.fail} failed)` : ""}`);
+    onSuccess: (r: { discovered: number; added: number; updated: number; errors: number }) => {
+      toast.success(`Crawled: ${r.added} added, ${r.updated} updated (${r.discovered} discovered)`);
       invalidate();
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  const renderAllM = useMutation({
-    mutationFn: async () => {
-      setRenderAllRunning(true);
-      stopRef.v = false;
-      let ok = 0, fail = 0, pagesDone = 0;
-      const targets = active.filter((p) => p.briefs_total > 0 && p.images_ready < p.briefs_total);
-      try {
-        for (const p of targets) {
-          if (stopRef.v) break;
-          setCurrentPageId(p.id);
-          // Drain this page's queue
-          while (!stopRef.v) {
-            const r = await renderPage({ data: { pageId: p.id, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
-            ok += r.ok ?? 0; fail += r.fail ?? 0;
-            invalidate();
-            if (!r.processed) break;
-          }
-          pagesDone++;
-        }
-      } finally {
-        setCurrentPageId(null);
-        setRenderAllRunning(false);
-      }
-      return { ok, fail, pagesDone, totalPages: targets.length };
+  // "Generate All" -- the batch mutation whose in-flight state also
+  // drives the Analyze/Brief stage pills' blinking dot below, since
+  // those two stages are synchronous server calls with no jobs-table
+  // row of their own to poll (see listPages in pages.functions.ts for
+  // why Images is different). While this is running, any page that
+  // hasn't reached that stage yet is genuinely being worked through by
+  // this exact call, even though the client can't see which one it's on
+  // at a given instant -- an honest batch-level signal, not a
+  // decorative animation.
+  const pipelineM = useMutation({
+    mutationFn: () => pipeline({ data: { maxAnalyze: 25, maxBriefs: 15, maxImages: 30 } }),
+    onSuccess: (r: { analyzed: number; briefsFor: number; imagesQueued: number }) => {
+      toast.success(`Generated: analyzed ${r.analyzed}, briefs for ${r.briefsFor}, queued ${r.imagesQueued} images`);
+      invalidate();
     },
-    onSuccess: (r) => toast.success(`Rendered ${r.ok} images across ${r.pagesDone}/${r.totalPages} pages${r.fail ? ` (${r.fail} failed)` : ""}`),
     onError: (e) => toast.error(getErrorMessage(e)),
   });
-
-  const renderOneM = useMutation({
-    mutationFn: async (pageId: string) => {
-      setCurrentPageId(pageId);
-      let ok = 0, fail = 0;
-      try {
-        while (true) {
-          const r = await renderPage({ data: { pageId, limit: 8 } }) as { processed: number; ok?: number; fail?: number };
-          ok += r.ok ?? 0; fail += r.fail ?? 0;
-          invalidate();
-          if (!r.processed) break;
-        }
-      } finally { setCurrentPageId(null); }
-      return { ok, fail };
-    },
-    onSuccess: (r) => toast.success(`Rendered ${r.ok} image${r.ok === 1 ? "" : "s"}${r.fail ? ` (${r.fail} failed)` : ""}`),
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
-  // Keep imgFn referenced (fallback global worker button hidden below)
-  void imgFn;
-
 
   const autoExcludeM = useMutation({
     mutationFn: () => autoExclude(),
@@ -176,108 +122,117 @@ function PagesPage({ search }: { search: string }) {
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  const analyzedCount = active.filter((p) => p.last_analyzed_at).length;
-  const pendingCount = active.filter((p) => !p.last_analyzed_at).length;
-  const briefsNeededCount = active.filter((p) => p.last_analyzed_at && p.briefs_total === 0).length;
+  const counts: Record<FilterKey, number> = {
+    all: active.length,
+    images_ready: active.filter((p) => p.pipeline_status === "images_ready").length,
+    in_progress: active.filter((p) => p.pipeline_status === "in_progress").length,
+    not_started: active.filter((p) => p.pipeline_status === "not_started").length,
+    error: active.filter((p) => p.pipeline_status === "error").length,
+  };
+
+  const base = showExcluded ? excluded : active;
+  const visible = base
+    .filter((p) => filter === "all" || p.pipeline_status === filter)
+    .filter((p) => !search.trim() || (p.title ?? p.url).toLowerCase().includes(search.trim().toLowerCase()));
+
+  const withImages = active.filter((p) => p.images_ready > 0).length;
+  const siteDomain = selectedSite ? hostOf(selectedSite.url) : "All sites";
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: 18, paddingTop: 10 }}>
+      <header style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <h1 className="font-display text-4xl">Pages</h1>
-          <p className="text-sm text-muted-foreground">
-            {active.length} active · {analyzedCount} analyzed · {pendingCount} pending · {excluded.length} excluded
+          <h1 style={{ fontFamily: PIN_FONT, fontSize: 28, fontWeight: 700, color: PIN.textPrimary, letterSpacing: "-0.02em", margin: 0 }}>
+            Pages
+          </h1>
+          <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textSecondary, margin: "4px 0 0" }}>
+            {active.length} page{active.length === 1 ? "" : "s"} · {withImages} with images · {siteDomain}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => pipelineM.mutate()} disabled={pipelineM.isPending}>
-            {pipelineM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-            Run full pipeline
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => analyzeAllM.mutate()} disabled={analyzeAllM.isPending || pendingCount === 0}>
-            {analyzeAllM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-            Analyze all ({pendingCount})
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => briefsAllM.mutate()} disabled={briefsAllM.isPending || briefsNeededCount === 0}>
-            {briefsAllM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-            Generate briefs ({briefsNeededCount})
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => renderAllRunning ? (stopRef.v = true) : renderAllM.mutate()} disabled={!renderAllRunning && active.every((p) => p.images_ready >= p.briefs_total)}>
-            {renderAllRunning ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Stop</> : <><ImageIcon className="mr-2 h-4 w-4" />Render pins</>}
-          </Button>
-
-          <Button size="sm" variant="ghost" onClick={() => autoExcludeM.mutate()} disabled={autoExcludeM.isPending}>
-            {autoExcludeM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}
-            Auto-exclude
-          </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            title={selectedSiteId ? undefined : "Select a site to crawl"}
+            onClick={() => crawlM.mutate()}
+            disabled={crawlM.isPending || !selectedSiteId}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
+              border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: PIN.textPrimary,
+              fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: selectedSiteId ? "pointer" : "not-allowed",
+              opacity: !selectedSiteId ? 0.5 : 1,
+            }}
+          >
+            {crawlM.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Crawl now
+          </button>
+          <button
+            type="button"
+            onClick={() => pipelineM.mutate()}
+            disabled={pipelineM.isPending}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
+              border: "none", background: PIN.accent, color: "#fff",
+              fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            {pipelineM.isPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Generate All
+          </button>
         </div>
       </header>
 
-      <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
-        <span className="text-muted-foreground">
-          Auto-exclude filters out About, Contact, Privacy, Terms, FAQ, Category, Tag and similar non-content pages so they don't waste analysis or pin budget.
-        </span>
-        <Button size="sm" variant="ghost" onClick={() => setShowExcluded((v) => !v)}>
-          {showExcluded ? <><Eye className="mr-2 h-3 w-3" />Show active</> : <><EyeOff className="mr-2 h-3 w-3" />Show excluded ({excluded.length})</>}
-        </Button>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <FilterPill label="All" count={counts.all} active={filter === "all"} onClick={() => setFilter("all")} />
+        <FilterPill label="Images ready" count={counts.images_ready} active={filter === "images_ready"} onClick={() => setFilter("images_ready")} />
+        <FilterPill label="In progress" count={counts.in_progress} active={filter === "in_progress"} onClick={() => setFilter("in_progress")} />
+        <FilterPill label="Not started" count={counts.not_started} active={filter === "not_started"} onClick={() => setFilter("not_started")} />
+        <FilterPill label="Error" count={counts.error} active={filter === "error"} onClick={() => setFilter("error")} tone={counts.error > 0 ? "error" : undefined} />
       </div>
 
-      <div className="space-y-2">
-        {visible.map((p) => {
-          const isRendering = currentPageId === p.id;
-          const pendingImgs = p.briefs_total - p.images_ready;
-          return (
-            <Card key={p.id} className={`flex items-center gap-4 p-3 transition ${isRendering ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
-              <Thumb path={p.thumb} />
-              <Link to="/pages/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <div className="truncate text-sm font-medium">{p.title ?? p.url}</div>
-                  {isRendering && (
-                    <span className="inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                      <Loader2 className="h-3 w-3 animate-spin" />Rendering
-                    </span>
-                  )}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">{p.url}</div>
-              </Link>
-              <div className="hidden shrink-0 items-center gap-1.5 md:flex">
-                <StatusPill label="Analysis" done={!!p.last_analyzed_at} text={p.last_analyzed_at ? "Analyzed" : "Pending"} />
-                <StatusPill label="Pins" done={p.briefs_total > 0} text={p.briefs_total > 0 ? `${p.briefs_total} briefs` : "None"} />
-                <StatusPill
-                  label="Images"
-                  done={p.briefs_total > 0 && p.images_ready === p.briefs_total}
-                  partial={p.images_ready > 0 && p.images_ready < p.briefs_total}
-                  text={p.briefs_total > 0 ? `${p.images_ready}/${p.briefs_total}` : "—"}
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {p.excluded && <Badge variant="secondary">Excluded</Badge>}
-                {pendingImgs > 0 && !p.excluded && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={renderOneM.isPending || renderAllRunning}
-                    onClick={(e) => { e.preventDefault(); renderOneM.mutate(p.id); }}
-                  >
-                    {isRendering ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ImageIcon className="mr-1 h-3 w-3" />}
-                    Render {pendingImgs}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={(e) => { e.preventDefault(); toggleM.mutate({ pageId: p.id, excluded: !p.excluded }); }}
-                >
-                  {p.excluded ? <><Eye className="mr-1 h-3 w-3" />Include</> : <><EyeOff className="mr-1 h-3 w-3" />Exclude</>}
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
+      <div
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          border: `1px solid ${PIN.border}`, borderRadius: 12, padding: "8px 12px", background: "#FBFBFA",
+        }}
+      >
+        <span style={{ fontFamily: PIN_FONT, fontSize: 12, color: PIN.textSecondary }}>
+          Auto-exclude filters out About, Contact, Privacy, Terms, FAQ and similar non-content pages.
+        </span>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => autoExcludeM.mutate()}
+            disabled={autoExcludeM.isPending}
+            style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary, background: "none", border: "none", cursor: "pointer" }}
+          >
+            {autoExcludeM.isPending ? "Excluding…" : "Auto-exclude"}
+          </button>
+          <span style={{ color: PIN.border }}>|</span>
+          <button
+            type="button"
+            onClick={() => setShowExcluded((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary, background: "none", border: "none", cursor: "pointer" }}
+          >
+            {showExcluded ? <Eye size={12} /> : <EyeOff size={12} />}
+            {showExcluded ? "Show active" : `Show excluded (${excluded.length})`}
+          </button>
+        </div>
+      </div>
 
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {visible.map((p, i) => (
+          <PageRowItem
+            key={p.id}
+            page={p}
+            showIncludeAction={showExcluded}
+            onInclude={() => toggleM.mutate({ pageId: p.id, excluded: false })}
+            pipelineRunning={pipelineM.isPending}
+            isFirst={i === 0}
+          />
+        ))}
         {!visible.length && (
-          <p className="text-sm text-muted-foreground">
-            {showExcluded ? "Nothing excluded." : "Add a site and crawl it."}
+          <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textMuted, padding: "24px 4px" }}>
+            {showExcluded ? "Nothing excluded." : "No pages match this filter yet."}
           </p>
         )}
       </div>
@@ -285,19 +240,175 @@ function PagesPage({ search }: { search: string }) {
   );
 }
 
-function StatusPill({ label, done, partial, text }: { label: string; done: boolean; partial?: boolean; text: string }) {
-  const cls = done
-    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-    : partial
-    ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-    : "border-border bg-muted/40 text-muted-foreground";
-  const Icon = done ? Check : Clock;
+function FilterPill({
+  label, count, active, onClick, tone,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  tone?: "error";
+}) {
+  const errorActive = tone === "error";
   return (
-    <div className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${cls}`}>
-      <Icon className="h-3 w-3" />
-      <span className="font-medium">{label}</span>
-      <span className="opacity-80">{text}</span>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 12px", borderRadius: 999,
+        border: `1px solid ${active ? PIN.accent : PIN.border}`,
+        background: active ? (errorActive ? PIN.roseTint : "#FDECEC") : "#fff",
+        color: active ? (errorActive ? PIN.roseIcon : PIN.accent) : errorActive ? PIN.roseIcon : PIN.textSecondary,
+        fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+      }}
+    >
+      {label}
+      <span style={{ opacity: 0.7 }}>({count})</span>
+    </button>
+  );
+}
+
+// -- Stage-status pill -------------------------------------------------
+// state precedence per column is computed by the caller (see
+// stageStatuses() below); this component only renders whatever state
+// it's handed. Only "in_progress" ever gets the pulsing dot.
+type StageState = "done" | "in_progress" | "not_started" | "error" | "partial";
+
+function StagePill({ state, text }: { state: StageState; text: string }) {
+  const tone = {
+    done: { bg: "#E6F4EA", fg: "#1E7B3D" },
+    in_progress: { bg: PIN.amberTint, fg: PIN.amberIcon },
+    not_started: { bg: PIN.fieldBg, fg: PIN.textMuted },
+    error: { bg: PIN.roseTint, fg: PIN.roseIcon },
+    // Some images rendered, none currently in flight -- distinct from
+    // both "done" (green, all rendered) and "not_started" (dash, none
+    // rendered) so a partially-rendered page doesn't misleadingly read
+    // as either finished or untouched.
+    partial: { bg: PIN.fieldBg, fg: PIN.textSecondary },
+  }[state];
+  return (
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5, height: 24, padding: "0 8px", borderRadius: 999,
+        background: tone.bg, color: tone.fg, fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap",
+      }}
+    >
+      {state === "not_started" ? (
+        "—"
+      ) : (
+        <span
+          className={state === "in_progress" ? "stage-dot-pulse" : undefined}
+          style={{ width: 5, height: 5, borderRadius: "50%", background: tone.fg, flexShrink: 0 }}
+        />
+      )}
+      {state !== "not_started" && text}
+    </span>
+  );
+}
+
+function stageStatuses(p: PageRow, pipelineRunning: boolean) {
+  const analyzed = !!p.last_analyzed_at;
+  const hasBriefs = p.briefs_total > 0;
+
+  // Analyze/Brief: no jobs-table row exists for either stage (both are
+  // synchronous server calls -- see pages.functions.ts/briefs.functions.ts).
+  // The only real signal available is "is the batch Generate All mutation
+  // currently in flight, and has this page not reached that stage yet."
+  const analyzeState: StageState = analyzed ? "done" : pipelineRunning ? "in_progress" : "not_started";
+  const briefState: StageState = hasBriefs
+    ? "done"
+    : analyzed && pipelineRunning
+    ? "in_progress"
+    : "not_started";
+
+  // Images: real backend signal (jobs table, kind=generate_image,
+  // status queued/running) via listPages' images_active field.
+  let imageState: StageState;
+  let imageText: string;
+  if (p.images_error > 0) {
+    imageState = "error";
+    imageText = `${p.images_error} error${p.images_error === 1 ? "" : "s"}`;
+  } else if (p.images_active > 0) {
+    imageState = "in_progress";
+    imageText = "Images";
+  } else if (!hasBriefs) {
+    imageState = "not_started";
+    imageText = "";
+  } else if (p.images_ready === p.briefs_total) {
+    imageState = "done";
+    imageText = `✓${p.images_ready}`;
+  } else if (p.images_ready > 0) {
+    imageState = "partial";
+    imageText = `✓${p.images_ready}`;
+  } else {
+    imageState = "not_started";
+    imageText = "";
+  }
+
+  const pinsState: StageState = p.scheduled_count > 0 ? "done" : "not_started";
+  const pinsText = p.scheduled_count > 0 ? `${p.scheduled_count} sched.` : "";
+
+  return {
+    analyze: { state: analyzeState, text: "Analyze" },
+    brief: { state: briefState, text: "Brief" },
+    images: { state: imageState, text: imageText },
+    pins: { state: pinsState, text: pinsText },
+  };
+}
+
+function PageRowItem({
+  page, showIncludeAction, onInclude, pipelineRunning, isFirst,
+}: {
+  page: PageRow;
+  showIncludeAction: boolean;
+  onInclude: () => void;
+  pipelineRunning: boolean;
+  isFirst: boolean;
+}) {
+  const stages = stageStatuses(page, pipelineRunning);
+  return (
+    <Link
+      to="/pages/$id"
+      params={{ id: page.id }}
+      style={{
+        display: "flex", alignItems: "center", gap: 14, padding: "12px 8px",
+        borderTop: isFirst ? "none" : `1px solid ${PIN.border}`,
+        textDecoration: "none", color: "inherit",
+      }}
+      className="pages-row-hover"
+    >
+      <Thumb path={page.thumb} />
+      <div style={{ minWidth: 0, flex: "1 1 240px" }}>
+        <div style={{ fontFamily: PIN_FONT, fontSize: 13.5, fontWeight: 600, color: PIN.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {page.title ?? page.url}
+        </div>
+        <div style={{ fontFamily: PIN_FONT, fontSize: 12, color: PIN.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {page.url}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <StagePill state={stages.analyze.state} text={stages.analyze.text} />
+        <StagePill state={stages.brief.state} text={stages.brief.text} />
+        <StagePill state={stages.images.state} text={stages.images.text} />
+        <StagePill state={stages.pins.state} text={stages.pins.text} />
+      </div>
+
+      {showIncludeAction ? (
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); onInclude(); }}
+          style={{
+            fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary,
+            background: "none", border: `1px solid ${PIN.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer", flexShrink: 0,
+          }}
+        >
+          Include
+        </button>
+      ) : (
+        <ChevronRight size={16} style={{ color: PIN.textMuted, flexShrink: 0 }} />
+      )}
+    </Link>
   );
 }
 
@@ -313,9 +424,8 @@ function Thumb({ path }: { path: string | null }) {
     return () => { ok = false; };
   }, [path]);
   return (
-    <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-muted">
-      {url ? <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" /> : null}
+    <div style={{ width: 40, height: 56, flexShrink: 0, borderRadius: 8, overflow: "hidden", background: PIN.fieldBg }}>
+      {url ? <img src={url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
     </div>
   );
 }
-
