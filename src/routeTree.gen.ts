@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as PinsRouteImport } from './routes/pins'
 import { Route as LogsRouteImport } from './routes/logs'
@@ -20,6 +19,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as BoardsRouteImport } from './routes/boards'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as PagesIndexRouteImport } from './routes/pages.index'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as PagesIdRouteImport } from './routes/pages.$id'
@@ -39,11 +39,6 @@ const SitesRoute = SitesRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScheduleRoute = ScheduleRouteImport.update({
@@ -86,15 +81,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PagesIndexRoute = PagesIndexRouteImport.update({
   id: '/pages/',
   path: '/pages/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
-  getParentRoute: () => SettingsRoute,
+  id: '/settings/integrations',
+  path: '/settings/integrations',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PagesIdRoute = PagesIdRouteImport.update({
   id: '/pages/$id',
@@ -148,12 +148,12 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/pages/': typeof PagesIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -171,12 +171,12 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/pages': typeof PagesIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -195,12 +195,12 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
-  '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/pages/': typeof PagesIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
   '/api/public/cron/materialize': typeof ApiPublicCronMaterializeRoute
@@ -220,12 +220,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages/'
+    | '/settings/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
     | '/api/public/cron/materialize'
@@ -243,12 +243,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages'
+    | '/settings'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
     | '/api/public/cron/materialize'
@@ -266,12 +266,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/pins'
     | '/schedule'
-    | '/settings'
     | '/sitemap.xml'
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
     | '/pages/'
+    | '/settings/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
     | '/api/public/cron/materialize'
@@ -290,11 +290,12 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   PinsRoute: typeof PinsRoute
   ScheduleRoute: typeof ScheduleRoute
-  SettingsRoute: typeof SettingsRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SitesRoute: typeof SitesRoute
   PagesIdRoute: typeof PagesIdRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   PagesIndexRoute: typeof PagesIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
   ApiPublicCronImagesRoute: typeof ApiPublicCronImagesRoute
   ApiPublicCronMaterializeRoute: typeof ApiPublicCronMaterializeRoute
@@ -318,13 +319,6 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule': {
@@ -383,6 +377,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pages/': {
       id: '/pages/'
       path: '/pages'
@@ -392,10 +393,10 @@ declare module '@tanstack/react-router' {
     }
     '/settings/integrations': {
       id: '/settings/integrations'
-      path: '/integrations'
+      path: '/settings/integrations'
       fullPath: '/settings/integrations'
       preLoaderRoute: typeof SettingsIntegrationsRouteImport
-      parentRoute: typeof SettingsRoute
+      parentRoute: typeof rootRouteImport
     }
     '/pages/$id': {
       id: '/pages/$id'
@@ -456,18 +457,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface SettingsRouteChildren {
-  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
-}
-
-const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
-}
-
-const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
-  SettingsRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
@@ -477,11 +466,12 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   PinsRoute: PinsRoute,
   ScheduleRoute: ScheduleRoute,
-  SettingsRoute: SettingsRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SitesRoute: SitesRoute,
   PagesIdRoute: PagesIdRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   PagesIndexRoute: PagesIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
   ApiPublicCronImagesRoute: ApiPublicCronImagesRoute,
   ApiPublicCronMaterializeRoute: ApiPublicCronMaterializeRoute,
