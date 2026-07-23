@@ -25,6 +25,17 @@ import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 import { getErrorMessage } from "@/lib/error-message";
 import { PIN, PIN_FONT, hostOf } from "@/lib/pin-shell-tokens";
 
+// Figma-specified font color system for this page. Scoped here (not
+// folded into the shared PIN token object in pin-shell-tokens.ts,
+// which stays as-is for the rest of the app) since this was requested
+// for the Page detail view specifically, unlike the PIN_FONT swap a
+// few tasks back which was explicitly app-wide.
+const TEXT_PRIMARY = "#111827"; // headings, values, primary text
+const TEXT_LABEL = "#374151"; // labels, secondary text, button text
+const TEXT_MUTED = "#9CA3AF"; // timestamps, captions, placeholders, disabled
+const COLOR_ERROR = "#E60023"; // alert/error states, failed badges
+const COLOR_SUCCESS = "#10B981"; // success states (Ready/Analyzed/Published-equivalents)
+
 export const Route = createFileRoute("/pages/$id")({
   ssr: false,
   beforeLoad: async () => {
@@ -40,9 +51,7 @@ function PageDetailRoute() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="pages" userEmail={user?.email}>
-      <div className="flex-1 overflow-y-auto no-scrollbar" style={{ padding: "20px 24px 40px", scrollbarWidth: "none" }}>
-        <PageDetail />
-      </div>
+      <PageDetail />
     </PinShell>
   );
 }
@@ -131,7 +140,7 @@ function PageDetail() {
     });
   }, [data]);
 
-  if (!data) return <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textMuted, padding: 24 }}>Loading…</p>;
+  if (!data) return <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: TEXT_MUTED, padding: 24 }}>Loading…</p>;
   const { page, briefs } = data;
   const analysis = (page.analysis ?? {}) as Record<string, unknown>;
 
@@ -150,16 +159,24 @@ function PageDetail() {
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {/* Breadcrumb + status badges */}
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    // Root of this page's content -- fills PinShell's main-column slot
+    // (PinShell itself is flex/height:100vh/overflow:hidden, sidebar
+    // 64px fixed, main column flex:1/column). This div is that "main
+    // column"'s only child, so it needs flex:1 + minHeight:0 to actually
+    // fill the available height rather than sizing to its content, which
+    // is what makes the flexShrink:0 header rows + flex:1 content row
+    // below work as fixed-header/scrolling-body instead of the previous
+    // single-scroll-container-for-everything approach.
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+      {/* Breadcrumb + status badges -- flexShrink:0, stays fixed */}
+      <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "20px 24px 0" }}>
         <Link
           to="/pages"
-          style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, color: PIN.textSecondary, textDecoration: "none" }}
+          style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, color: TEXT_LABEL, textDecoration: "none" }}
         >
           <ChevronLeft size={15} />
           Pages
-          <span style={{ color: PIN.textMuted, fontWeight: 400 }}>· {domain}</span>
+          <span style={{ color: TEXT_MUTED, fontWeight: 400 }}>· {domain}</span>
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <StatusBadge done={analyzed} label="Analyzed" />
@@ -181,9 +198,9 @@ function PageDetail() {
         </div>
       </div>
 
-      {/* Title + meta chips */}
-      <div>
-        <h1 style={{ fontFamily: PIN_FONT, fontSize: 24, fontWeight: 700, color: PIN.textPrimary, letterSpacing: "-0.02em", margin: "0 0 8px" }}>
+      {/* Title + meta chips -- flexShrink:0, stays fixed */}
+      <div style={{ flexShrink: 0, padding: "14px 24px 0" }}>
+        <h1 style={{ fontFamily: PIN_FONT, fontSize: 24, fontWeight: 700, color: TEXT_PRIMARY, letterSpacing: "-0.02em", margin: "0 0 8px" }}>
           {page.title ?? "(no title)"}
         </h1>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -193,33 +210,28 @@ function PageDetail() {
         </div>
       </div>
 
-      {/* Analyze / Generate actions -- granular per-page controls now
-          live here instead of the Pages list header (see pages.index.tsx). */}
-      <div style={{ display: "flex", gap: 8 }}>
+      {/* Analyze / Generate actions -- flexShrink:0, stays fixed. Granular
+          per-page controls live here instead of the Pages list header
+          (see pages.index.tsx). */}
+      <div style={{ flexShrink: 0, display: "flex", gap: 8, padding: "14px 24px 0" }}>
         <ActionButton icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} label="Analyze" onClick={() => anaMut.mutate()} disabled={anaMut.isPending} />
         <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => genMut.mutate(10)} disabled={genMut.isPending || !analyzed} />
       </div>
 
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {/* Sidebar -- sticky as a unit (both Content Analysis and
-            Pinterest Brief cards travel/stick together) so it stays in
-            view while the Pin Assets grid beside it scrolls past. `top`
-            matches the outer route container's top padding
-            (PageDetailRoute, 20px) so it sticks flush rather than with
-            a visible gap. maxHeight/overflowY guards against the
-            sidebar's own content being taller than the viewport while
-            stuck -- it scrolls internally instead of clipping off the
-            bottom of the screen. Relies on the outer PageDetailRoute
-            div (overflow-y-auto) as the sticky positioning context;
-            alignSelf: flex-start keeps this column from being stretched
-            to the row's full height by the parent flex, which would
-            otherwise cancel the sticky effect. */}
+      {/* Content row -- flex:1, overflow:hidden. This is the only part
+          of the page that scrolls, and it scrolls as two independent
+          panels rather than one shared page scroll: the sidebar has its
+          own overflowY:auto capped to this row's height, and so does
+          the Pin Assets column. No position:sticky anywhere here --
+          confirmed via the layout audit that this sidebar was the only
+          sticky usage in the app, replaced now that both panels get
+          their own real scroll region instead. */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", gap: 24, padding: "18px 24px 24px", minHeight: 0 }}>
         <div
           className="no-scrollbar"
           style={{
-            width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16,
-            position: "sticky", top: 20, alignSelf: "flex-start",
-            maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarWidth: "none",
+            width: 272, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16,
+            overflowY: "auto", scrollbarWidth: "none",
           }}
         >
           {analyzed && (
@@ -239,7 +251,7 @@ function PageDetail() {
                     </span>
                   )}
                   {!!analysis.intent && (
-                    <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: PIN.fieldBg, color: PIN.textSecondary }}>
+                    <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: PIN.fieldBg, color: TEXT_LABEL }}>
                       {String(analysis.intent)}
                     </span>
                   )}
@@ -247,8 +259,8 @@ function PageDetail() {
               )}
 
               {!!analysis.audience && (
-                <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, color: PIN.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
-                  <span style={{ fontWeight: 700, color: PIN.textPrimary }}>Audience: </span>
+                <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, color: TEXT_LABEL, lineHeight: 1.5, marginBottom: 14 }}>
+                  <span style={{ fontWeight: 700, color: TEXT_PRIMARY }}>Audience: </span>
                   {String(analysis.audience)}
                 </div>
               )}
@@ -261,7 +273,7 @@ function PageDetail() {
                         <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
                         {label}
                       </dt>
-                      <dd style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 500, color: PIN.textPrimary, margin: "3px 0 0" }}>{String(analysis[key])}</dd>
+                      <dd style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 500, color: TEXT_PRIMARY, margin: "3px 0 0" }}>{String(analysis[key])}</dd>
                     </div>
                   ) : null
                 ))}
@@ -282,12 +294,12 @@ function PageDetail() {
 
           {angles.length > 0 && (
             <SidebarCard title="Pinterest Brief" icon={<Sparkles size={12} />}>
-              <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: PIN.textMuted, marginBottom: 8 }}>
+              <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: TEXT_MUTED, marginBottom: 8 }}>
                 Pin angles
               </div>
               <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
                 {angles.map((a) => (
-                  <li key={a.id} style={{ display: "flex", gap: 8, fontFamily: PIN_FONT, fontSize: 12.5, color: PIN.textPrimary, lineHeight: 1.4 }}>
+                  <li key={a.id} style={{ display: "flex", gap: 8, fontFamily: PIN_FONT, fontSize: 12.5, color: TEXT_PRIMARY, lineHeight: 1.4 }}>
                     <span style={{ color: PIN.accent, flexShrink: 0 }}>•</span>
                     {a.title}
                   </li>
@@ -297,12 +309,13 @@ function PageDetail() {
           )}
         </div>
 
-        {/* Main: Pin Assets */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Main: Pin Assets -- its own independent scroll region, separate
+            from the sidebar's. */}
+        <div className="no-scrollbar" style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <h2 style={{ fontFamily: PIN_FONT, fontSize: 16, fontWeight: 700, color: PIN.textPrimary, margin: 0 }}>Pin Assets</h2>
-              <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary, background: PIN.fieldBg, borderRadius: 999, padding: "2px 9px" }}>
+              <h2 style={{ fontFamily: PIN_FONT, fontSize: 16, fontWeight: 700, color: TEXT_PRIMARY, margin: 0 }}>Pin Assets</h2>
+              <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: TEXT_LABEL, background: PIN.fieldBg, borderRadius: 999, padding: "2px 9px" }}>
                 {briefs.length}
               </span>
             </div>
@@ -314,11 +327,11 @@ function PageDetail() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+          <div className="pin-assets-masonry">
             {filtered.map((b) => <BriefCard key={b.id} b={b} />)}
           </div>
           {!filtered.length && (
-            <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textMuted, padding: "24px 4px" }}>Nothing here yet.</p>
+            <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: TEXT_MUTED, padding: "24px 4px" }}>Nothing here yet.</p>
           )}
         </div>
       </div>
@@ -331,7 +344,7 @@ function StatusBadge({ done, label }: { done: boolean; label: string }) {
     <span
       style={{
         display: "flex", alignItems: "center", gap: 5, height: 28, padding: "0 11px", borderRadius: 999,
-        background: done ? "#E6F4EA" : PIN.fieldBg, color: done ? "#1E7B3D" : PIN.textMuted,
+        background: done ? "#E3F9F1" : PIN.fieldBg, color: done ? COLOR_SUCCESS : TEXT_MUTED,
         fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
       }}
     >
@@ -345,7 +358,7 @@ function MetaChip({ text, accent }: { text: string; accent?: boolean }) {
     <span
       style={{
         fontFamily: PIN_FONT, fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 999,
-        background: accent ? "#FDECEC" : PIN.fieldBg, color: accent ? PIN.accent : PIN.textSecondary,
+        background: accent ? "#FDECEC" : PIN.fieldBg, color: accent ? PIN.accent : TEXT_LABEL,
         maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}
     >
@@ -362,7 +375,7 @@ function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode; lab
       disabled={disabled}
       style={{
         display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 999,
-        border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: PIN.textPrimary,
+        border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: TEXT_PRIMARY,
         fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
       }}
@@ -419,12 +432,12 @@ function TagGroup({ label, items, tone }: { label: string; items: string[] | und
   if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: PIN.textMuted, marginBottom: 6 }}>
+      <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: TEXT_MUTED, marginBottom: 6 }}>
         {label}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {items.map((item) => {
-          const c = tone === "colorful" ? tagColor(item) : { bg: PIN.fieldBg, fg: PIN.textSecondary };
+          const c = tone === "colorful" ? tagColor(item) : { bg: PIN.fieldBg, fg: TEXT_LABEL };
           return (
             <span
               key={item}
@@ -446,7 +459,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
       onClick={onClick}
       style={{
         height: 28, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer",
-        background: active ? PIN.accent : "transparent", color: active ? "#fff" : PIN.textSecondary,
+        background: active ? PIN.accent : "transparent", color: active ? "#fff" : TEXT_LABEL,
         fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
       }}
     >
@@ -464,7 +477,18 @@ function templateTag(templateId: string | null | undefined): { label: string; co
   return { label: "Unclassified", color: "#9C978A" };
 }
 
-function briefStatusLine(b: Brief): { text: string; tone: "ready" | "rendering" | "scheduled" | "failed" | "pending" } {
+function isBriefPublished(b: Brief): boolean {
+  return (b.scheduled_pins ?? []).some((s) => s.status === "published");
+}
+
+function briefStatusLine(b: Brief): { text: string; tone: "ready" | "rendering" | "scheduled" | "failed" | "pending" | "published" } {
+  // Published takes priority over "scheduled" -- once a scheduled_pins
+  // row actually posted, that's a more final state than "queued to
+  // post," and it's the one place this page has a real isPublished
+  // signal (pin_briefs itself has no "published" status -- only
+  // scheduled_pins does).
+  const publishedEntry = (b.scheduled_pins ?? []).find((s) => s.status === "published");
+  if (publishedEntry) return { text: `Published ${formatDate(publishedEntry.scheduled_at)}`, tone: "published" };
   if (b.status === "failed") return { text: "✕ Failed", tone: "failed" };
   if (b.status === "scheduled") {
     const upcoming = (b.scheduled_pins ?? []).find((s) => s.status !== "canceled");
@@ -480,6 +504,13 @@ function BriefCard({ b }: { b: Brief }) {
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
   const [url, setUrl] = useState<string | null>(null);
+  // Reserve a "2 / 3" guess so there's no zero-height flash while the
+  // signed URL and image are still loading, then correct to the real
+  // proportions once known -- same self-correcting approach as
+  // Dashboard's PinTile (see routes/dashboard.tsx), needed here now that
+  // the grid is real CSS-columns masonry rather than a fixed grid, so
+  // card heights need to actually vary with each pin's real image.
+  const [aspect, setAspect] = useState("2 / 3");
   const path = b.pin_images?.[0]?.storage_path;
   useEffect(() => {
     let ok = true;
@@ -510,21 +541,33 @@ function BriefCard({ b }: { b: Brief }) {
   const tag = templateTag(b.template_id);
   const statusLine = briefStatusLine(b);
   const rendering = b.is_rendering || b.status === "image_pending";
+  // Exact spec: color: isPublished ? '#9CA3AF' : '#111827' on the pin
+  // title/time -- the only place font color responds to data.
+  const isPublished = isBriefPublished(b);
 
   return (
     <>
-      <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card }}>
-        <div style={{ position: "relative", aspectRatio: "2 / 3", width: "100%", background: PIN.fieldBg }}>
+      <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card, breakInside: "avoid", marginBottom: 20 }}>
+        <div style={{ position: "relative", width: "100%", background: PIN.fieldBg }}>
           {url ? (
-            <button type="button" onClick={() => setOpen(true)} className="group block h-full w-full cursor-zoom-in" aria-label="Enlarge pin" style={{ position: "absolute", inset: 0 }}>
-              <img src={url} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
+            <button type="button" onClick={() => setOpen(true)} className="group block w-full cursor-zoom-in" aria-label="Enlarge pin" style={{ display: "block", width: "100%" }}>
+              <img
+                src={url}
+                alt=""
+                className="w-full transition group-hover:opacity-90"
+                style={{ width: "100%", height: "auto", display: "block", aspectRatio: aspect, objectFit: "cover" }}
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  if (el.naturalWidth && el.naturalHeight) setAspect(`${el.naturalWidth} / ${el.naturalHeight}`);
+                }}
+              />
             </button>
           ) : (
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 12px", textAlign: "center" }}>
+            <div style={{ aspectRatio: "2 / 3", width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 12px", textAlign: "center" }}>
               {b.status === "failed" ? (
                 <>
-                  <AlertTriangle size={16} color={PIN.roseIcon} />
-                  <span style={{ fontFamily: PIN_FONT, fontSize: 11, color: PIN.roseIcon }}>Render failed — tap Rerender to retry</span>
+                  <AlertTriangle size={16} color={COLOR_ERROR} />
+                  <span style={{ fontFamily: PIN_FONT, fontSize: 11, color: COLOR_ERROR }}>Render failed — tap Rerender to retry</span>
                 </>
               ) : rendering ? (
                 <span
@@ -537,7 +580,7 @@ function BriefCard({ b }: { b: Brief }) {
                   Rendering…
                 </span>
               ) : (
-                <span style={{ fontFamily: PIN_FONT, fontSize: 11.5, color: PIN.textMuted }}>No image</span>
+                <span style={{ fontFamily: PIN_FONT, fontSize: 11.5, color: TEXT_MUTED }}>No image</span>
               )}
             </div>
           )}
@@ -549,7 +592,7 @@ function BriefCard({ b }: { b: Brief }) {
               disabled={reMut.isPending}
               style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             >
-              <RefreshCw size={12} className={reMut.isPending ? "animate-spin" : undefined} style={{ color: PIN.textSecondary }} />
+              <RefreshCw size={12} className={reMut.isPending ? "animate-spin" : undefined} style={{ color: TEXT_LABEL }} />
             </button>
             <button
               type="button"
@@ -561,7 +604,7 @@ function BriefCard({ b }: { b: Brief }) {
               disabled={delMut.isPending}
               style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
             >
-              <Trash2 size={12} style={{ color: PIN.roseIcon }} />
+              <Trash2 size={12} style={{ color: COLOR_ERROR }} />
             </button>
           </div>
         </div>
@@ -574,14 +617,14 @@ function BriefCard({ b }: { b: Brief }) {
           >
             {tag.label}
           </span>
-          <div style={{ fontFamily: PIN_FONT, fontSize: 14, fontWeight: 600, color: PIN.textPrimary, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          <div style={{ fontFamily: PIN_FONT, fontSize: 14, fontWeight: 600, color: isPublished ? TEXT_MUTED : TEXT_PRIMARY, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {b.title}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span
               style={{
                 fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
-                color: statusLine.tone === "ready" ? "#1E7B3D" : statusLine.tone === "failed" ? PIN.roseIcon : statusLine.tone === "rendering" ? PIN.amberIcon : PIN.textSecondary,
+                color: statusLine.tone === "published" ? TEXT_MUTED : statusLine.tone === "ready" ? COLOR_SUCCESS : statusLine.tone === "failed" ? COLOR_ERROR : statusLine.tone === "rendering" ? PIN.amberIcon : TEXT_LABEL,
               }}
             >
               {statusLine.text}

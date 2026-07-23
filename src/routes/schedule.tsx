@@ -275,7 +275,26 @@ function DayColumn({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+      {/* Sticky per-column day header -- the one legitimate use of
+          position:sticky in the app (see the layout audit: everywhere
+          else either has no side-panel relationship to justify it, like
+          this calendar's 7 peer columns as a whole, or has been moved to
+          independent-scroll panels instead, like Page detail). All 7
+          columns share ONE scrolling ancestor (the outer overflow:"auto"
+          wrapper in SchedulePage/ScheduleContent), so top:0 on each
+          column's own header sticks them all in place together as the
+          user scrolls down through a busy day, forming a frozen header
+          row across the whole week rather than each day drifting
+          independently. Needs an opaque background (matches PinShell's
+          page background, not transparent) so pin cards scrolling
+          underneath don't visually bleed through, and a z-index above
+          the cards themselves. */}
+      <div
+        style={{
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+          position: "sticky", top: 0, zIndex: 2, background: PIN.bg, paddingTop: 4, paddingBottom: 10,
+        }}
+      >
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: isToday ? PIN.accent : PIN.textMuted }}>{label}</div>
         <span
           style={{

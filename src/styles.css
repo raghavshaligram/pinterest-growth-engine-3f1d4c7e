@@ -226,3 +226,22 @@
    consuming component). One shared class instead of a repeated scoped
    <style> tag per component, functionally identical output. */
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Pin Assets masonry grid (src/routes/pages.$id.tsx) -- real CSS
+   multi-column layout, not a fixed grid-template-columns grid, so
+   variable-height pin cards (see BriefCard's self-correcting image
+   aspect ratio) pack tightly like Dashboard's MasonryFeed does. Media
+   queries because column-count has no Tailwind-arbitrary responsive
+   shorthand that doesn't require the JIT config; a plain CSS class is
+   simpler here and matches the same pattern as .no-scrollbar/.pages-
+   row-hover above. */
+.pin-assets-masonry {
+  column-count: 4;
+  column-gap: 12px;
+}
+@media (max-width: 900px) {
+  .pin-assets-masonry { column-count: 3; }
+}
+@media (max-width: 600px) {
+  .pin-assets-masonry { column-count: 2; }
+}
