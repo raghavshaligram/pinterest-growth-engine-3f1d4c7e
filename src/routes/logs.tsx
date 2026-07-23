@@ -39,7 +39,7 @@ function LogsRoute() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="logs" userEmail={user?.email}>
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
         <LogsPage />
       </div>
     </PinShell>

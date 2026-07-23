@@ -50,7 +50,7 @@ function PagesRoute() {
   return (
     <PinShell active="pages" userEmail={user?.email}>
       <TopBar search={search} onSearch={setSearch} placeholder="Search pages..." />
-      <div className="flex-1 overflow-y-auto" style={{ padding: "8px 24px 32px" }}>
+      <div className="flex-1 overflow-y-auto no-scrollbar" style={{ padding: "8px 24px 32px", scrollbarWidth: "none" }}>
         <PagesPage search={search} />
       </div>
     </PinShell>

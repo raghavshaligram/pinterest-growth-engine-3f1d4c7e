@@ -188,7 +188,7 @@ function ScheduleContent() {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }}>
+      <div className="no-scrollbar" style={{ flex: 1, overflow: "auto", padding: "0 24px 24px", scrollbarWidth: "none" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(150px, 1fr))", gap: 12, minWidth: 900 }}>
           {days.map((day, i) => (
             <DayColumn

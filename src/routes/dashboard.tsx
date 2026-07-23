@@ -165,7 +165,7 @@ function DashboardContent() {
         </Link>
       </TopBar>
       <FilterPillsRow pill={pill} onPill={setPill} />
-      <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 32px" }}>
+      <div className="no-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "0 24px 32px", scrollbarWidth: "none" }}>
         <MasonryFeed
           rows={filtered}
           publishedThisWeek={thisWeekCounts.published}

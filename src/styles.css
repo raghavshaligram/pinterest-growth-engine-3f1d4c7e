@@ -214,3 +214,15 @@
    background swap rather than a Tailwind hover: utility, to keep the
    row's styling fully inline-style-driven like the rest of that page. */
 .pages-row-hover:hover { background-color: #FBFBFA; }
+
+/* Hides the browser/OS scrollbar track+thumb on scroll containers
+   across the app while leaving actual scrolling (wheel/touch/
+   trackpad/keyboard) fully functional -- matches Figma's mockups,
+   which never render a visible scrollbar. Pair this class with an
+   inline `scrollbarWidth: "none"` on the same element (Firefox has no
+   ::-webkit-scrollbar equivalent, only the scrollbar-width property,
+   which isn't expressible as a static CSS class selector the same way
+   here since it's set per-element already via inline style in each
+   consuming component). One shared class instead of a repeated scoped
+   <style> tag per component, functionally identical output. */
+.no-scrollbar::-webkit-scrollbar { display: none; }

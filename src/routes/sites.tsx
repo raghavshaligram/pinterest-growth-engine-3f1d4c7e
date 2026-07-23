@@ -45,7 +45,7 @@ function SitesRoute() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="sites" userEmail={user.email}>
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
         <SitesPage />
       </div>
     </PinShell>

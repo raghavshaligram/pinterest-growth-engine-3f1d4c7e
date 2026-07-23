@@ -38,7 +38,7 @@ function PinsPageRoute() {
   return (
     <PinShell active="pins" userEmail={user?.email}>
       <TopBar search={search} onSearch={setSearch} placeholder="Search pins..." />
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
         <PinsPage search={search} />
       </div>
     </PinShell>
@@ -249,7 +249,7 @@ function PinDetail({
                 </div>
               )}
             </div>
-            <div className="flex max-h-[80vh] flex-col overflow-y-auto p-6">
+            <div className="flex max-h-[80vh] flex-col overflow-y-auto p-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
               <DialogHeader className="text-left">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{row.status}</Badge>

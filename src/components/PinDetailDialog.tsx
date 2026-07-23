@@ -55,7 +55,7 @@ export function PinDetailDialog({
                 <div className="flex aspect-[2/3] w-full items-center justify-center rounded-lg bg-muted"><ImageIcon className="h-8 w-8 text-muted-foreground" /></div>
               )}
             </div>
-            <div className="flex max-h-[80vh] flex-col overflow-y-auto p-6">
+            <div className="flex max-h-[80vh] flex-col overflow-y-auto p-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
               <DialogHeader className="text-left">
                 <div className="mb-2 flex items-center gap-2">
                   <Badge variant={row.status === "published" ? "default" : row.status === "failed" ? "destructive" : "outline"}>{row.status}</Badge>

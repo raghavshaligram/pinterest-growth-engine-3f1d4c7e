@@ -38,7 +38,7 @@ function KeywordsPageRoute() {
   return (
     <PinShell active="keywords" userEmail={user?.email}>
       <TopBar search={search} onSearch={setSearch} placeholder="Search keywords..." />
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
         <KeywordsPage search={search} />
       </div>
     </PinShell>

@@ -18,7 +18,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
 import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { toast } from "sonner";
-import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
@@ -40,7 +40,7 @@ function PageDetailRoute() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="pages" userEmail={user?.email}>
-      <div className="flex-1 overflow-y-auto" style={{ padding: "20px 24px 40px" }}>
+      <div className="flex-1 overflow-y-auto no-scrollbar" style={{ padding: "20px 24px 40px", scrollbarWidth: "none" }}>
         <PageDetail />
       </div>
     </PinShell>
@@ -50,13 +50,10 @@ function PageDetailRoute() {
 type PageDetailData = Awaited<ReturnType<typeof getPage>>;
 type Brief = PageDetailData["briefs"][number];
 
-const ANALYSIS_FIELDS: { key: string; label: string }[] = [
-  { key: "topic", label: "Topic" },
-  { key: "primary_keyword", label: "Primary keyword" },
-  { key: "intent", label: "Intent" },
-  { key: "category", label: "Category" },
-  { key: "audience", label: "Audience" },
-  { key: "seasonality", label: "Seasonality" },
+const ANALYSIS_FIELDS: { key: string; label: string; color: string }[] = [
+  { key: "topic", label: "Topic", color: "#2B6CB0" },
+  { key: "primary_keyword", label: "Primary keyword", color: "#6B46C1" },
+  { key: "seasonality", label: "Seasonality", color: "#2C7A7B" },
 ];
 
 function formatDate(iso: string | null | undefined): string {
@@ -218,35 +215,74 @@ function PageDetail() {
             to the row's full height by the parent flex, which would
             otherwise cancel the sticky effect. */}
         <div
+          className="no-scrollbar"
           style={{
             width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16,
             position: "sticky", top: 20, alignSelf: "flex-start",
-            maxHeight: "calc(100vh - 40px)", overflowY: "auto",
+            maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarWidth: "none",
           }}
         >
           {analyzed && (
-            <SidebarCard title="Content Analysis">
-              <dl style={{ display: "grid", gap: 10 }}>
-                {ANALYSIS_FIELDS.map(({ key, label }) => (
-                  <div key={key}>
-                    <dt style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted }}>{label}</dt>
-                    <dd style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textPrimary, margin: "2px 0 0" }}>{String(analysis[key] ?? "—")}</dd>
-                  </div>
+            <SidebarCard title="Content Analysis" icon={<Zap size={12} />}>
+              {/* Category + Intent as a two-pill row -- both real
+                  analysis fields, styled as accent/neutral pills to
+                  match the reference's category-tag treatment. (The
+                  reference also shows a second, more editorial tone
+                  descriptor here that isn't backed by any field this
+                  analyzer produces -- not fabricated, intent fills that
+                  visual slot with real data instead.) */}
+              {!!(analysis.category || analysis.intent) && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {!!analysis.category && (
+                    <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#FDECEC", color: PIN.accent }}>
+                      {String(analysis.category)}
+                    </span>
+                  )}
+                  {!!analysis.intent && (
+                    <span style={{ fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: PIN.fieldBg, color: PIN.textSecondary }}>
+                      {String(analysis.intent)}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {!!analysis.audience && (
+                <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, color: PIN.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
+                  <span style={{ fontWeight: 700, color: PIN.textPrimary }}>Audience: </span>
+                  {String(analysis.audience)}
+                </div>
+              )}
+
+              <dl style={{ display: "grid", gap: 10, marginBottom: 4 }}>
+                {ANALYSIS_FIELDS.map(({ key, label, color }) => (
+                  analysis[key] ? (
+                    <div key={key}>
+                      <dt style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                        {label}
+                      </dt>
+                      <dd style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 500, color: PIN.textPrimary, margin: "3px 0 0" }}>{String(analysis[key])}</dd>
+                    </div>
+                  ) : null
                 ))}
               </dl>
+
               {/* "Topics" reuses analysis.lsi_keywords -- the broader
                   semantically-related terms the analyzer already
                   generates alongside the primary/secondary keywords
                   (see analyzePage in pages.functions.ts) -- rather than
-                  a separate topics field, which doesn't exist. */}
-              <TagGroup label="Topics" items={analysis.lsi_keywords as string[] | undefined} />
-              <TagGroup label="Keywords" items={analysis.secondary_keywords as string[] | undefined} />
+                  a separate topics field, which doesn't exist. Topics
+                  get the colorful hashed treatment, Keywords stay
+                  neutral -- matches the reference, which visually
+                  distinguishes the two groups the same way. */}
+              <TagGroup label="Topics" items={analysis.lsi_keywords as string[] | undefined} tone="colorful" />
+              <TagGroup label="Keywords" items={analysis.secondary_keywords as string[] | undefined} tone="neutral" />
             </SidebarCard>
           )}
 
           {angles.length > 0 && (
-            <SidebarCard title="Pinterest Brief">
-              <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 8 }}>
+            <SidebarCard title="Pinterest Brief" icon={<Sparkles size={12} />}>
+              <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: PIN.textMuted, marginBottom: 8 }}>
                 Pin angles
               </div>
               <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -336,10 +372,18 @@ function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode; lab
   );
 }
 
-function SidebarCard({ title, children }: { title: string; children: ReactNode }) {
+function SidebarCard({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return (
     <div style={{ border: `1px solid #E4E1D9`, borderRadius: 16, padding: 16, background: PIN.card }}>
-      <h3 style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 700, color: PIN.textPrimary, margin: "0 0 12px" }}>{title}</h3>
+      <h3
+        style={{
+          display: "flex", alignItems: "center", gap: 6, fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 700,
+          textTransform: "uppercase", letterSpacing: "0.06em", color: PIN.accent, margin: "0 0 14px",
+        }}
+      >
+        {icon}
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -371,16 +415,16 @@ function tagColor(s: string) {
   return TAG_PALETTE[hashTagText(s) % TAG_PALETTE.length];
 }
 
-function TagGroup({ label, items }: { label: string; items: string[] | undefined }) {
+function TagGroup({ label, items, tone }: { label: string; items: string[] | undefined; tone: "colorful" | "neutral" }) {
   if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 6 }}>
+      <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: PIN.textMuted, marginBottom: 6 }}>
         {label}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {items.map((item) => {
-          const c = tagColor(item);
+          const c = tone === "colorful" ? tagColor(item) : { bg: PIN.fieldBg, fg: PIN.textSecondary };
           return (
             <span
               key={item}

@@ -67,9 +67,10 @@ function Sidebar({ active, userEmail }: { active: NavKey; userEmail?: string | n
       </Link>
 
       <nav
+        className="no-scrollbar"
         style={{
           marginTop: 24, display: "flex", flexDirection: "column", gap: 6,
-          overflowY: "auto", flex: 1, minHeight: 0,
+          overflowY: "auto", flex: 1, minHeight: 0, scrollbarWidth: "none",
         }}
       >
         {NAV.map(({ to, label, icon: Icon, key }) => (
