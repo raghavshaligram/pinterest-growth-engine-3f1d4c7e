@@ -204,8 +204,26 @@ function PageDetail() {
       </div>
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {/* Sidebar */}
-        <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Sidebar -- sticky as a unit (both Content Analysis and
+            Pinterest Brief cards travel/stick together) so it stays in
+            view while the Pin Assets grid beside it scrolls past. `top`
+            matches the outer route container's top padding
+            (PageDetailRoute, 20px) so it sticks flush rather than with
+            a visible gap. maxHeight/overflowY guards against the
+            sidebar's own content being taller than the viewport while
+            stuck -- it scrolls internally instead of clipping off the
+            bottom of the screen. Relies on the outer PageDetailRoute
+            div (overflow-y-auto) as the sticky positioning context;
+            alignSelf: flex-start keeps this column from being stretched
+            to the row's full height by the parent flex, which would
+            otherwise cancel the sticky effect. */}
+        <div
+          style={{
+            width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16,
+            position: "sticky", top: 20, alignSelf: "flex-start",
+            maxHeight: "calc(100vh - 40px)", overflowY: "auto",
+          }}
+        >
           {analyzed && (
             <SidebarCard title="Content Analysis">
               <dl style={{ display: "grid", gap: 10 }}>
