@@ -92,9 +92,9 @@ const PagesIndexRoute = PagesIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/settings/integrations',
-  path: '/settings/integrations',
-  getParentRoute: () => rootRouteImport,
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const PagesIdRoute = PagesIdRouteImport.update({
   id: '/pages/$id',
@@ -293,7 +293,6 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SitesRoute: typeof SitesRoute
   PagesIdRoute: typeof PagesIdRoute
-  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   PagesIndexRoute: typeof PagesIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   ApiPublicCronCrawlRoute: typeof ApiPublicCronCrawlRoute
@@ -393,10 +392,10 @@ declare module '@tanstack/react-router' {
     }
     '/settings/integrations': {
       id: '/settings/integrations'
-      path: '/settings/integrations'
+      path: '/integrations'
       fullPath: '/settings/integrations'
       preLoaderRoute: typeof SettingsIntegrationsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/pages/$id': {
       id: '/pages/$id'
@@ -469,7 +468,6 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SitesRoute: SitesRoute,
   PagesIdRoute: PagesIdRoute,
-  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   PagesIndexRoute: PagesIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   ApiPublicCronCrawlRoute: ApiPublicCronCrawlRoute,
@@ -483,3 +481,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
