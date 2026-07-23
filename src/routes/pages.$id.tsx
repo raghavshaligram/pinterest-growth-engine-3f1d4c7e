@@ -216,18 +216,13 @@ function PageDetail() {
                   </div>
                 ))}
               </dl>
-              {Array.isArray(analysis.secondary_keywords) && (analysis.secondary_keywords as string[]).length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 6 }}>
-                    Secondary keywords
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {(analysis.secondary_keywords as string[]).map((k) => (
-                      <span key={k} style={{ fontFamily: PIN_FONT, fontSize: 11, padding: "3px 8px", borderRadius: 999, background: PIN.fieldBg, color: PIN.textSecondary }}>{k}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* "Topics" reuses analysis.lsi_keywords -- the broader
+                  semantically-related terms the analyzer already
+                  generates alongside the primary/secondary keywords
+                  (see analyzePage in pages.functions.ts) -- rather than
+                  a separate topics field, which doesn't exist. */}
+              <TagGroup label="Topics" items={analysis.lsi_keywords as string[] | undefined} />
+              <TagGroup label="Keywords" items={analysis.secondary_keywords as string[] | undefined} />
             </SidebarCard>
           )}
 
@@ -265,7 +260,7 @@ function PageDetail() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
             {filtered.map((b) => <BriefCard key={b.id} b={b} />)}
           </div>
           {!filtered.length && (
@@ -328,6 +323,56 @@ function SidebarCard({ title, children }: { title: string; children: ReactNode }
     <div style={{ border: `1px solid #E4E1D9`, borderRadius: 16, padding: 16, background: PIN.card }}>
       <h3 style={{ fontFamily: PIN_FONT, fontSize: 13, fontWeight: 700, color: PIN.textPrimary, margin: "0 0 12px" }}>{title}</h3>
       {children}
+    </div>
+  );
+}
+
+// Soft tinted-background pills for the Content Analysis sidebar's Topics
+// and Keywords lists -- background at roughly 15-20% of the paired
+// color's full saturation, text in the full-saturation color, no
+// border. Each individual pill's color is deterministically hashed from
+// its own text (same pattern as pin-shell-tokens.ts's boardColor) so a
+// given topic/keyword always renders the same color, rather than
+// picking randomly or using one flat color for the whole list.
+const TAG_PALETTE: { bg: string; fg: string }[] = [
+  { bg: "#E3EEFA", fg: "#2B6CB0" }, // blue
+  { bg: "#EFE7FB", fg: "#6B46C1" }, // purple
+  { bg: "#E1F5F5", fg: "#2C7A7B" }, // teal
+  { bg: "#FDEDE1", fg: "#C05621" }, // orange
+  { bg: "#E4F5EA", fg: "#2F8B57" }, // green
+  { bg: "#FCE7F3", fg: "#B83280" }, // pink
+  { bg: "#FEF3D6", fg: "#B7791F" }, // amber
+  { bg: "#FCE8E8", fg: "#C53030" }, // red
+];
+function hashTagText(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function tagColor(s: string) {
+  return TAG_PALETTE[hashTagText(s) % TAG_PALETTE.length];
+}
+
+function TagGroup({ label, items }: { label: string; items: string[] | undefined }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: PIN.textMuted, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {items.map((item) => {
+          const c = tagColor(item);
+          return (
+            <span
+              key={item}
+              style={{ fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: c.bg, color: c.fg }}
+            >
+              {item}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -408,14 +453,6 @@ function BriefCard({ b }: { b: Brief }) {
     <>
       <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card }}>
         <div style={{ position: "relative", aspectRatio: "2 / 3", width: "100%", background: PIN.fieldBg }}>
-          <span
-            style={{
-              position: "absolute", top: 8, left: 8, zIndex: 2, fontFamily: PIN_FONT, fontSize: 10.5, fontWeight: 700,
-              padding: "3px 8px", borderRadius: 999, background: tag.color, color: "#fff",
-            }}
-          >
-            {tag.label}
-          </span>
           {url ? (
             <button type="button" onClick={() => setOpen(true)} className="group block h-full w-full cursor-zoom-in" aria-label="Enlarge pin" style={{ position: "absolute", inset: 0 }}>
               <img src={url} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
@@ -466,14 +503,22 @@ function BriefCard({ b }: { b: Brief }) {
             </button>
           </div>
         </div>
-        <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, color: PIN.textPrimary, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        <div style={{ padding: "14px 14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <span
+            style={{
+              alignSelf: "flex-start", fontFamily: PIN_FONT, fontSize: 11, fontWeight: 700,
+              padding: "3px 9px", borderRadius: 999, background: tag.color, color: "#fff",
+            }}
+          >
+            {tag.label}
+          </span>
+          <div style={{ fontFamily: PIN_FONT, fontSize: 14, fontWeight: 600, color: PIN.textPrimary, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {b.title}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span
               style={{
-                fontFamily: PIN_FONT, fontSize: 11, fontWeight: 600,
+                fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600,
                 color: statusLine.tone === "ready" ? "#1E7B3D" : statusLine.tone === "failed" ? PIN.roseIcon : statusLine.tone === "rendering" ? PIN.amberIcon : PIN.textSecondary,
               }}
             >

@@ -21,7 +21,16 @@ export const PIN = {
   amberIcon: "#C07A12",
 } as const;
 
-export const PIN_FONT = '"DM Sans", "Inter", ui-sans-serif, system-ui, sans-serif';
+// Native system font stack -- renders as SF Pro on Mac, Segoe UI on
+// Windows, Roboto on Android/Chrome OS, instead of loading DM Sans as a
+// web font. This is the single source PIN_FONT is defined from, so it
+// applies everywhere PIN_FONT is used: PinShell chrome, SiteSwitcher,
+// Dashboard, Schedule, and the Pages list/detail views. It's separate
+// from styles.css's --font-sans (Inter) / --font-display (Space
+// Grotesk), which back the Tailwind/shadcn-driven pages (Sites, Pins,
+// Boards, Keywords, Logs, Settings) and were never DM Sans -- untouched
+// by this change.
+export const PIN_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 export function formatClock(iso: string): string {
   const d = new Date(iso);
