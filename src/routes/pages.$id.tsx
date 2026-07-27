@@ -16,7 +16,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
+import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { toast } from "sonner";
 import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -77,6 +77,8 @@ function PageDetail() {
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
   const renderPage = useServerFn(renderImagesForPage);
+  const delAll = useServerFn(deleteBriefsForPage);
+
 
   const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
 
@@ -126,6 +128,17 @@ function PageDetail() {
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
+
+  const delAllMut = useMutation({
+    mutationFn: () => delAll({ data: { pageId: id } }),
+    onSuccess: (r) => {
+      toast.success(`Deleted ${r.deleted} pin${r.deleted === 1 ? "" : "s"}`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+
 
   const angles = useMemo(() => {
     if (!data) return [];
@@ -216,7 +229,28 @@ function PageDetail() {
       <div style={{ flexShrink: 0, display: "flex", gap: 8, padding: "14px 24px 0" }}>
         <ActionButton icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} label="Analyze" onClick={() => anaMut.mutate()} disabled={anaMut.isPending} />
         <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => genMut.mutate(10)} disabled={genMut.isPending || !analyzed} />
+        {briefs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(`Delete all ${briefs.length} pins for this page? This removes briefs, images, and any unpublished scheduled entries.`)) {
+                delAllMut.mutate();
+              }
+            }}
+            disabled={delAllMut.isPending}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 999,
+              border: `1px solid ${COLOR_ERROR}`, background: "transparent", color: COLOR_ERROR,
+              fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: delAllMut.isPending ? "default" : "pointer",
+              opacity: delAllMut.isPending ? 0.6 : 1,
+            }}
+          >
+            {delAllMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Delete all pins
+          </button>
+        )}
       </div>
+
 
       {/* Content row -- flex:1, overflow:hidden. This is the only part
           of the page that scrolls, and it scrolls as two independent
