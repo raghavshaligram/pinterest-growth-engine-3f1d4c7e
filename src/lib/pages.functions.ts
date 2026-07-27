@@ -64,8 +64,14 @@ export const listPages = createServerFn({ method: "GET" })
         .filter((id): id is string => !!id),
     );
 
-    return (data ?? []).map((p) => {
-      const briefs = (p as { pin_briefs?: ListPageBrief[] }).pin_briefs ?? [];
+    type PageRow = {
+      id: string; url: string; title: string | null; status: string;
+      last_crawled_at: string | null; last_analyzed_at: string | null;
+      updated_at?: string | null; excluded: boolean; pin_briefs?: ListPageBrief[];
+    };
+    return ((data ?? []) as unknown as PageRow[]).map((p) => {
+      const briefs = p.pin_briefs ?? [];
+
       const briefsTotal = briefs.length;
       const imagesReady = briefs.filter((b) => b.pin_images?.length).length;
       const imagesError = briefs.filter((b) => b.status === "failed").length;
