@@ -16,7 +16,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
-import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
+import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { toast } from "sonner";
 import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
