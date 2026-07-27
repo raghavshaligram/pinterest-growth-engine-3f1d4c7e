@@ -176,7 +176,18 @@ export const getPage = createServerFn({ method: "GET" })
         .map((j) => (j.payload as { brief_id?: string } | null)?.brief_id)
         .filter((id): id is string => !!id),
     );
-    const briefsWithActive = (briefs ?? []).map((b) => ({ ...b, is_rendering: activeBriefIds.has(b.id) }));
+    type BriefRow = {
+      id: string; style: string; title: string; description: string; status: string;
+      template_id: string | null; image_prompt: string | null; created_at: string;
+      used_serp_patterns: boolean | null; serp_keyword: string | null; serp_patterns_captured_at: string | null;
+      pin_images?: { storage_path: string; width: number | null; height: number | null }[];
+      scheduled_pins?: { scheduled_at: string; status: string }[];
+    };
+    const briefsWithActive = ((briefs ?? []) as unknown as BriefRow[]).map((b) => ({
+      ...b,
+      is_rendering: activeBriefIds.has(b.id),
+    }));
+
     return { page, briefs: briefsWithActive };
   });
 
