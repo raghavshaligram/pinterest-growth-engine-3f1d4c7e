@@ -83,6 +83,13 @@ export function PinDetailDialog({
                     </a>
                   ) : <span className="text-muted-foreground">—</span>}
                 </Field>
+                <Field label="Alt text" icon={<ImageIcon className="h-3.5 w-3.5" />}>
+                  {brief?.alt_text ? (
+                    <p className="whitespace-pre-wrap text-foreground">{brief.alt_text}</p>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </Field>
                 <Field label="Board"><span>{row.boards?.name ?? "—"}</span></Field>
                 {row.last_error && <Field label="Last error"><p className="whitespace-pre-wrap text-destructive">{row.last_error}</p></Field>}
               </dl>
