@@ -857,3 +857,35 @@ export const deleteBrief = createServerFn({ method: "POST" })
     await supabaseAdmin.from("pin_briefs").delete().eq("id", data.briefId);
     return { ok: true };
   });
+
+// Delete every pin brief belonging to one page (images in storage, image
+// rows, unpublished scheduled entries, queued render jobs, then briefs).
+export const deleteBriefsForPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { pageId: string }) => z.object({ pageId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: briefs } = await context.supabase
+      .from("pin_briefs").select("id").eq("page_id", data.pageId).eq("user_id", context.userId);
+    const ids = (briefs ?? []).map((b) => b.id);
+    if (!ids.length) return { deleted: 0 };
+
+    const { data: imgs } = await supabaseAdmin
+      .from("pin_images").select("storage_path").in("brief_id", ids);
+    const paths = (imgs ?? []).map((i) => i.storage_path).filter(Boolean) as string[];
+    if (paths.length) await supabaseAdmin.storage.from("pins").remove(paths);
+
+    // Only remove pins that haven't already gone out to Pinterest.
+    await supabaseAdmin.from("scheduled_pins")
+      .delete().in("brief_id", ids)
+      .in("status", ["draft", "queued", "failed", "canceled", "exported"]);
+    await supabaseAdmin.from("pin_images").delete().in("brief_id", ids);
+    await supabaseAdmin.from("jobs")
+      .delete().eq("kind", "generate_image").eq("user_id", context.userId)
+      .in("status", ["queued", "failed"])
+      .in("payload->>brief_id", ids);
+    const { error } = await supabaseAdmin.from("pin_briefs").delete().in("id", ids);
+    if (error) throw error;
+    return { deleted: ids.length };
+  });
+
