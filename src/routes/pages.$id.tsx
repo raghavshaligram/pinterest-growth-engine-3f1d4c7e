@@ -129,6 +129,17 @@ function PageDetail() {
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
+  const delAllMut = useMutation({
+    mutationFn: () => delAll({ data: { pageId: id } }),
+    onSuccess: (r) => {
+      toast.success(`Deleted ${r.deleted} pin${r.deleted === 1 ? "" : "s"}`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+
+
   const angles = useMemo(() => {
     if (!data) return [];
     // "Pin angles" reuses each brief's own title -- the short angle
