@@ -77,6 +77,8 @@ function PageDetail() {
   const analyze = useServerFn(analyzePage);
   const gen = useServerFn(generateBriefs);
   const renderPage = useServerFn(renderImagesForPage);
+  const delAll = useServerFn(deleteBriefsForPage);
+
 
   const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
 
