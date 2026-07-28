@@ -374,7 +374,7 @@ export function buildThemedPinPrompt(input: {
 
   return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
 
-${shape.visual_description}
+COMPOSITION GUIDANCE (internal art direction only -- describes the intended visual style and layout; never render this description, or any part of it, as literal text on the pin): ${shape.visual_description}
 
 GLOBAL BRAND RULES:
 - Palette only (these are color descriptions, not text -- never render any color name or code as a visible word, label, or UI element): ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
@@ -391,6 +391,7 @@ LOCKED LAYOUT:
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
 - Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
+- The ONLY text allowed anywhere on the pin is the title, the CTA text, and the URL bar host, exactly as quoted above -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
 
