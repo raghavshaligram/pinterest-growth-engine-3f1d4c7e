@@ -226,6 +226,7 @@ function PagesPage({ search }: { search: string }) {
             page={p}
             showIncludeAction={showExcluded}
             onInclude={() => toggleM.mutate({ pageId: p.id, excluded: false })}
+            onExclude={() => toggleM.mutate({ pageId: p.id, excluded: true })}
             pipelineRunning={pipelineM.isPending}
             isFirst={i === 0}
           />
@@ -357,11 +358,12 @@ function stageStatuses(p: PageRow, pipelineRunning: boolean) {
 }
 
 function PageRowItem({
-  page, showIncludeAction, onInclude, pipelineRunning, isFirst,
+  page, showIncludeAction, onInclude, onExclude, pipelineRunning, isFirst,
 }: {
   page: PageRow;
   showIncludeAction: boolean;
   onInclude: () => void;
+  onExclude: () => void;
   pipelineRunning: boolean;
   isFirst: boolean;
 }) {
@@ -406,7 +408,19 @@ function PageRowItem({
           Include
         </button>
       ) : (
-        <ChevronRight size={16} style={{ color: PIN.textMuted, flexShrink: 0 }} />
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); onExclude(); }}
+            style={{
+              fontFamily: PIN_FONT, fontSize: 12, fontWeight: 600, color: PIN.textSecondary,
+              background: "none", border: `1px solid ${PIN.border}`, borderRadius: 999, padding: "4px 10px", cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            Exclude
+          </button>
+          <ChevronRight size={16} style={{ color: PIN.textMuted, flexShrink: 0 }} />
+        </>
       )}
     </Link>
   );
