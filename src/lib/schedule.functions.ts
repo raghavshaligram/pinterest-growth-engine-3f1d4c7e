@@ -233,15 +233,23 @@ export const runFullPipeline = createServerFn({ method: "POST" })
       }
     }
 
-    // 3) Queue image jobs for briefs that have no image yet and no queued job
+    // 3) Queue image jobs for briefs that have no image yet and no queued job.
+    // Excludes briefs whose page has since been marked excluded -- this
+    // step (unlike steps 1/2 above) queries pin_briefs directly rather
+    // than starting from pages, so it needs its own exclusion check or a
+    // page excluded AFTER its briefs were generated would still get
+    // images rendered for it indefinitely.
+    const { data: excludedPages } = await supabaseAdmin
+      .from("pages").select("id").eq("user_id", context.userId).eq("excluded", true);
+    const excludedPageIds = new Set((excludedPages ?? []).map((p) => p.id));
     const { data: briefsNoImage } = await supabaseAdmin
       .from("pin_briefs")
-      .select("id, pin_images(id)")
+      .select("id, page_id, pin_images(id)")
       .eq("user_id", context.userId)
       .eq("status", "image_pending")
       .limit(data.maxImages * 2);
     const toQueue = (briefsNoImage ?? [])
-      .filter((b) => !((b as { pin_images?: unknown[] }).pin_images?.length))
+      .filter((b) => !((b as { pin_images?: unknown[] }).pin_images?.length) && !excludedPageIds.has(b.page_id))
       .slice(0, data.maxImages);
     if (toQueue.length) {
       // Skip briefs that already have a queued/running job

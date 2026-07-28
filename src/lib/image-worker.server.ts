@@ -47,7 +47,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
   if (!jobs?.length) return { processed: 0 };
 
 
-  let ok = 0, fail = 0;
+  let ok = 0, fail = 0, skipped = 0;
   const runOne = async (job: typeof jobs[number]) => {
     const payload = (job.payload ?? {}) as { brief_id?: string; force?: boolean };
     const briefId = payload.brief_id;
@@ -60,7 +60,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors, brand_font, vertical, image_provider))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_colors, brand_font, vertical, image_provider))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -73,10 +73,22 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       if (!brief) throw new Error("brief missing");
       const page = (brief as {
         pages?: {
-          url?: string; title?: string | null; analysis?: unknown;
+          url?: string; title?: string | null; analysis?: unknown; excluded?: boolean;
           sites?: { url?: string; brand_colors?: unknown; brand_font?: string | null; vertical?: SiteVertical | null; image_provider?: ImageProvider | null };
         };
       }).pages;
+
+      // Belt-and-suspenders: a page can be excluded after this job was
+      // already queued (or queued via a path that doesn't check
+      // exclusion, e.g. runFullPipeline's image-queueing step -- see the
+      // matching fix there). Never spend provider credits rendering a
+      // page the user explicitly opted out of. Leave the brief's own
+      // status untouched; just retire the job.
+      if (page?.excluded) {
+        await supabaseAdmin.from("jobs").update({ status: "done", last_error: "skipped: page excluded" }).eq("id", job.id);
+        skipped++;
+        return;
+      }
       const siteUrl = page?.sites?.url ?? page?.url ?? "";
       const brandHost = siteUrl ? new URL(siteUrl).hostname.replace(/^www\./, "") : "";
       const brandColors = Array.isArray(page?.sites?.brand_colors) ? page!.sites!.brand_colors as string[] : [];
@@ -194,5 +206,5 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       }
     }),
   );
-  return { processed: jobs.length, ok, fail };
+  return { processed: jobs.length, ok, fail, skipped };
 }
