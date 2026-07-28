@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
+import { describeColors } from "@/lib/color-naming";
 
 export const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
@@ -346,7 +347,11 @@ export function buildThemedPinPrompt(input: {
   const flavor = VERTICAL_FLAVOR_REGISTRY[vertical]?.[generationMode] ?? flavorFallback;
 
   const colors = input.brandColors?.filter(Boolean) ?? [];
-  const palette = colors.length ? colors.join(", ") : flavor.palette_fallback;
+  // Hex codes translated to plain-language color names before they ever
+  // reach the image model -- passing raw "#E60023" style strings caused
+  // the model to sometimes render the hex code itself as literal text
+  // on the pin. See color-naming.ts for the translation.
+  const palette = colors.length ? describeColors(colors) : flavor.palette_fallback;
   const cta = input.cta || "Read More →";
   const title = input.title.replace(/\s+/g, " ").trim();
   const topic = input.topic || input.primaryKeyword || title;
@@ -362,26 +367,30 @@ export function buildThemedPinPrompt(input: {
   if (input.trendSignal) {
     middle += ` Current trend signal: ${input.trendSignal}.`;
   }
+  // Defense-in-depth: strip any literal hex code that slipped into the
+  // LLM-authored middle prompt (image_prompt), on top of the palette
+  // already being translated above.
+  middle = middle.replace(/#[0-9a-fA-F]{3,8}\b/g, "").replace(/\s{2,}/g, " ").trim();
 
   return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
 
 ${shape.visual_description}
 
 GLOBAL BRAND RULES:
-- Palette only: ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
+- Palette only (these are color descriptions, not text -- never render any color name or code as a visible word, label, or UI element): ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
 - Typography: headline is ${typography}. Text must be large, correctly spelled, fully inside the canvas.
 - Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
 LOCKED LAYOUT:
-- Top 16-18% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
-- Middle 72-76% is the main themed visual: ${middle}
-- CTA appears as a small tasteful accent near the lower third only if it fits, exact text: "${cta}".
+- Top 14-16% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
+- Middle 58-64% is the main themed visual: ${middle}
+- CTA band spans the next 10-12%, directly below the main visual and above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
 - Bottom 5% is a full-width solid brand-color URL bar, flush to bottom, containing only centered light-colored small sans text: "${input.brandHost}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
 
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
-- Must not crop title, CTA, URL, card text, or panel images.
+- Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
 
@@ -454,8 +463,12 @@ Never mix pools. Never invent CTAs outside the pools. Vary CTAs across the batch
     // families) was both stale now that 11 shapes exist and would have
     // silently biased every LLM-written image_prompt toward garden
     // imagery regardless of the site's actual vertical.
+    // Closes the same indirect leak path as buildThemedPinPrompt's palette
+    // above -- this LLM call also sees brandColors, so it needs the same
+    // hex-to-name translation or a raw hex code could leak into
+    // LLM-authored copy/image_prompt text instead.
     const brandBlock = `Brand context:
-- Palette: ${brandColors.join(", ") || flavor.palette_fallback}.
+- Palette (color reference only -- never write these as literal words, codes, or labels in any generated copy): ${brandColors.length ? describeColors(brandColors) : flavor.palette_fallback}.
 ${brandFont ? `- Typography direction: ${brandFont}.\n` : ""}${brandNotes ? `- Brand notes: ${brandNotes}.\n` : ""}`;
 
     // Competitive-pattern signal: if a recent SERP sweep has already
