@@ -5,6 +5,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const SITE_TYPES = ["website", "etsy", "ecomm"] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
 
+// Which image-generation backend a site uses. Per-site (not account-wide
+// like Integrations) since it needs to sit alongside the other
+// generation-influencing brand settings (brand_colors/brand_font/vertical)
+// and different sites plausibly want different providers.
+export const IMAGE_PROVIDERS = ["replicate", "openai"] as const;
+export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
+
 // Supabase/PostgREST errors cross the server->client RPC boundary through
 // TanStack Start's ShallowErrorPlugin, which only preserves `.message` --
 // the `.code`/`.details`/`.hint` PostgrestError carries (e.g. "23502" for a
@@ -44,6 +51,9 @@ export type SiteOverviewRow = {
   brand_colors: string[] | null;
   brand_font: string | null;
   brand_notes: string | null;
+  // Defaults to 'replicate' at the DB level -- see the
+  // sites_image_provider migration -- so existing sites are unaffected.
+  image_provider: ImageProvider;
   created_at: string;
   // Computed, not stored -- see getSitesOverview.
   pageCount: number;
@@ -111,6 +121,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     id?: string; url: string; sitemap_url?: string; timezone?: string;
     site_type?: SiteType; brand_name?: string; tagline?: string;
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
+    image_provider?: ImageProvider;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -124,6 +135,7 @@ export const upsertSite = createServerFn({ method: "POST" })
       brand_colors: z.array(z.string()).optional(),
       brand_font: z.string().optional(),
       brand_notes: z.string().optional(),
+      image_provider: z.enum(IMAGE_PROVIDERS).optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

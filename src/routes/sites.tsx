@@ -2,7 +2,7 @@
 // (AppShell) so PinShell renders the Pinterest-native chrome, matching
 // Dashboard/Schedule/Boards. beforeLoad duplicates the _authenticated
 // route's auth guard; keep both in sync if that check ever changes.
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
@@ -22,8 +22,8 @@ import {
   Globe, Store, ShoppingBag, Trash2, RefreshCcw, ChevronDown, Plus, X, Check, BookOpen, Link2, Map,
 } from "lucide-react";
 import {
-  getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES,
-  type SiteOverviewRow, type SiteType,
+  getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS,
+  type SiteOverviewRow, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
@@ -222,6 +222,7 @@ function BrandEditorFields({
   brandColors, onToggleBrandColor, onRemoveLegacyColor,
   typography, onTypography,
   notes, onNotes,
+  imageProvider, onImageProvider,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
   previewHost = "www",
@@ -232,6 +233,7 @@ function BrandEditorFields({
   brandColors: string[]; onToggleBrandColor: (hex: string) => void; onRemoveLegacyColor: (hex: string) => void;
   typography: string; onTypography: (v: string) => void;
   notes: string; onNotes: (v: string) => void;
+  imageProvider: ImageProvider; onImageProvider: (v: ImageProvider) => void;
   advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
   previewHost?: string;
@@ -365,6 +367,23 @@ function BrandEditorFields({
           </div>
 
           <div>
+            <Label className="mb-2 block">Image generation provider</Label>
+            <Select value={imageProvider} onValueChange={(v) => onImageProvider(v as ImageProvider)}>
+              <SelectTrigger><SelectValue placeholder="Choose a provider" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="replicate">Replicate (Nano Banana)</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Requires the matching provider connected in{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">
+                Settings &rarr; Integrations
+              </Link>.
+            </p>
+          </div>
+
+          <div>
             <Label>Brand notes for image gen</Label>
             <Textarea rows={3} value={notes} onChange={(e) => onNotes(e.target.value)} placeholder="Warm editorial photography, minimal overlays, no stock illustrations." />
           </div>
@@ -390,6 +409,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
   const [brandColors, setBrandColors] = useState<string[]>([]);
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const createMut = useMutation({
@@ -404,6 +424,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
+        image_provider: imageProvider,
       },
     }),
     onSuccess: () => { toast.success("Site added"); onCreated(); },
@@ -519,6 +540,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
             onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
+            imageProvider={imageProvider} onImageProvider={setImageProvider}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
@@ -565,6 +587,7 @@ function SiteCard({
   const [brandColors, setBrandColors] = useState<string[]>(Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []);
   const [typography, setTypography] = useState(site.brand_font ?? "");
   const [notes, setNotes] = useState(site.brand_notes ?? "");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "replicate");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const saveMut = useMutation({
@@ -578,6 +601,7 @@ function SiteCard({
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
+        image_provider: imageProvider,
       },
     }),
     onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
@@ -678,6 +702,7 @@ function SiteCard({
               onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
               typography={typography} onTypography={setTypography}
               notes={notes} onNotes={setNotes}
+              imageProvider={imageProvider} onImageProvider={setImageProvider}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}
               previewHost={host}

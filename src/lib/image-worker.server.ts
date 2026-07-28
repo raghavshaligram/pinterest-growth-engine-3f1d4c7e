@@ -2,15 +2,24 @@
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
 import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
+import type { ImageProvider } from "@/lib/sites.functions";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { getIntegration, markIntegration } = await import("./integrations.server");
   const { replicatePredict } = await import("./replicate.server");
+  const { openaiGenerateImage } = await import("./openai-image.server");
   const { buildThemedPinPrompt } = await import("./briefs.functions");
 
-  const cfg = await getIntegration(userId, "replicate");
-  if (!cfg) return { processed: 0, note: "Replicate not configured" };
+  // Provider is now chosen per-site (sites.image_provider), so we can't
+  // gate the whole queue on a single provider's config the way this used
+  // to. Fetch both up front and only bail out entirely if NEITHER is
+  // configured; per-job provider checks below handle the rest.
+  const [replicateCfg, openaiCfg] = await Promise.all([
+    getIntegration(userId, "replicate"),
+    getIntegration(userId, "openai"),
+  ]);
+  if (!replicateCfg && !openaiCfg) return { processed: 0, note: "No image provider configured" };
 
   let briefIdFilter: string[] | null = null;
   if (opts?.briefId) {
@@ -43,11 +52,15 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     const payload = (job.payload ?? {}) as { brief_id?: string; force?: boolean };
     const briefId = payload.brief_id;
     if (!briefId) return;
+    // Declared here (not inside the try block) so the catch block below
+    // can report a failure against whichever provider was actually in
+    // play, even if the failure happened after provider resolution.
+    let provider: ImageProvider = "replicate";
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors, brand_font, vertical))")
+        .select("*, pages(url, title, analysis, site_id, sites(url, brand_colors, brand_font, vertical, image_provider))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -61,7 +74,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       const page = (brief as {
         pages?: {
           url?: string; title?: string | null; analysis?: unknown;
-          sites?: { url?: string; brand_colors?: unknown; brand_font?: string | null; vertical?: SiteVertical | null };
+          sites?: { url?: string; brand_colors?: unknown; brand_font?: string | null; vertical?: SiteVertical | null; image_provider?: ImageProvider | null };
         };
       }).pages;
       const siteUrl = page?.sites?.url ?? page?.url ?? "";
@@ -106,21 +119,40 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         }
       }
 
-      const pred = await replicatePredict({
-        token: cfg.api_token,
-        model: "google/nano-banana-2",
-        input: { prompt: themedPrompt, aspect_ratio: "2:3" },
-        maxWaitMs: 90_000,
-      });
-      const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
+      provider = page?.sites?.image_provider ?? "replicate";
 
-      const imgResp = await fetch(outUrl);
-      if (!imgResp.ok) throw new Error(`Replicate output download ${imgResp.status}`);
-      const bytes = new Uint8Array(await imgResp.arrayBuffer());
-      const contentType = imgResp.headers.get("content-type") ?? "image/png";
+      let imageBytes: Uint8Array;
+      let contentType: string;
+      let providerPredictionId: string;
+      let modelUsed: string;
+
+      if (provider === "openai") {
+        if (!openaiCfg) throw new Error("OpenAI not configured -- connect it in Settings > Integrations");
+        modelUsed = "gpt-image-1";
+        const result = await openaiGenerateImage({ apiKey: openaiCfg.api_key, model: modelUsed, prompt: themedPrompt });
+        imageBytes = result.imageBytes;
+        contentType = result.contentType;
+        providerPredictionId = result.id;
+      } else {
+        if (!replicateCfg) throw new Error("Replicate not configured -- connect it in Settings > Integrations");
+        modelUsed = "google/nano-banana-2";
+        const pred = await replicatePredict({
+          token: replicateCfg.api_token,
+          model: modelUsed,
+          input: { prompt: themedPrompt, aspect_ratio: "2:3" },
+          maxWaitMs: 90_000,
+        });
+        const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
+        const imgResp = await fetch(outUrl);
+        if (!imgResp.ok) throw new Error(`Replicate output download ${imgResp.status}`);
+        imageBytes = new Uint8Array(await imgResp.arrayBuffer());
+        contentType = imgResp.headers.get("content-type") ?? "image/png";
+        providerPredictionId = pred.id;
+      }
+
       const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
       const path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext}`;
-      const up = await supabaseAdmin.storage.from("pins").upload(path, bytes, { contentType, upsert: true });
+      const up = await supabaseAdmin.storage.from("pins").upload(path, imageBytes, { contentType, upsert: true });
       if (up.error) throw up.error;
 
       await supabaseAdmin.from("pin_images").insert({
@@ -128,12 +160,16 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         brief_id: brief.id,
         storage_path: path,
         prompt_hash: promptHash,
-        replicate_prediction_id: pred.id,
-        meta: { model: "google/nano-banana-2", content_type: contentType },
+        // Column predates multi-provider support; reused here to store
+        // whichever provider's generation id came back (OpenAI's is a
+        // locally-minted "openai:<timestamp>" id, not a real prediction
+        // id -- the actual provider is recorded in meta.provider below).
+        replicate_prediction_id: providerPredictionId,
+        meta: { model: modelUsed, provider, content_type: contentType },
       });
       await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
       await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);
-      await markIntegration(userId, "replicate", "ok");
+      await markIntegration(userId, provider, "ok");
       ok++;
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -142,7 +178,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       // status="image_pending" forever -- indistinguishable in the UI
       // from one that's still queued/rendering ("Waiting to render...").
       await supabaseAdmin.from("pin_briefs").update({ status: "failed" }).eq("id", briefId);
-      await markIntegration(userId, "replicate", "error", msg);
+      await markIntegration(userId, provider, "error", msg);
       fail++;
     }
   };
