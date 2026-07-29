@@ -50,6 +50,33 @@ export type Database = {
         }
         Relationships: []
       }
+      account_onboarding: {
+        Row: {
+          completed_at: string | null
+          dismissed_onboarding_prompt: boolean
+          has_completed_onboarding: boolean
+          skipped_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          dismissed_onboarding_prompt?: boolean
+          has_completed_onboarding?: boolean
+          skipped_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          dismissed_onboarding_prompt?: boolean
+          has_completed_onboarding?: boolean
+          skipped_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       account_publishing_profiles: {
         Row: {
           cap_mode: string
@@ -103,6 +130,7 @@ export type Database = {
           name: string
           pin_count: number
           pinterest_board_id: string | null
+          pinterest_connection_id: string | null
           site_ids: string[]
           synced_at: string | null
           topics: string[]
@@ -119,6 +147,7 @@ export type Database = {
           name: string
           pin_count?: number
           pinterest_board_id?: string | null
+          pinterest_connection_id?: string | null
           site_ids?: string[]
           synced_at?: string | null
           topics?: string[]
@@ -135,9 +164,48 @@ export type Database = {
           name?: string
           pin_count?: number
           pinterest_board_id?: string | null
+          pinterest_connection_id?: string | null
           site_ids?: string[]
           synced_at?: string | null
           topics?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "boards_pinterest_connection_id_fkey"
+            columns: ["pinterest_connection_id"]
+            isOneToOne: false
+            referencedRelation: "pinterest_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_connections: {
+        Row: {
+          connected_at: string
+          google_email: string | null
+          id: string
+          label: string
+          token_ciphertext: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          google_email?: string | null
+          id?: string
+          label?: string
+          token_ciphertext: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          google_email?: string | null
+          id?: string
+          label?: string
+          token_ciphertext?: string
           updated_at?: string
           user_id?: string
         }
@@ -461,6 +529,45 @@ export type Database = {
           },
         ]
       }
+      pinterest_connections: {
+        Row: {
+          connected_at: string
+          id: string
+          label: string
+          pinterest_username: string | null
+          publish_mode: string
+          refresh_token_expires_at: string | null
+          token_ciphertext: string
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          connected_at?: string
+          id?: string
+          label?: string
+          pinterest_username?: string | null
+          publish_mode?: string
+          refresh_token_expires_at?: string | null
+          token_ciphertext: string
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          connected_at?: string
+          id?: string
+          label?: string
+          pinterest_username?: string | null
+          publish_mode?: string
+          refresh_token_expires_at?: string | null
+          token_ciphertext?: string
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
       publish_logs: {
         Row: {
           at: string
@@ -639,7 +746,12 @@ export type Database = {
           brand_name: string | null
           brand_notes: string | null
           created_at: string
+          ga4_property_id: string | null
+          ga4_property_label: string | null
+          google_connection_id: string | null
           id: string
+          image_provider: string
+          pinterest_connection_id: string | null
           recent_styles: Json
           settings: Json
           site_type: Database["public"]["Enums"]["site_type"]
@@ -658,7 +770,12 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
+          ga4_property_id?: string | null
+          ga4_property_label?: string | null
+          google_connection_id?: string | null
           id?: string
+          image_provider?: string
+          pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
@@ -677,7 +794,12 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
+          ga4_property_id?: string | null
+          ga4_property_label?: string | null
+          google_connection_id?: string | null
           id?: string
+          image_provider?: string
+          pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
@@ -689,7 +811,22 @@ export type Database = {
           user_id?: string
           vertical?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sites_google_connection_id_fkey"
+            columns: ["google_connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sites_pinterest_connection_id_fkey"
+            columns: ["pinterest_connection_id"]
+            isOneToOne: false
+            referencedRelation: "pinterest_connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
