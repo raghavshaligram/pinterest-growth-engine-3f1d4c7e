@@ -223,7 +223,7 @@ const SHAPE_REGISTRY: ShapeRegistry = {
       default_middle_prompt: (topic) =>
         `A stylized mock tool interface for ${topic}: a rounded browser-chrome-framed card with 2-3 labeled input fields showing plausible sample values already entered, and one large highlighted result area below showing a computed answer -- make it look like a real calculator/tool that was just used, not a blank form or generic screenshot. Minimal text overlay beyond the field labels and result themselves.`,
       typography_direction: "clean modern UI sans, like a real app interface",
-      content_fit: "best for pages describing or centered on an interactive calculator/tool, where showing the tool in use is the strongest visual.",
+      content_fit: "best for any page centered on a SPECIFIC NAMED calculator, estimator, or interactive tool (e.g. a page titled or organized around a \"Compost Ratio Calculator\", \"Watering Schedule Estimator\", or similar) -- choose this over quote_stat_card or scale_comparison whenever the page's core value is USING a named tool to get a computed answer, not just stating one stat or comparing magnitudes on an axis. Most calculator/tool pages should land here, not in quote_stat_card or scale_comparison.",
     },
   },
 };
