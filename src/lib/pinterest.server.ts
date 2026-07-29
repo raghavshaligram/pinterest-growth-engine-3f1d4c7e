@@ -135,25 +135,30 @@ export async function fetchUserAccount(accessToken: string): Promise<PinterestAc
   };
 }
 
-// Builds the publisher for one user based on their stored Pinterest
-// integration. Defaults to direct-API publishing; publishes to the user's
-// own webhook_url instead only if they've explicitly opted into
-// publish_mode: "webhook" and saved a URL.
-export async function makePinterestClient(userId: string): Promise<PinterestClient> {
-  const { getIntegration } = await import("./integrations.server");
-  const cfg = await getIntegration(userId, "pinterest");
+// Builds the publisher for one SITE (not the account as a whole) --
+// resolves that site's mapped pinterest_connection_id, reads its
+// publish_mode/webhook_url, and (for API mode) gets a guaranteed-valid,
+// on-demand-refreshed access token scoped to that specific connection.
+// Replaces the old makePinterestClient(userId), which read one shared
+// account-wide `integrations` row regardless of which site was actually
+// publishing -- exactly the mechanism that made the site-isolation bug
+// possible in the first place. publisher.server.ts is the only caller,
+// and now calls this once per scheduled pin (resolving that pin's own
+// site), not once per batch.
+export async function makePinterestClientForSite(params: { siteId: string; userId: string }): Promise<PinterestClient> {
+  const { getPinterestConnectionForSite, getValidPinterestAccessToken } = await import("./pinterest-connections.server");
+  const conn = await getPinterestConnectionForSite(params.siteId, params.userId);
 
-  if (cfg?.publish_mode === "webhook") {
+  if (conn.publish_mode === "webhook") {
     return {
       mode: "webhook",
       publish: async (i) => {
-        const webhookUrl = cfg?.webhook_url;
-        if (!webhookUrl) {
+        if (!conn.webhook_url) {
           throw new Error(
-            'Webhook URL missing — add your Webhook URL in Settings → Integrations, or set publish_mode to "api" to publish directly instead.',
+            'Webhook URL missing for this site\'s Pinterest connection — add one in Settings → Integrations, or switch that connection to "api" mode to publish directly instead.',
           );
         }
-        return webhookPublish({ ...i, webhookUrl });
+        return webhookPublish({ ...i, webhookUrl: conn.webhook_url });
       },
     };
   }
@@ -161,12 +166,7 @@ export async function makePinterestClient(userId: string): Promise<PinterestClie
   return {
     mode: "api",
     publish: async (i) => {
-      const accessToken = cfg?.access_token;
-      if (!accessToken) {
-        throw new Error(
-          'Pinterest access token missing — connect Pinterest in Settings → Integrations, or set publish_mode to "webhook" to use your own automation instead.',
-        );
-      }
+      const accessToken = await getValidPinterestAccessToken(conn.connectionId, params.userId);
       return apiPublish({ ...i, accessToken });
     },
   };

@@ -1,11 +1,16 @@
-// Server-only. Multi-connection Pinterest token storage + the one-time
+// Server-only. Multi-connection Pinterest token storage, the one-time
 // lazy backfill of the pre-existing single `integrations` row into this
-// new table, plus the proactive refresh-token renewal job.
+// new table, the proactive refresh-token renewal job, AND (as of this
+// pass) the actual publish-time/board-sync-time token + publish_mode
+// resolution that makePinterestClient/syncPinterestBoards now go
+// through instead of the legacy account-wide `integrations` row.
 //
 // Read-through/write-through pattern mirrors google-analytics.server.ts's
-// getValidAccessToken closely, with one addition: refresh_token_expires_at
-// is a plain, queryable column (not buried in the encrypted blob) so the
-// background job can select rows nearing expiry directly in SQL.
+// getValidAccessToken closely, with two additions that live as plain
+// (unencrypted, queryable) columns rather than inside the encrypted
+// blob: refresh_token_expires_at (background job queries this directly)
+// and publish_mode/webhook_url (the publish pipeline and Settings UI
+// both need to read these without decrypting anything).
 import { decrypt, encrypt } from "./crypto.server";
 
 type StoredPinterestTokens = {
@@ -19,6 +24,8 @@ export type PinterestConnectionSummary = {
   label: string;
   pinterest_username: string | null;
   connected_at: string;
+  publish_mode: "api" | "webhook";
+  webhook_url: string | null;
 };
 
 // One-time, idempotent migration of the old single-account model into
@@ -33,19 +40,26 @@ export type PinterestConnectionSummary = {
 //
 // On first run for a user: copies the existing integrations row
 // (provider='pinterest') into a new pinterest_connections row (without
-// touching or deleting the original -- see the migration's own comment
-// on why publisher.server.ts/syncPinterestBoards still need it), then
-// maps every one of that user's EXISTING sites (as of this exact moment)
-// to the new connection, since under the old model every one of those
+// touching or deleting the original -- kept as historical data only at
+// this point; nothing else reads it anymore, see below), then maps
+// every one of that user's EXISTING sites (as of this exact moment) to
+// the new connection, since under the old model every one of those
 // sites was, in effect, already relying on it. Sites created after this
 // point get pinterest_connection_id = NULL by default, same as GA4.
 async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-  const { count } = await supabaseAdmin
+  const { count, error: countErr } = await supabaseAdmin
     .from("pinterest_connections")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId);
+  // A real error here (table not existing yet, a transient PostgREST
+  // schema-cache lag right after a migration ran, etc.) must NOT be
+  // silently treated as "0 rows, go ahead and migrate" -- that previously
+  // let this function fall through to an insert that would also fail,
+  // returning silently with nothing surfaced anywhere (looked like a
+  // permanent hang rather than a transient, self-healing condition).
+  if (countErr) throw countErr;
   if ((count ?? 0) > 0) return; // already migrated (or never had a legacy connection worth migrating)
 
   const { data: legacyRow } = await supabaseAdmin
@@ -56,7 +70,7 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
     .maybeSingle();
   if (!legacyRow) return; // nothing to migrate for this user
 
-  let legacyCfg: { access_token?: string; refresh_token?: string } = {};
+  let legacyCfg: { access_token?: string; refresh_token?: string; publish_mode?: "api" | "webhook"; webhook_url?: string } = {};
   try {
     legacyCfg = JSON.parse(decrypt(legacyRow.config_ciphertext));
   } catch {
@@ -67,9 +81,9 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
   // The legacy flow never tracked token expiry at all (see
   // integrations.server.ts's PinterestConfig -- no expires_at field), so
   // there's nothing real to carry over here. access_token_expires_at: 0
-  // means the very next on-demand read treats it as already-expired and
-  // due for a refresh, which is the safe default rather than guessing a
-  // validity window that was never actually recorded.
+  // means the very next read treats it as already-expired and due for a
+  // refresh, which is the safe default rather than guessing a validity
+  // window that was never actually recorded.
   const storedTokens: StoredPinterestTokens = {
     access_token: legacyCfg.access_token,
     refresh_token: legacyCfg.refresh_token ?? "",
@@ -84,11 +98,16 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
       token_ciphertext: encrypt(JSON.stringify(storedTokens)),
       // Unknown at migration time -- the background refresh job's own
       // "refresh_token_expires_at < now() + 7 days" check treats a NULL
-      // here the same way as an actually-near expiry (see its query
-      // below), so this migrated connection gets refreshed --and a real
-      // expiry populated-- on its very next scheduled run rather than
-      // silently never being checked.
+      // here the same way as an actually-near expiry, so this migrated
+      // connection gets refreshed --and a real expiry populated-- on its
+      // very next scheduled run rather than silently never being checked.
       refresh_token_expires_at: null,
+      // Carry over the real prior value instead of resetting to the
+      // 'api' column default -- an account that had deliberately opted
+      // into webhook mode shouldn't silently flip back to direct API
+      // publishing as a side effect of this restructure.
+      publish_mode: legacyCfg.publish_mode === "webhook" ? "webhook" : "api",
+      webhook_url: legacyCfg.webhook_url ?? null,
     })
     .select("id")
     .single();
@@ -110,21 +129,131 @@ export async function listPinterestConnectionsForUser(userId: string): Promise<P
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
     .from("pinterest_connections")
-    .select("id, label, pinterest_username, connected_at")
+    .select("id, label, pinterest_username, connected_at, publish_mode, webhook_url")
     .eq("user_id", userId)
     .order("connected_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
 
+// Shared by both the on-demand path (getValidPinterestAccessToken, called
+// at publish/sync time) and the proactive background job -- refreshes
+// via Pinterest's refresh grant and persists the new tokens + a real
+// refresh_token_expires_at, keeping the "how do we refresh and store it"
+// logic in exactly one place.
+async function refreshAndPersist(connectionId: string, refreshToken: string): Promise<StoredPinterestTokens> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { pinterestAppConfig, refreshPinterestToken } = await import("./pinterest-oauth.server");
+  const { appId, appSecret } = pinterestAppConfig();
+  const refreshed = await refreshPinterestToken({ appId, appSecret, refreshToken });
+  const now = Date.now();
+  const nextTokens: StoredPinterestTokens = {
+    access_token: refreshed.access_token,
+    refresh_token: refreshToken, // Pinterest doesn't rotate this on a normal refresh
+    access_token_expires_at: now + refreshed.expires_in * 1000,
+  };
+  const nextRefreshExpiresAt = refreshed.refresh_token_expires_in
+    ? new Date(now + refreshed.refresh_token_expires_in * 1000).toISOString()
+    : new Date(now + 60 * 24 * 60 * 60 * 1000).toISOString(); // conservative 60-day fallback if Pinterest omits it
+  await supabaseAdmin
+    .from("pinterest_connections")
+    .update({
+      token_ciphertext: encrypt(JSON.stringify(nextTokens)),
+      refresh_token_expires_at: nextRefreshExpiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", connectionId);
+  return nextTokens;
+}
+
+// On-demand check-and-refresh, used at actual publish/board-sync time --
+// this is the piece that was missing before this pass (publishing used
+// to just read whatever was stored, no refresh at all). Mirrors
+// google-analytics.server.ts's getValidAccessToken.
+export async function getValidPinterestAccessToken(connectionId: string, userId: string): Promise<string> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin
+    .from("pinterest_connections")
+    .select("id, token_ciphertext")
+    .eq("id", connectionId)
+    .eq("user_id", userId)
+    .single();
+  if (error || !data) throw new Error("Pinterest connection not found");
+
+  const tokens = JSON.parse(decrypt(data.token_ciphertext)) as StoredPinterestTokens;
+  const oneMinute = 60_000;
+  if (tokens.access_token_expires_at - Date.now() > oneMinute) {
+    return tokens.access_token;
+  }
+  if (!tokens.refresh_token) {
+    throw new Error("This Pinterest connection has no refresh token stored — reconnect it in Settings → Integrations.");
+  }
+  const refreshed = await refreshAndPersist(connectionId, tokens.refresh_token);
+  return refreshed.access_token;
+}
+
+export type SitePinterestConnection = {
+  connectionId: string;
+  publish_mode: "api" | "webhook";
+  webhook_url: string | null;
+};
+
+// Resolves which Pinterest connection a SITE (not the account as a
+// whole) actually publishes through -- the core of this pass's rewire.
+// Throws a clear, actionable error if the site has no mapping yet,
+// rather than silently falling back to any other connection the account
+// might happen to have (that would just reintroduce the original
+// cross-site leak in a new form).
+export async function getPinterestConnectionForSite(siteId: string, userId: string): Promise<SitePinterestConnection> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: site, error: siteErr } = await supabaseAdmin
+    .from("sites")
+    .select("id, pinterest_connection_id")
+    .eq("id", siteId)
+    .eq("user_id", userId)
+    .single();
+  if (siteErr || !site) throw new Error("Site not found");
+  if (!site.pinterest_connection_id) {
+    throw new Error(
+      "This site isn't mapped to a Pinterest account yet — map it in the site's Connections section on the Sites page.",
+    );
+  }
+  const { data: conn, error: connErr } = await supabaseAdmin
+    .from("pinterest_connections")
+    .select("id, publish_mode, webhook_url")
+    .eq("id", site.pinterest_connection_id)
+    .eq("user_id", userId)
+    .single();
+  if (connErr || !conn) {
+    throw new Error("This site's mapped Pinterest connection no longer exists — re-map it in the site's Connections section.");
+  }
+  return { connectionId: conn.id, publish_mode: conn.publish_mode, webhook_url: conn.webhook_url };
+}
+
+export const setPinterestConnectionPublishModeAndWebhook = async (
+  connectionId: string,
+  userId: string,
+  publish_mode: "api" | "webhook",
+  webhook_url: string | null,
+) => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin
+    .from("pinterest_connections")
+    .update({ publish_mode, webhook_url, updated_at: new Date().toISOString() })
+    .eq("id", connectionId)
+    .eq("user_id", userId);
+  if (error) throw error;
+};
+
 // Proactive renewal -- called by the cron/pinterest-token-refresh.ts
-// route, not on-demand at publish time (this task doesn't rewire
-// publish-time token resolution -- see the migration's own comment).
-// Refreshes every connection whose refresh_token_expires_at is within 7
-// days (including NULL, i.e. never-yet-checked rows like a freshly
-// backfilled legacy connection), so a real expiry gets populated and
-// refreshed well before Pinterest's ~60-day inactivity window would
-// otherwise let the refresh_token itself go stale.
+// route, not on-demand at publish time (on-demand is
+// getValidPinterestAccessToken above, now actually wired into the
+// publish pipeline as of this pass). Refreshes every connection whose
+// refresh_token_expires_at is within 7 days (including NULL, i.e.
+// never-yet-checked rows like a freshly backfilled legacy connection),
+// so a real expiry gets populated and refreshed well before Pinterest's
+// ~60-day inactivity window would otherwise let the refresh_token itself
+// go stale.
 export async function refreshPinterestConnectionsNearingExpiry(): Promise<{
   checked: number;
   refreshed: number;
@@ -139,8 +268,6 @@ export async function refreshPinterestConnectionsNearingExpiry(): Promise<{
   if (error) throw error;
 
   const { getErrorMessage } = await import("./error-message");
-  const { pinterestAppConfig, refreshPinterestToken } = await import("./pinterest-oauth.server");
-  const { appId, appSecret } = pinterestAppConfig();
 
   let refreshed = 0;
   const errors: { id: string; message: string }[] = [];
@@ -148,24 +275,7 @@ export async function refreshPinterestConnectionsNearingExpiry(): Promise<{
     try {
       const tokens = JSON.parse(decrypt(row.token_ciphertext)) as StoredPinterestTokens;
       if (!tokens.refresh_token) throw new Error("No refresh_token stored for this connection");
-      const refreshed_ = await refreshPinterestToken({ appId, appSecret, refreshToken: tokens.refresh_token });
-      const now = Date.now();
-      const nextTokens: StoredPinterestTokens = {
-        access_token: refreshed_.access_token,
-        refresh_token: tokens.refresh_token, // Pinterest doesn't rotate this on a normal refresh
-        access_token_expires_at: now + refreshed_.expires_in * 1000,
-      };
-      const nextRefreshExpiresAt = refreshed_.refresh_token_expires_in
-        ? new Date(now + refreshed_.refresh_token_expires_in * 1000).toISOString()
-        : new Date(now + 60 * 24 * 60 * 60 * 1000).toISOString(); // conservative 60-day fallback if Pinterest omits it
-      await supabaseAdmin
-        .from("pinterest_connections")
-        .update({
-          token_ciphertext: encrypt(JSON.stringify(nextTokens)),
-          refresh_token_expires_at: nextRefreshExpiresAt,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", row.id);
+      await refreshAndPersist(row.id, tokens.refresh_token);
       refreshed++;
     } catch (e) {
       errors.push({ id: row.id, message: getErrorMessage(e) });

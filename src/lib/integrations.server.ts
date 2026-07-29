@@ -4,6 +4,15 @@ import { decrypt } from "./crypto.server";
 export type OpenAIConfig = { api_key: string };
 export type ReplicateConfig = { api_token: string };
 export type ApifyConfig = { api_token: string; actor_id?: string };
+// Legacy single-account shape -- still written by the original OAuth
+// flow (PinterestConnectButton/startPinterestOAuth, mode: "legacy" in
+// pinterest-oauth.server.ts's signState) that the onboarding wizard's
+// Pinterest step still uses. No longer read by actual publishing or
+// board syncing though -- those now resolve per-site/per-connection via
+// pinterest-connections.server.ts (getPinterestConnectionForSite /
+// getValidPinterestAccessToken), which is also what the one-time lazy
+// backfill (pinterest-connections.server.ts) reads this row through to
+// migrate it into a real pinterest_connections row.
 export type PinterestConfig = {
   // Populated from Pinspider's shared OAuth app (see pinterest-oauth.server.ts
   // :pinterestAppConfig) once the user authorizes via Connect Pinterest.
@@ -12,9 +21,10 @@ export type PinterestConfig = {
   // PINTEREST_REDIRECT_URI), never stored per user.
   access_token?: string;
   refresh_token?: string;
-  // "api" (default, direct Pinterest v5 publishing) or "webhook" (routes
-  // through the user's own automation URL below). See
-  // pinterest.server.ts:makePinterestClient.
+  // "api" (default, direct Pinterest v5 publishing) or "webhook". Only
+  // read from here by the lazy backfill now (to carry the prior value
+  // into the new per-connection column) -- actual publishing reads
+  // publish_mode from pinterest_connections instead.
   publish_mode?: "api" | "webhook";
   // Only used when publish_mode is "webhook" — the user's own automation
   // endpoint (e.g. a Make.com or Zapier catch hook).

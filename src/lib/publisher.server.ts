@@ -1,9 +1,18 @@
 import { getErrorMessage } from "@/lib/error-message";
-// Server-only publisher. Publishes due pins via the user's Pinterest client
-// (direct API by default, Make.com webhook if the user opted into publish_mode: "webhook").
+// Server-only publisher. Publishes due pins via the SITE's own mapped
+// Pinterest connection (direct API by default, or that connection's own
+// webhook if it's set to publish_mode: "webhook") -- resolved per
+// scheduled pin, not once for the whole batch, since different pins in
+// the same batch can belong to different sites mapped to different
+// Pinterest connections. Previously this read one account-wide
+// `integrations` row for the entire batch regardless of site, which was
+// the actual root cause of the site-isolation bug (a site's pins would
+// silently publish through whichever Pinterest account the account
+// happened to have connected, not necessarily the one that site was
+// meant to use).
 export async function processDuePinsForUser(userId: string, limit = 25, onlyId?: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { makePinterestClient } = await import("./pinterest.server");
+  const { makePinterestClientForSite } = await import("./pinterest.server");
   const nowIso = new Date().toISOString();
   let q = supabaseAdmin
     .from("scheduled_pins")
@@ -17,7 +26,6 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
   if (error) throw error;
   if (!due?.length) return { processed: 0 };
 
-  const client = await makePinterestClient(userId);
   let ok = 0, fail = 0;
   // No publish mode produces "exported" results anymore (dead "export" mode
   // removed), but the field is kept at 0 for compatibility with schedule.tsx's
@@ -27,10 +35,17 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
   for (const sp of due) {
     try {
       await supabaseAdmin.from("scheduled_pins").update({ status: "publishing", attempts: sp.attempts + 1 }).eq("id", sp.id);
-      const { data: brief } = await supabaseAdmin.from("pin_briefs").select("*, pages(url)").eq("id", sp.brief_id).single();
+      // pages(url, site_id) -- site_id is what resolves this specific
+      // pin's Pinterest connection below; url is still the destination
+      // link's source, same as before.
+      const { data: brief } = await supabaseAdmin.from("pin_briefs").select("*, pages(url, site_id)").eq("id", sp.brief_id).single();
       const { data: img } = await supabaseAdmin.from("pin_images").select("*").eq("id", sp.image_id!).single();
       const { data: board } = await supabaseAdmin.from("boards").select("*").eq("id", sp.board_id!).single();
       if (!brief || !img || !board) throw new Error("Missing brief/image/board");
+
+      const siteId = (brief as { pages?: { site_id?: string } }).pages?.site_id;
+      if (!siteId) throw new Error("Could not resolve which site this pin belongs to");
+      const client = await makePinterestClientForSite({ siteId, userId });
 
       const signed = await supabaseAdmin.storage.from("pins").createSignedUrl(img.storage_path, 60 * 60 * 24);
       const imageUrl = signed.data?.signedUrl;
@@ -42,7 +57,7 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       // Pinterest 400.
       if (client.mode === "api" && !board.pinterest_board_id) {
         throw new Error(
-          'Board is not linked to a Pinterest board — run "Sync boards" in Settings → Integrations, or set publish_mode to "webhook" for this account.',
+          'Board is not linked to a Pinterest board — run "Sync boards" on the Boards page, or switch this site\'s Pinterest connection to "webhook" mode in Settings → Integrations.',
         );
       }
 

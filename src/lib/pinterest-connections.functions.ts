@@ -45,6 +45,25 @@ export const renamePinterestConnection = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Publish mode lives per-connection, not per-site or account-wide (see
+// the pinterest_connections_publish_mode migration's own comment for
+// why) -- this is what the new per-connection UI in
+// PinterestConnectionsCard saves through.
+export const setPinterestConnectionPublishMode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string; publish_mode: "api" | "webhook"; webhook_url?: string | null }) =>
+    z.object({
+      id: z.string().uuid(),
+      publish_mode: z.enum(["api", "webhook"]),
+      webhook_url: z.string().url().nullable().optional(),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const { setPinterestConnectionPublishModeAndWebhook } = await import("./pinterest-connections.server");
+    await setPinterestConnectionPublishModeAndWebhook(data.id, context.userId, data.publish_mode, data.webhook_url ?? null);
+    return { ok: true };
+  });
+
 // Disconnecting a connection any site currently maps to leaves that
 // site's pinterest_connection_id nulled via the FK's ON DELETE SET NULL
 // (see the migration) -- the site's Connections card then reads a null

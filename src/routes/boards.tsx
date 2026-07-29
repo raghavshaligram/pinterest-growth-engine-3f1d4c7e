@@ -64,7 +64,12 @@ function BoardsPage({ search }: { search: string }) {
   const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
 
   const syncMut = useMutation({
-    mutationFn: () => sync(),
+    // syncPinterestBoards now takes an optional connectionId (defaults to
+    // the user's oldest Pinterest connection -- see its own comment on
+    // why this button doesn't yet have a per-connection picker) -- pass
+    // an explicit empty data payload rather than calling with no
+    // arguments at all, now that it has a real inputValidator.
+    mutationFn: () => sync({ data: {} }),
     onSuccess: (r) => {
       toast.success(`Synced ${r.total} boards from Pinterest (${r.created} new, ${r.updated} updated)`);
       qc.invalidateQueries({ queryKey: ["boards"] });

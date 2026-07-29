@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { getErrorMessage } from "@/lib/error-message";
 
 export const listBoards = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -68,73 +67,89 @@ export const deleteBoard = createServerFn({ method: "POST" })
   });
 
 // Pull the user's Pinterest boards via API v5 and upsert them.
+//
+// connectionId is optional -- if omitted, defaults to the user's oldest
+// pinterest_connections row (arbitrary but deterministic), since the
+// Boards page's single "Sync boards" button doesn't yet have a way to
+// pick which connection to sync from (a real gap for accounts with
+// multiple Pinterest connections -- synced boards still land in one
+// shared per-user pool with no record of which connection produced
+// them; picking which connection to sync, and tagging boards with their
+// origin, is a follow-up beyond this pass's scope, same as flagged when
+// pinterest_connections was first introduced). Previously this read the
+// single legacy `integrations` row directly with no refresh logic at
+// all -- now goes through getValidPinterestAccessToken, which
+// transparently refreshes an expired token instead of failing.
 export const syncPinterestBoards = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { requireIntegration, markIntegration } = await import("./integrations.server");
+  .inputValidator((i: { connectionId?: string } | undefined) =>
+    z.object({ connectionId: z.string().uuid().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const pin = await requireIntegration(context.userId, "pinterest");
-    const token = pin.access_token;
-    if (!token) throw new Error("Pinterest access token missing — reconnect Pinterest in Settings → Integrations.");
+    const { listPinterestConnectionsForUser, getValidPinterestAccessToken } = await import("./pinterest-connections.server");
 
-    try {
-      // Paginate through /v5/boards
-      type PBoard = {
-        id: string; name: string; description?: string; pin_count?: number;
-        media?: { image_cover_url?: string };
-      };
-      const boards: PBoard[] = [];
-      let bookmark: string | undefined;
-      let guard = 0;
-      do {
-        const url = new URL("https://api.pinterest.com/v5/boards");
-        url.searchParams.set("page_size", "100");
-        if (bookmark) url.searchParams.set("bookmark", bookmark);
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!r.ok) throw new Error(`Pinterest ${r.status}: ${await r.text()}`);
-        const j = await r.json() as { items: PBoard[]; bookmark?: string };
-        boards.push(...(j.items ?? []));
-        bookmark = j.bookmark;
-        guard++;
-      } while (bookmark && guard < 20);
-
-      // Upsert. Preserve existing site_ids / topics / keywords by using onConflict on the
-      // unique index (user_id, pinterest_board_id) and only setting sync-owned fields.
-      const now = new Date().toISOString();
-      let created = 0;
-      let updated = 0;
-      for (const b of boards) {
-        const { data: existing } = await supabaseAdmin
-          .from("boards").select("id").eq("user_id", context.userId).eq("pinterest_board_id", b.id).maybeSingle();
-        if (existing) {
-          await supabaseAdmin.from("boards").update({
-            name: b.name,
-            description: b.description ?? null,
-            image_url: b.media?.image_cover_url ?? null,
-            pin_count: b.pin_count ?? 0,
-            synced_at: now,
-          }).eq("id", existing.id);
-          updated++;
-        } else {
-          await supabaseAdmin.from("boards").insert({
-            user_id: context.userId,
-            name: b.name,
-            pinterest_board_id: b.id,
-            description: b.description ?? null,
-            image_url: b.media?.image_cover_url ?? null,
-            pin_count: b.pin_count ?? 0,
-            synced_at: now,
-          });
-          created++;
-        }
+    let connectionId = data.connectionId;
+    if (!connectionId) {
+      const connections = await listPinterestConnectionsForUser(context.userId);
+      if (!connections.length) {
+        throw new Error("No Pinterest account connected yet — connect one in Settings → Integrations first.");
       }
-      await markIntegration(context.userId, "pinterest", "ok");
-      return { created, updated, total: boards.length };
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await markIntegration(context.userId, "pinterest", "error", msg);
-      throw e;
+      connectionId = connections[0].id;
     }
+    const token = await getValidPinterestAccessToken(connectionId, context.userId);
+
+    // Paginate through /v5/boards
+    type PBoard = {
+      id: string; name: string; description?: string; pin_count?: number;
+      media?: { image_cover_url?: string };
+    };
+    const boards: PBoard[] = [];
+    let bookmark: string | undefined;
+    let guard = 0;
+    do {
+      const url = new URL("https://api.pinterest.com/v5/boards");
+      url.searchParams.set("page_size", "100");
+      if (bookmark) url.searchParams.set("bookmark", bookmark);
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(`Pinterest ${r.status}: ${await r.text()}`);
+      const j = await r.json() as { items: PBoard[]; bookmark?: string };
+      boards.push(...(j.items ?? []));
+      bookmark = j.bookmark;
+      guard++;
+    } while (bookmark && guard < 20);
+
+    // Upsert. Preserve existing site_ids / topics / keywords by using onConflict on the
+    // unique index (user_id, pinterest_board_id) and only setting sync-owned fields.
+    const now = new Date().toISOString();
+    let created = 0;
+    let updated = 0;
+    for (const b of boards) {
+      const { data: existing } = await supabaseAdmin
+        .from("boards").select("id").eq("user_id", context.userId).eq("pinterest_board_id", b.id).maybeSingle();
+      if (existing) {
+        await supabaseAdmin.from("boards").update({
+          name: b.name,
+          description: b.description ?? null,
+          image_url: b.media?.image_cover_url ?? null,
+          pin_count: b.pin_count ?? 0,
+          synced_at: now,
+        }).eq("id", existing.id);
+        updated++;
+      } else {
+        await supabaseAdmin.from("boards").insert({
+          user_id: context.userId,
+          name: b.name,
+          pinterest_board_id: b.id,
+          description: b.description ?? null,
+          image_url: b.media?.image_cover_url ?? null,
+          pin_count: b.pin_count ?? 0,
+          synced_at: now,
+        });
+        created++;
+      }
+    }
+    return { created, updated, total: boards.length };
   });
 
 // Score a set of terms against a board's text signals. Simple word-overlap match:
