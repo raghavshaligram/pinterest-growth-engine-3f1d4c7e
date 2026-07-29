@@ -500,82 +500,83 @@ function BrandDisplayFields({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border p-3">
-      <Label className="mb-0 block">
-        Brand display <span className="font-normal text-muted-foreground">how pins show your brand in the URL bar</span>
-      </Label>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+    <div className="space-y-2.5 rounded-lg border border-border p-2.5">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
           {previewUrl ? (
             <img src={previewUrl} alt="Logo" className="h-full w-full object-contain" />
           ) : (
-            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+            <ImageIcon className="h-4 w-4 text-muted-foreground" />
           )}
         </div>
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
-            />
-            <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-              {uploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
-              {logoPath ? "Change logo" : "Upload logo"}
-            </Button>
-            {logoPath && (
-              <button type="button" onClick={() => onLogoChange(null)} className="text-xs text-muted-foreground hover:text-destructive">
-                Remove
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">PNG, JPG, WebP, or SVG.</p>
-        </div>
+        <Label className="mb-0 flex-1 text-xs font-medium leading-tight text-muted-foreground">
+          Brand display -- how pins show your brand in the URL bar
+        </Label>
+        <input
+          ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
+        />
+        <Button
+          type="button" size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs"
+          onClick={() => fileInputRef.current?.click()} disabled={uploading}
+          title="PNG, JPG, WebP, or SVG"
+        >
+          {uploading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
+          {logoPath ? "Change" : "Upload"}
+        </Button>
+        {logoPath && (
+          <button type="button" onClick={() => onLogoChange(null)} className="shrink-0 text-xs text-muted-foreground hover:text-destructive">
+            Remove
+          </button>
+        )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Show in URL bar</div>
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        <div className="min-w-0">
+          <div className="mb-1 text-[11px] font-medium text-muted-foreground">Show in URL bar</div>
           <div className="flex gap-1.5">
             {BRAND_DISPLAY_MODES.map((mode) => {
               const active = displayMode === mode;
               const disabled = mode === "logo" && !logoPath;
+              const label = mode === "logo" ? "Logo" : "Brand text";
               return (
                 <button
                   key={mode} type="button"
                   disabled={disabled}
-                  title={disabled ? "Upload a logo first" : undefined}
+                  title={disabled ? "Upload a logo first" : label}
                   onClick={() => onDisplayMode(mode)}
-                  className="flex-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
                 >
-                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
-                  {mode === "logo" ? "Logo" : "Brand text"}
+                  {active && <Check className="mr-1 inline h-3 w-3 shrink-0" style={{ color: "#E60023" }} />}
+                  {label}
                 </button>
               );
             })}
           </div>
           {displayMode === "logo" && !logoPath && (
-            <p className="mt-1 text-[11px] text-amber-700">No logo uploaded yet -- pins will show brand text until you add one.</p>
+            <p className="mt-1 text-[10.5px] leading-snug text-amber-700">Falls back to brand text until a logo's uploaded.</p>
           )}
         </div>
 
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Text shows</div>
+        <div className="min-w-0">
+          <div className="mb-1 text-[11px] font-medium text-muted-foreground">Text shows</div>
           <div className="flex gap-1.5">
             {BRAND_NAME_MODES.map((mode) => {
               const active = nameMode === mode;
+              const label = mode === "brand_name" ? (brandName || "Brand name") : previewHost;
               return (
                 <button
                   key={mode} type="button"
                   disabled={displayMode === "logo" && Boolean(logoPath)}
+                  title={label}
                   onClick={() => onNameMode(mode)}
-                  className="flex-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
                 >
-                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
-                  {mode === "brand_name" ? (brandName || "Brand name") : previewHost}
+                  {active && <Check className="mr-1 inline h-3 w-3 shrink-0" style={{ color: "#E60023" }} />}
+                  {label}
                 </button>
               );
             })}
