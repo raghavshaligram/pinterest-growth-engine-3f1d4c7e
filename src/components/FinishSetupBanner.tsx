@@ -6,11 +6,21 @@
 // banner can never disagree with what the wizard or the gate hook think
 // is true.
 //
-// Dismiss is per-browser-session only (sessionStorage, not a DB write)
-// -- reappears next time the app is opened, same tradeoff
+// Only ever shows once the user has explicitly clicked "Skip setup" (or
+// finished the wizard) -- dismissedOnboarding, persisted server-side --
+// AND onboarding still isn't genuinely complete (isFullyOnboarded,
+// which unlike readyToGenerate also requires first_batch, so this can't
+// go quiet just because site/brand/OpenAI are done while no pins have
+// actually been generated yet). Someone who's never seen the wizard at
+// all wouldn't hit this banner anyway -- PinShell's
+// OnboardingRedirectGuard would already have sent them into it.
+//
+// The per-session dismiss below (sessionStorage, not a DB write) is a
+// separate, softer thing on top of that -- reappears next time the app
+// is opened even if onboarding is still incomplete, same tradeoff
 // SiteProvider's own localStorage-backed selection makes for
 // non-critical UI state. It also just stops rendering entirely, with no
-// dismiss needed, once readyToGenerate flips true -- no manual toggle.
+// dismiss needed, once isFullyOnboarded flips true -- no manual toggle.
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
@@ -28,7 +38,7 @@ export function FinishSetupBanner() {
     setDismissed(typeof window !== "undefined" && window.sessionStorage.getItem(DISMISS_KEY) === "1");
   }, []);
 
-  if (!data || data.readyToGenerate || dismissed) return null;
+  if (!data || !data.dismissedOnboarding || data.isFullyOnboarded || dismissed) return null;
 
   const missing = SETUP_STEPS.filter((s) => !s.optional && !data.steps[s.id]);
   if (!missing.length) return null;

@@ -80,18 +80,36 @@ const REQUIRED_FOR_GENERATION: readonly SetupStepId[] = ["site_connected", "bran
 
 export type SetupStatus = {
   steps: Record<SetupStepId, boolean>;
-  hasCompletedOnboarding: boolean;
   // True once every REQUIRED_FOR_GENERATION step is done -- what the
-  // Finish-setup banner and the gate hook key off of. Doesn't include
-  // first_batch (that's the thing the gated actions are for) or
-  // pinterest_connected (optional).
+  // gate hook (useSetupGate) keys off of to decide whether a pipeline
+  // action may run. Doesn't include first_batch (that's the thing the
+  // gated actions are FOR) or pinterest_connected (optional).
   readyToGenerate: boolean;
   // True once first_batch is also done -- what the empty-state
   // Dashboard uses to decide whether to show the real masonry feed.
   hasFirstBatch: boolean;
-  // First not-yet-done required step, in wizard order -- null once
-  // readyToGenerate is true. Used to send a gated action straight back
-  // into the wizard at the right step instead of always step 1.
+  // True once every NON-optional step is done, i.e. readyToGenerate AND
+  // hasFirstBatch -- "onboarding is genuinely complete." Always computed
+  // live from real data, never a stored flag, so it can't drift out of
+  // sync with reality the way a one-time "mark complete" write could.
+  // Deliberately does NOT require pinterest_connected (optional forever,
+  // even once "done").
+  isFullyOnboarded: boolean;
+  // The ONE thing that actually needs to persist: whether the user
+  // explicitly clicked "Skip setup" (or finished the wizard) at some
+  // point. This -- not isFullyOnboarded -- is what suppresses the
+  // forced auto-redirect-into-the-wizard on future logins; the
+  // Finish-setup banner shows precisely when this is true AND
+  // isFullyOnboarded is still false.
+  dismissedOnboarding: boolean;
+  // First not-yet-done step in wizard order, walking ALL steps
+  // including optional ones (pinterest_connected) -- so an account
+  // that's done everything required but still has an unanswered
+  // Pinterest age-bucket question correctly resumes there, instead of
+  // that gap being invisible because it's "only" optional. Gating logic
+  // (useSetupGate) only ever consults this when readyToGenerate is
+  // false, so returning an optional step's wizardStep here can never
+  // force-block a pipeline action on something optional -- see firstMissing().
   firstMissingWizardStep: 1 | 2 | 3 | 4 | null;
 };
 
@@ -129,10 +147,12 @@ async function hasOpenAiCredential(userId: string): Promise<boolean> {
 }
 
 function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | null {
-  for (const stepId of REQUIRED_FOR_GENERATION) {
-    if (!steps[stepId]) {
-      return SETUP_STEPS.find((s) => s.id === stepId)!.wizardStep as 1 | 2 | 3;
-    }
+  // Every step, in wizard order, optional included -- see the
+  // firstMissingWizardStep doc comment above for why optional steps
+  // still need to participate here even though they never block
+  // readyToGenerate/the gate.
+  for (const step of SETUP_STEPS) {
+    if (!steps[step.id]) return step.wizardStep;
   }
   return null;
 }
@@ -142,11 +162,12 @@ export const getSetupStatus = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SetupStatus> => {
     const s = context.supabase;
 
-    const [sitesRes, integrationsRes, imagesRes, onboardingRes, openaiConnected] = await Promise.all([
+    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, openaiConnected] = await Promise.all([
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
-      s.from("account_onboarding").select("has_completed_onboarding").eq("user_id", context.userId).maybeSingle(),
+      s.from("account_onboarding").select("dismissed_onboarding_prompt").eq("user_id", context.userId).maybeSingle(),
+      s.from("account_publishing_profiles").select("user_id").eq("user_id", context.userId).maybeSingle(),
       hasOpenAiCredential(context.userId),
     ]);
 
@@ -158,9 +179,18 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     // unlike openai/replicate, whose status only ever changes via the
     // explicit "Test" button, so status is the right signal here, not
     // has_value (which pinterest doesn't even expose a form field for).
-    const pinterestConnected = (integrationsRes.data ?? []).some(
+    const pinterestOAuthOk = (integrationsRes.data ?? []).some(
       (r: { provider: string; status: string }) => r.provider === "pinterest" && r.status === "ok",
     );
+    // "Connected" also requires the self-reported age-bucket question to
+    // have been answered (account_publishing_profiles row exists) -- an
+    // account can have a working Pinterest OAuth token from months ago
+    // and still never have gone through that prompt (it shipped later
+    // than Pinterest connect did). Bundling both here is what lets the
+    // wizard correctly resume on "just the age-bucket question" for an
+    // account that already did everything else, instead of treating
+    // Pinterest as fully done the moment the token exists.
+    const pinterestConnected = pinterestOAuthOk && Boolean(publishingProfileRes.data);
     const firstBatch = (imagesRes.count ?? 0) > 0;
 
     const steps: Record<SetupStepId, boolean> = {
@@ -172,22 +202,30 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     };
 
     const readyToGenerate = REQUIRED_FOR_GENERATION.every((id) => steps[id]);
+    const isFullyOnboarded = readyToGenerate && firstBatch;
 
     return {
       steps,
-      hasCompletedOnboarding: onboardingRes.data?.has_completed_onboarding ?? false,
       readyToGenerate,
       hasFirstBatch: firstBatch,
+      isFullyOnboarded,
+      dismissedOnboarding: onboardingRes.data?.dismissed_onboarding_prompt ?? false,
       firstMissingWizardStep: firstMissing(steps),
     };
   });
 
 // Called when the wizard's Completion step (step 5) is reached, or when
-// "Skip setup" is clicked at any point -- either way stops the
-// auto-redirect-on-first-login (see PinShell.tsx). Real step completion
-// is always recomputed live by getSetupStatus, never stored here, so a
-// skip can never make the app think something's done that isn't.
-export const markOnboardingDone = createServerFn({ method: "POST" })
+// "Skip setup" is clicked at any point -- either way persists
+// dismissed_onboarding_prompt=true, the one flag that suppresses the
+// forced auto-redirect-into-the-wizard on future logins (see
+// PinShell.tsx:OnboardingRedirectGuard). Deliberately does NOT claim
+// onboarding is "complete" -- isFullyOnboarded is always recomputed live
+// from real data by getSetupStatus, so a skip (or an early Finish click,
+// before generation has actually produced anything yet) can never make
+// the app think something's done that isn't. completed_at/skipped_at
+// are kept purely for the distinct timestamp each reason represents,
+// not as something read back to decide anything.
+export const dismissOnboardingPrompt = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { reason: "completed" | "skipped" }) =>
     z.object({ reason: z.enum(["completed", "skipped"]) }).parse(i),
@@ -198,7 +236,7 @@ export const markOnboardingDone = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("account_onboarding").upsert(
       {
         user_id: context.userId,
-        has_completed_onboarding: true,
+        dismissed_onboarding_prompt: true,
         completed_at: data.reason === "completed" ? now : undefined,
         skipped_at: data.reason === "skipped" ? now : undefined,
         updated_at: now,
@@ -209,15 +247,18 @@ export const markOnboardingDone = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// Lets Settings offer "Restart setup guide" -- re-running the wizard
-// (e.g. to connect Pinterest later) shouldn't require clearing real data,
-// just the one flag that stops the auto-redirect.
-export const resetOnboarding = createServerFn({ method: "POST" })
+// Lets Settings' "Setup guide" link re-arm the forced auto-redirect for
+// future logins if the account still isn't fully onboarded -- re-running
+// the wizard from there shouldn't require clearing any real data, just
+// this one suppression flag. Not currently wired to any UI action (the
+// "Setup guide" link just navigates straight into the wizard instead),
+// kept available for that to call later.
+export const resetOnboardingDismissal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("account_onboarding").upsert(
-      { user_id: context.userId, has_completed_onboarding: false, updated_at: new Date().toISOString() },
+      { user_id: context.userId, dismissed_onboarding_prompt: false, updated_at: new Date().toISOString() },
       { onConflict: "user_id" },
     );
     if (error) throw error;

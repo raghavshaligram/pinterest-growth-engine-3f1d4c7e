@@ -153,14 +153,26 @@ export function PinShell({
 function OnboardingRedirectGuard() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { data, isLoading } = useSetupStatus();
+  const { data, isLoading, isFetching } = useSetupStatus();
 
   useEffect(() => {
-    if (isLoading || !data) return;
-    if (data.hasCompletedOnboarding) return;
+    // isFetching (not just isLoading) matters here: right after "Skip
+    // setup" or "Finish" writes dismissedOnboarding and the wizard
+    // navigates here, react-query can still be holding the PREVIOUS
+    // (stale, dismissedOnboarding: false) cached value for an instant
+    // while the invalidated refetch is in flight -- isLoading is false
+    // in that window because cached data already exists, so reading
+    // only `data` here would redirect straight back into the wizard
+    // before the fresh answer ever arrives. Waiting out isFetching too
+    // closes that race. (The wizard also primes the cache directly via
+    // setQueryData before navigating, as a second layer -- see
+    // routes/onboarding.tsx -- but this guard shouldn't rely on that
+    // alone either.)
+    if (isLoading || isFetching || !data) return;
+    if (data.isFullyOnboarded || data.dismissedOnboarding) return;
     if (pathname.startsWith("/settings") || pathname.startsWith("/onboarding")) return;
-    navigate({ to: "/onboarding" });
-  }, [isLoading, data, pathname, navigate]);
+    navigate({ to: "/onboarding", search: { step: data.firstMissingWizardStep ?? 1 } });
+  }, [isLoading, isFetching, data, pathname, navigate]);
 
   return null;
 }

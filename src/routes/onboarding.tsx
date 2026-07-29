@@ -26,8 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { getErrorMessage } from "@/lib/error-message";
-import { useSetupStatus, useGenerateFirstBatch } from "@/lib/onboarding-gate";
-import { markOnboardingDone } from "@/lib/onboarding.functions";
+import { useSetupStatus, useGenerateFirstBatch, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
+import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
 import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
 } from "@/routes/sites";
@@ -84,19 +84,35 @@ function OnboardingWizard() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const qc = useQueryClient();
-  const markDone = useServerFn(markOnboardingDone);
+  const dismissPrompt = useServerFn(dismissOnboardingPrompt);
   const { data: status } = useSetupStatus();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>((search.step as 1 | 2 | 3 | 4) ?? 1);
   const [siteId, setSiteId] = useState<string | null>(null);
   const [pinterestConnected, setPinterestConnected] = useState(false);
+  const autoResumedRef = useRef(false);
 
   // A gated action (see onboarding-gate.tsx:useSetupGate) can navigate
   // here with a new ?step= while this route is already mounted -- sync
   // local state to that instead of only reading it once at mount.
   useEffect(() => {
-    if (search.step && search.step !== step) setStep(search.step as 1 | 2 | 3 | 4);
+    if (search.step && search.step !== step) { setStep(search.step as 1 | 2 | 3 | 4); autoResumedRef.current = true; }
   }, [search.step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resume at the first genuinely-incomplete step, not always step 1 --
+  // e.g. an account that already has a site/brand/integrations set up
+  // (HarvestMath) should land straight on whatever's actually still
+  // missing (could be just the Pinterest age-bucket question). Only
+  // does this once per mount, and only when the URL didn't already say
+  // where to go (an explicit ?step= -- from the gate hook, the Settings
+  // "Setup guide" link, or the step-dots below -- always wins).
+  useEffect(() => {
+    if (autoResumedRef.current || search.step || !status) return;
+    autoResumedRef.current = true;
+    if (status.isFullyOnboarded) { setStep(5); return; }
+    const target = status.firstMissingWizardStep;
+    if (target && target !== 1) setStep(target);
+  }, [status, search.step]);
 
   const { data: sites } = useSitesList();
   useEffect(() => {
@@ -110,25 +126,65 @@ function OnboardingWizard() {
     }
   }, [sites, siteId]);
 
+  // Both handlers prime the setup-status cache directly (setQueryData)
+  // BEFORE navigating, rather than only invalidating it -- invalidate
+  // triggers a background refetch but doesn't wait for it, so a
+  // navigate() fired right after can land PinShell's
+  // OnboardingRedirectGuard on the previous (stale, dismissedOnboarding:
+  // false) cached value and immediately bounce straight back into this
+  // wizard before the real refetch ever resolves. This was the actual
+  // cause of "Skip does nothing" -- setting the field synchronously
+  // here closes that race; invalidateQueries afterward still reconciles
+  // with the server in the background as a backstop.
   async function handleSkip() {
     try {
-      await markDone({ data: { reason: "skipped" } });
+      await dismissPrompt({ data: { reason: "skipped" } });
     } catch {
       // Non-fatal -- worst case the auto-redirect fires again next
       // login, which just re-offers the wizard, not a broken state.
     }
-    qc.invalidateQueries({ queryKey: ["setup-status"] });
+    qc.setQueryData(SETUP_STATUS_QUERY_KEY, (old: SetupStatus | undefined) => old ? { ...old, dismissedOnboarding: true } : old);
+    qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
     navigate({ to: "/dashboard" });
   }
 
   async function handleFinish() {
     try {
-      await markDone({ data: { reason: "completed" } });
+      await dismissPrompt({ data: { reason: "completed" } });
     } catch (e) {
       toast.error(getErrorMessage(e));
     }
-    qc.invalidateQueries({ queryKey: ["setup-status"] });
+    qc.setQueryData(SETUP_STATUS_QUERY_KEY, (old: SetupStatus | undefined) => old ? { ...old, dismissedOnboarding: true } : old);
+    qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
     navigate({ to: "/dashboard" });
+  }
+
+  // A dot is reachable if its step's own requirement is already
+  // satisfied per real data (so a user who lands mid-wizard can freely
+  // review/edit any already-done step) or if it's the current/an
+  // earlier step reached naturally this session. Never lets you jump
+  // AHEAD of a step whose data dependency (siteId, an integration,
+  // etc.) genuinely isn't ready yet.
+  function isStepReachable(n: 1 | 2 | 3 | 4 | 5): boolean {
+    if (n <= step) return true;
+    if (!status) return false;
+    if (n === 2) return status.steps.site_connected;
+    if (n === 3) return status.steps.site_connected && status.steps.brand_identity;
+    if (n === 4) return status.readyToGenerate;
+    if (n === 5) return status.isFullyOnboarded;
+    return true;
+  }
+  // A dot shows as done/checked based on the SAME per-step real-data
+  // signal the checklist card and banner use, not just "is it behind
+  // the current step" -- landing straight on step 4 should still show
+  // 1-3 checked, not merely filled-in because they're numerically lower.
+  function isStepDone(n: 1 | 2 | 3 | 4 | 5): boolean {
+    if (!status) return n < step;
+    if (n === 1) return status.steps.site_connected;
+    if (n === 2) return status.steps.brand_identity;
+    if (n === 3) return status.readyToGenerate; // openai connected (pinterest is optional, not required for the dot)
+    if (n === 4) return status.hasFirstBatch;
+    return status.isFullyOnboarded;
   }
 
   return (
@@ -147,13 +203,25 @@ function OnboardingWizard() {
         </div>
 
         <div className="mb-8 flex items-center justify-center gap-2">
-          {([1, 2, 3, 4, 5] as const).map((n) => (
-            <span
-              key={n}
-              className="h-2 rounded-full transition-all"
-              style={{ width: n === step ? 24 : 8, background: n <= step ? "#E60023" : "#E5E5E5" }}
-            />
-          ))}
+          {([1, 2, 3, 4, 5] as const).map((n) => {
+            const reachable = isStepReachable(n);
+            const done = isStepDone(n);
+            return (
+              <button
+                key={n}
+                type="button"
+                aria-label={`Step ${n}`}
+                disabled={!reachable}
+                onClick={() => reachable && setStep(n)}
+                className="flex items-center justify-center rounded-full transition-all"
+                style={{
+                  width: n === step ? 24 : 8, height: 8, border: "none", padding: 0,
+                  background: done ? "#10B981" : n <= step ? "#E60023" : "#E5E5E5",
+                  cursor: reachable ? "pointer" : "default",
+                }}
+              />
+            );
+          })}
         </div>
 
         <Card className="p-6 sm:p-8">
@@ -405,7 +473,21 @@ function StepIntegrations({
   onBack: () => void;
 }) {
   const qc = useQueryClient();
-  const [sub, setSub] = useState<"openai" | "imagegen" | "pinterest">("openai");
+  const { data: setupStatus } = useSetupStatus();
+  // Land on whichever sub-tab is actually still relevant instead of
+  // always "openai" -- an account that already has OpenAI + an image
+  // provider connected (HarvestMath) and only needs the Pinterest
+  // age-bucket question should open straight there, not force a replay
+  // of two already-done sub-steps first. Computed once at mount from
+  // whatever's already cached (this component's parent already fetched
+  // the same query, so it's normally available immediately, not a
+  // loading flash).
+  const [sub, setSub] = useState<"openai" | "imagegen" | "pinterest">(() => {
+    if (!setupStatus) return "openai";
+    if (!setupStatus.steps.image_generation) return "openai";
+    if (!setupStatus.readyToGenerate) return "imagegen";
+    return "pinterest";
+  });
   const listIntFn = useServerFn(listIntegrations);
   const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listIntFn() });
   const { data: sites } = useSitesList();
@@ -430,7 +512,6 @@ function StepIntegrations({
       qc.invalidateQueries({ queryKey: ["setup-status"] });
       window.history.replaceState({}, "", window.location.pathname + "?step=3");
       setSub("pinterest");
-      getProfile().then((profile) => { if (!profile) setShowAgePrompt(true); }).catch(() => {});
     } else if (st === "error") {
       toast.error(`Pinterest connect failed: ${p.get("reason") ?? "unknown"}`);
       window.history.replaceState({}, "", window.location.pathname + "?step=3");
@@ -443,6 +524,21 @@ function StepIntegrations({
   const replicateStatus = (integrations ?? []).find((i) => i.provider === "replicate");
   const pinterestStatus = (integrations ?? []).find((i) => i.provider === "pinterest");
   const pinterestOk = pinterestStatus?.status === "ok";
+
+  // Proactively surfaces the age-bucket question whenever Pinterest's
+  // OAuth token exists but the profile doesn't -- not just in the
+  // moment right after a fresh OAuth redirect above. An account can
+  // have connected Pinterest long before this prompt existed (or before
+  // this wizard existed at all) and never been asked -- landing on this
+  // sub-tab, by any route, should always check for that gap rather than
+  // only checking it on the one narrow path of a same-second OAuth
+  // return.
+  useEffect(() => {
+    if (!pinterestOk) return;
+    let cancelled = false;
+    getProfile().then((profile) => { if (!cancelled && !profile) setShowAgePrompt(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pinterestOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveProviderMut = useMutation({
     mutationFn: () => upsert({

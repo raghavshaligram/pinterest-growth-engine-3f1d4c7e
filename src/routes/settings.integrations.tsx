@@ -88,12 +88,14 @@ function IntegrationsPage() {
           <p className="text-sm text-muted-foreground">Bring your own credentials. Values are encrypted at rest with AES-256-GCM. Never leaves the server.</p>
         </div>
         {/* Re-opens the same wizard the account either finished or
-            skipped on first login (routes/onboarding.tsx) -- e.g. to
-            connect Pinterest later, or revisit brand identity. Doesn't
-            touch any real data, just restarts the guided flow. */}
+            skipped on first login (routes/onboarding.tsx) -- no ?step=
+            here on purpose, so the wizard's own resume logic picks the
+            right step from real data (e.g. straight to the Pinterest
+            age-bucket question if that's the only genuine gap) instead
+            of this link guessing a fixed step number. Doesn't touch any
+            real data, just re-opens the guided flow. */}
         <RouterLink
           to="/onboarding"
-          search={{ step: 3 }}
           className="inline-flex h-9 shrink-0 items-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
         >
           Setup guide
@@ -158,6 +160,12 @@ export function PublishingAgePrompt({ open, onOpenChange }: { open: boolean; onO
       );
       qc.invalidateQueries({ queryKey: ["publishing-profile"] });
       qc.invalidateQueries({ queryKey: ["account-health"] });
+      // Also shared by the onboarding wizard's Pinterest sub-step
+      // (routes/onboarding.tsx) -- this is what flips pinterest_connected
+      // to done there (it requires a profile row to exist, not just a
+      // working OAuth token, so answering this question is the thing
+      // that actually completes that step).
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(getErrorMessage(e)),
