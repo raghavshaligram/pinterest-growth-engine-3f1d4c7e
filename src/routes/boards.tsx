@@ -9,6 +9,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBoards, upsertBoard, deleteBoard, syncPinterestBoards } from "@/lib/boards.functions";
+import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
 import { listSites } from "@/lib/sites.functions";
 import { useSiteContext } from "@/lib/site-context";
 import { TopBar } from "@/components/PinTopBar";
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { LayoutGrid, Trash2, RefreshCw, Save } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
@@ -53,6 +55,7 @@ function BoardsPage({ search }: { search: string }) {
   const { selectedSiteId } = useSiteContext();
   const list = useServerFn(listBoards);
   const listSitesFn = useServerFn(listSites);
+  const listConns = useServerFn(listPinterestConnections);
   const up = useServerFn(upsertBoard);
   const del = useServerFn(deleteBoard);
   const sync = useServerFn(syncPinterestBoards);
@@ -62,14 +65,21 @@ function BoardsPage({ search }: { search: string }) {
     !search.trim() || b.name.toLowerCase().includes(search.trim().toLowerCase())
   );
   const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
+  const { data: connections } = useQuery({ queryKey: ["pinterest-connections"], queryFn: () => listConns() });
+
+  // Which connection "Sync from Pinterest" pulls from -- auto-selected
+  // (and hidden behind a plain button, no picker shown) when the account
+  // only has one connection, same "don't show a choice of one" pattern
+  // used elsewhere (GA4's property picker, the vertical selector). A
+  // real dropdown only appears once there's an actual choice to make.
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const effectiveConnectionId = selectedConnectionId ?? (connections?.length === 1 ? connections[0].id : null);
 
   const syncMut = useMutation({
-    // syncPinterestBoards now takes an optional connectionId (defaults to
-    // the user's oldest Pinterest connection -- see its own comment on
-    // why this button doesn't yet have a per-connection picker) -- pass
-    // an explicit empty data payload rather than calling with no
-    // arguments at all, now that it has a real inputValidator.
-    mutationFn: () => sync({ data: {} }),
+    mutationFn: () => {
+      if (!effectiveConnectionId) throw new Error("Pick which Pinterest account to sync from first.");
+      return sync({ data: { connectionId: effectiveConnectionId } });
+    },
     onSuccess: (r) => {
       toast.success(`Synced ${r.total} boards from Pinterest (${r.created} new, ${r.updated} updated)`);
       qc.invalidateQueries({ queryKey: ["boards"] });
@@ -95,11 +105,34 @@ function BoardsPage({ search }: { search: string }) {
             The scheduler enforces one URL per board per day.
           </p>
         </div>
-        <Button onClick={() => syncMut.mutate()} disabled={syncMut.isPending}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
-          Sync from Pinterest
-        </Button>
+        <div className="flex items-center gap-2">
+          {(connections?.length ?? 0) > 1 && (
+            <Select value={selectedConnectionId ?? undefined} onValueChange={setSelectedConnectionId}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Sync from…" />
+              </SelectTrigger>
+              <SelectContent>
+                {connections!.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            onClick={() => syncMut.mutate()}
+            disabled={syncMut.isPending || !connections?.length || !effectiveConnectionId}
+            title={!connections?.length ? "Connect a Pinterest account in Settings → Integrations first" : undefined}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncMut.isPending ? "animate-spin" : ""}`} />
+            Sync from Pinterest
+          </Button>
+        </div>
       </header>
+      {!connections?.length && (
+        <p className="-mt-4 text-xs text-muted-foreground">
+          No Pinterest account connected yet — connect one in Settings → Integrations to sync boards.
+        </p>
+      )}
 
       <Card className="p-6">
         <h2 className="mb-4 text-lg font-semibold">Add board manually</h2>
@@ -112,7 +145,18 @@ function BoardsPage({ search }: { search: string }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {visibleBoards.map((b) => (
-          <BoardCard key={b.id} board={b} sites={sites ?? []} onDelete={() => del({ data: { id: b.id } }).then(() => qc.invalidateQueries({ queryKey: ["boards"] }))} onSaved={() => qc.invalidateQueries({ queryKey: ["boards"] })} />
+          <BoardCard
+            key={b.id}
+            board={b}
+            sites={sites ?? []}
+            // Only pass a real label when there's more than one
+            // connection to disambiguate between -- with a single
+            // connection, every board obviously came from it, so
+            // showing a badge would just be clutter.
+            connectionLabel={(connections?.length ?? 0) > 1 ? connections!.find((c) => c.id === b.pinterest_connection_id)?.label ?? null : null}
+            onDelete={() => del({ data: { id: b.id } }).then(() => qc.invalidateQueries({ queryKey: ["boards"] }))}
+            onSaved={() => qc.invalidateQueries({ queryKey: ["boards"] })}
+          />
         ))}
         {!visibleBoards.length && (
           <p className="text-sm text-muted-foreground">
@@ -125,10 +169,11 @@ function BoardsPage({ search }: { search: string }) {
 }
 
 function BoardCard({
-  board, sites, onDelete, onSaved,
+  board, sites, connectionLabel, onDelete, onSaved,
 }: {
   board: BoardRow;
   sites: Awaited<ReturnType<typeof listSites>>;
+  connectionLabel: string | null;
   onDelete: () => void;
   onSaved: () => void;
 }) {
@@ -173,6 +218,7 @@ function BoardCard({
                 {board.pinterest_board_id ? <Badge variant="secondary">Synced</Badge> : <Badge variant="outline">Manual</Badge>}
                 <span>{board.pin_count} pins</span>
                 {board.synced_at && <span>· synced {new Date(board.synced_at).toLocaleDateString()}</span>}
+                {connectionLabel && <Badge variant="outline">{connectionLabel}</Badge>}
               </div>
             </div>
             <Button size="icon" variant="ghost" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>

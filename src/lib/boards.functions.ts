@@ -66,37 +66,25 @@ export const deleteBoard = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// Pull the user's Pinterest boards via API v5 and upsert them.
-//
-// connectionId is optional -- if omitted, defaults to the user's oldest
-// pinterest_connections row (arbitrary but deterministic), since the
-// Boards page's single "Sync boards" button doesn't yet have a way to
-// pick which connection to sync from (a real gap for accounts with
-// multiple Pinterest connections -- synced boards still land in one
-// shared per-user pool with no record of which connection produced
-// them; picking which connection to sync, and tagging boards with their
-// origin, is a follow-up beyond this pass's scope, same as flagged when
-// pinterest_connections was first introduced). Previously this read the
-// single legacy `integrations` row directly with no refresh logic at
-// all -- now goes through getValidPinterestAccessToken, which
-// transparently refreshes an expired token instead of failing.
+// Pull one Pinterest connection's boards via API v5 and upsert them,
+// tagging each with pinterest_connection_id so an account running
+// multiple connections (the agency case) can tell which one produced
+// which board instead of everything landing in one indistinguishable
+// pool. connectionId is now REQUIRED -- the Boards page resolves/picks
+// one before calling this (auto-selected if the account only has one
+// connection, a real picker if it has more than one -- see boards.tsx).
+// Goes through getValidPinterestAccessToken, which transparently
+// refreshes an expired token instead of failing outright.
 export const syncPinterestBoards = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: { connectionId?: string } | undefined) =>
-    z.object({ connectionId: z.string().uuid().optional() }).parse(i ?? {}),
+  .inputValidator((i: { connectionId: string }) =>
+    z.object({ connectionId: z.string().uuid() }).parse(i),
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { listPinterestConnectionsForUser, getValidPinterestAccessToken } = await import("./pinterest-connections.server");
+    const { getValidPinterestAccessToken } = await import("./pinterest-connections.server");
 
-    let connectionId = data.connectionId;
-    if (!connectionId) {
-      const connections = await listPinterestConnectionsForUser(context.userId);
-      if (!connections.length) {
-        throw new Error("No Pinterest account connected yet — connect one in Settings → Integrations first.");
-      }
-      connectionId = connections[0].id;
-    }
+    const connectionId = data.connectionId;
     const token = await getValidPinterestAccessToken(connectionId, context.userId);
 
     // Paginate through /v5/boards
@@ -134,6 +122,12 @@ export const syncPinterestBoards = createServerFn({ method: "POST" })
           image_url: b.media?.image_cover_url ?? null,
           pin_count: b.pin_count ?? 0,
           synced_at: now,
+          // Re-tagged on every sync, not just insert -- if a board was
+          // synced before this column existed (or under a different
+          // connection, in the unlikely event a board id ever got
+          // reused across connections), the tag stays current with
+          // whichever connection most recently synced it.
+          pinterest_connection_id: connectionId,
         }).eq("id", existing.id);
         updated++;
       } else {
@@ -145,6 +139,7 @@ export const syncPinterestBoards = createServerFn({ method: "POST" })
           image_url: b.media?.image_cover_url ?? null,
           pin_count: b.pin_count ?? 0,
           synced_at: now,
+          pinterest_connection_id: connectionId,
         });
         created++;
       }
