@@ -23,8 +23,10 @@ import {
 } from "lucide-react";
 import {
   getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS,
+  WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL,
   type SiteOverviewRow, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
+import type { SiteVertical } from "@/lib/briefs.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -223,6 +225,7 @@ export function BrandEditorFields({
   typography, onTypography,
   notes, onNotes,
   imageProvider, onImageProvider,
+  siteType, vertical, onVertical,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
   previewHost = "www",
@@ -234,6 +237,11 @@ export function BrandEditorFields({
   typography: string; onTypography: (v: string) => void;
   notes: string; onNotes: (v: string) => void;
   imageProvider: ImageProvider; onImageProvider: (v: ImageProvider) => void;
+  // Vertical selector is website-only (see WEBSITE_VERTICAL_OPTIONS) --
+  // Etsy/eComm sites auto-derive etsy_product/ecomm_product via a DB
+  // trigger with no UI choice, so siteType decides whether this section
+  // renders at all rather than the caller conditionally omitting props.
+  siteType: SiteType; vertical: SiteVertical; onVertical: (v: SiteVertical) => void;
   advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
   previewHost?: string;
@@ -307,6 +315,36 @@ export function BrandEditorFields({
           <span className="h-2 w-2 rounded-full" style={{ background: accentColor }} />accent
         </span>
       </div>
+
+      {siteType === "website" && (
+        <div>
+          <Label className="mb-2 block">
+            Content vertical <span className="font-normal text-muted-foreground">affects pin palette/tone only, not which templates are available</span>
+          </Label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {WEBSITE_VERTICAL_OPTIONS.map((opt) => {
+              const active = vertical === opt.value;
+              return (
+                <button
+                  key={opt.value} type="button" onClick={() => onVertical(opt.value)}
+                  className="rounded-lg border p-3 text-left transition-colors hover:border-neutral-400"
+                  style={{
+                    borderColor: active ? "#E60023" : "#E5E5E5",
+                    borderWidth: active ? 2 : 1,
+                    background: active ? "#FCE9EA" : "transparent",
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 font-medium">
+                    {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#E60023" }} />}
+                    {opt.label}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">{opt.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <button type="button" onClick={onToggleAdvanced} className="flex items-center gap-1.5 text-sm font-medium">
         <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />Advanced
@@ -421,6 +459,7 @@ export function AddSiteWizard({
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
   const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
+  const [vertical, setVertical] = useState<SiteVertical>(DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const createMut = useMutation({
@@ -436,6 +475,11 @@ export function AddSiteWizard({
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
         image_provider: imageProvider,
+        // Only sent for website sites -- omitting it entirely for etsy/
+        // ecomm lets the DB trigger (tg_sites_default_vertical) assign
+        // etsy_product/ecomm_product itself instead of this always-set
+        // website-flavored value overriding it.
+        vertical: siteType === "website" ? vertical : undefined,
       },
     }),
     onSuccess: (site) => {
@@ -555,6 +599,7 @@ export function AddSiteWizard({
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
             imageProvider={imageProvider} onImageProvider={setImageProvider}
+            siteType={siteType} vertical={vertical} onVertical={setVertical}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
@@ -602,6 +647,7 @@ function SiteCard({
   const [typography, setTypography] = useState(site.brand_font ?? "");
   const [notes, setNotes] = useState(site.brand_notes ?? "");
   const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "openai");
+  const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const saveMut = useMutation({
@@ -616,6 +662,10 @@ function SiteCard({
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
         image_provider: imageProvider,
+        // Website-only, same reasoning as AddSiteWizard above -- never
+        // send this for etsy/ecomm sites so nothing can ever override
+        // their trigger-assigned vertical through this form.
+        vertical: site.site_type === "website" ? vertical : undefined,
       },
     }),
     onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
@@ -717,6 +767,7 @@ function SiteCard({
               typography={typography} onTypography={setTypography}
               notes={notes} onNotes={setNotes}
               imageProvider={imageProvider} onImageProvider={setImageProvider}
+              siteType={site.site_type as SiteType} vertical={vertical} onVertical={setVertical}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}
               previewHost={host}

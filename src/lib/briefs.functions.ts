@@ -322,7 +322,14 @@ export function buildThemedPinPrompt(input: {
   /** Overrides the registry entry's default typography_direction when present. */
   brandFont?: string | null;
   middlePrompt?: string | null;
-  /** Defaults to "garden_content" when unset so existing callers/sites keep today's behavior. */
+  /**
+   * sites.vertical is NOT NULL at the DB level (auto-derived by a
+   * trigger for every row, garden_content only for the pre-vertical
+   * sites that were explicitly backfilled to it) -- both real callers
+   * always pass this from that column. The fallback below is only a
+   * safety net for a genuinely missing site record, not a live default
+   * path.
+   */
   vertical?: SiteVertical | null;
   /**
    * Hooks for a future pass (no SERP/trend data source exists yet) --
@@ -332,7 +339,11 @@ export function buildThemedPinPrompt(input: {
   visualThemeHint?: string | null;
   trendSignal?: string | null;
 }) {
-  const vertical: SiteVertical = input.vertical ?? "garden_content";
+  // general_content, not garden_content -- that's the DB trigger's own
+  // neutral default for website sites now (tg_sites_default_vertical),
+  // so a missing/undefined vertical should land on the same neutral
+  // flavor the DB itself would assign, not silently on garden_content.
+  const vertical: SiteVertical = input.vertical ?? "general_content";
   const generationMode: GenerationMode = "illustrated";
   const templateId = input.templateId ?? resolveTemplateId(input.style);
 
@@ -451,7 +462,11 @@ Never mix pools. Never invent CTAs outside the pools. Vary CTAs across the batch
     // sees each brief's full context (topic, angle, style) in this same
     // call, so it picks the best-fitting shape directly from the real
     // catalog instead.
-    const vertical: SiteVertical = (site?.vertical as SiteVertical | null) ?? "garden_content";
+    // Same reasoning as buildThemedPinPrompt's own fallback above --
+    // general_content is the DB trigger's actual neutral default now,
+    // not garden_content. site.vertical is NOT NULL at the DB level, so
+    // this only matters if the site record itself is somehow missing.
+    const vertical: SiteVertical = (site?.vertical as SiteVertical | null) ?? "general_content";
     const flavor = VERTICAL_FLAVOR_REGISTRY[vertical]?.illustrated ?? VERTICAL_FLAVOR_REGISTRY.general_content!.illustrated!;
     const shapeCatalog = Object.entries(SHAPE_REGISTRY.illustrated!)
       .map(([id, shape]) => `- ${id}: ${shape!.content_fit}`)

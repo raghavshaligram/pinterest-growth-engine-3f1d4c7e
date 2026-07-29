@@ -1,9 +1,34 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { SiteVertical } from "@/lib/briefs.functions";
 
 export const SITE_TYPES = ["website", "etsy", "ecomm"] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
+
+// The two content-flavor verticals a website-type site can actually
+// choose between (see VERTICAL_FLAVOR_REGISTRY in briefs.functions.ts,
+// which is what actually reads this value at generation time). Etsy/
+// eComm sites don't get a choice here at all -- a DB trigger
+// (tg_sites_default_vertical, see the pin_gen_vertical_and_rotation
+// migration) auto-derives etsy_product/ecomm_product for those
+// site_types on insert, and neither has a flavor entry of its own yet
+// anyway (buildThemedPinPrompt falls back to general_content's neutral
+// flavor for them). Only garden_content/general_content are genuinely
+// selectable content flavors today.
+export const WEBSITE_VERTICAL_OPTIONS: ReadonlyArray<{ value: SiteVertical; label: string; description: string }> = [
+  {
+    value: "general_content",
+    label: "General content",
+    description: "Neutral palette, no industry-specific look -- the safe default for most blogs, lifestyle, or niche sites.",
+  },
+  {
+    value: "garden_content",
+    label: "Gardening & home",
+    description: "Gardening/home-improvement palette and tone (deep greens, blues, cream). Doesn't limit which pin templates are available -- just the color/genre flavor.",
+  },
+];
+export const DEFAULT_WEBSITE_VERTICAL: SiteVertical = "general_content";
 
 // Which image-generation backend a site uses. Per-site (not account-wide
 // like Integrations) since it needs to sit alongside the other
@@ -55,6 +80,11 @@ export type SiteOverviewRow = {
   // openai_default_provider migration, which also backfilled existing
   // sites (originally defaulted to 'replicate' before that migration).
   image_provider: ImageProvider;
+  // DB-level NOT NULL (auto-derived by tg_sites_default_vertical when
+  // not explicitly set at insert) -- see the vertical selector in
+  // BrandEditorFields, which is website-only; etsy/ecomm sites carry
+  // etsy_product/ecomm_product here without ever showing a picker.
+  vertical: SiteVertical;
   created_at: string;
   // Computed, not stored -- see getSitesOverview.
   pageCount: number;
@@ -122,7 +152,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     id?: string; url: string; sitemap_url?: string; timezone?: string;
     site_type?: SiteType; brand_name?: string; tagline?: string;
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
-    image_provider?: ImageProvider;
+    image_provider?: ImageProvider; vertical?: SiteVertical;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -137,6 +167,11 @@ export const upsertSite = createServerFn({ method: "POST" })
       brand_font: z.string().optional(),
       brand_notes: z.string().optional(),
       image_provider: z.enum(IMAGE_PROVIDERS).optional(),
+      // No z.enum ceiling here on purpose -- etsy_product/ecomm_product
+      // remain valid values (assigned by the DB trigger, never through
+      // this field from the client) even though WEBSITE_VERTICAL_OPTIONS
+      // above only ever offers the two content verticals in the UI.
+      vertical: z.enum(["garden_content", "general_content", "etsy_product", "ecomm_product"]).optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
