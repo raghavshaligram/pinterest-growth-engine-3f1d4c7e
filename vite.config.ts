@@ -39,5 +39,19 @@ export default defineConfig({
       "process.env.SUPABASE_URL": JSON.stringify(supabaseUrl),
       "process.env.SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabaseKey),
     },
+    // Server-only secrets: the SSR/worker runtime does not inherit the host
+    // process env, so these must be injected statically -- but ONLY into the
+    // ssr environment, never the browser bundle.
+    environments: {
+      ssr: {
+        define: Object.fromEntries(
+          serverOnlySecretNames
+            .map((name) => [name, env[name] ?? process.env[name]] as const)
+            .filter(([, value]) => Boolean(value))
+            .map(([name, value]) => [`process.env.${name}`, JSON.stringify(value)]),
+        ),
+      },
+    },
   },
 });
+
