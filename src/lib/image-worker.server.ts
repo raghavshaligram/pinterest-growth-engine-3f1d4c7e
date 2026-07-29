@@ -55,7 +55,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     // Declared here (not inside the try block) so the catch block below
     // can report a failure against whichever provider was actually in
     // play, even if the failure happened after provider resolution.
-    let provider: ImageProvider = "replicate";
+    let provider: ImageProvider = "openai";
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
@@ -131,7 +131,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         }
       }
 
-      provider = page?.sites?.image_provider ?? "replicate";
+      provider = page?.sites?.image_provider ?? "openai";
 
       let imageBytes: Uint8Array;
       let contentType: string;

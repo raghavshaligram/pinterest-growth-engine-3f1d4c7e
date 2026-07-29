@@ -51,8 +51,9 @@ export type SiteOverviewRow = {
   brand_colors: string[] | null;
   brand_font: string | null;
   brand_notes: string | null;
-  // Defaults to 'replicate' at the DB level -- see the
-  // sites_image_provider migration -- so existing sites are unaffected.
+  // Defaults to 'openai' at the DB level -- see the
+  // openai_default_provider migration, which also backfilled existing
+  // sites (originally defaulted to 'replicate' before that migration).
   image_provider: ImageProvider;
   created_at: string;
   // Computed, not stored -- see getSitesOverview.

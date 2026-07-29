@@ -409,7 +409,7 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
   const [brandColors, setBrandColors] = useState<string[]>([]);
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
-  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const createMut = useMutation({
@@ -587,7 +587,7 @@ function SiteCard({
   const [brandColors, setBrandColors] = useState<string[]>(Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []);
   const [typography, setTypography] = useState(site.brand_font ?? "");
   const [notes, setNotes] = useState(site.brand_notes ?? "");
-  const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "replicate");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "openai");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const saveMut = useMutation({
