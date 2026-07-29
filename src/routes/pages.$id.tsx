@@ -81,6 +81,7 @@ function PageDetail() {
 
 
   const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
+  const columnCount = useColumnCount();
 
   const { data } = useQuery({ queryKey: ["page", id], queryFn: () => get({ data: { id } }) });
 
@@ -170,6 +171,7 @@ function PageDetail() {
     if (tab === "scheduled") return b.status === "scheduled";
     return true;
   });
+  const masonryColumns = useMemo(() => bucketIntoMasonryColumns(filtered, columnCount), [filtered, columnCount]);
 
   return (
     // Root of this page's content -- fills PinShell's main-column slot
@@ -361,8 +363,12 @@ function PageDetail() {
             </div>
           </div>
 
-          <div className="pin-assets-masonry">
-            {filtered.map((b) => <BriefCard key={b.id} b={b} />)}
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            {masonryColumns.map((col, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+                {col.map((b) => <BriefCard key={b.id} b={b} />)}
+              </div>
+            ))}
           </div>
           {!filtered.length && (
             <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: TEXT_MUTED, padding: "24px 4px" }}>Nothing here yet.</p>
@@ -533,6 +539,49 @@ function briefStatusLine(b: Brief): { text: string; tone: "ready" | "rendering" 
   return { text: "Draft", tone: "pending" };
 }
 
+// Real ("shortest column next") masonry bucketing to replace the old
+// CSS column-count approach, which filled columns strictly top-to-bottom
+// and balanced height using whatever it could measure at initial layout
+// -- usually the placeholder aspect ratio, before the signed URL
+// resolved and the image loaded and corrected it. That mismatch is what
+// produced the "scattered"/out-of-order look reported on the Pin Assets
+// grid, worse the more pins there were. Fixed by computing true
+// per-card height estimates up front (pin_images already stores real
+// width/height from generation -- see getPage's select -- so this
+// doesn't need to wait for the browser to actually load each image) and
+// greedily placing each card into whichever column is currently
+// shortest, the same algorithm real masonry libraries use.
+const MASONRY_CARD_CHROME_HEIGHT = 90; // title + status line + padding, roughly constant across cards
+function useColumnCount(): number {
+  const [count, setCount] = useState(() => (typeof window === "undefined" ? 4 : columnCountForWidth(window.innerWidth)));
+  useEffect(() => {
+    const onResize = () => setCount(columnCountForWidth(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return count;
+}
+function columnCountForWidth(width: number): number {
+  if (width <= 600) return 2;
+  if (width <= 900) return 3;
+  return 4;
+}
+function bucketIntoMasonryColumns(briefs: Brief[], columnCount: number): Brief[][] {
+  const columns: Brief[][] = Array.from({ length: columnCount }, () => []);
+  const heights = new Array(columnCount).fill(0);
+  for (const b of briefs) {
+    const img = b.pin_images?.[0];
+    const ratio = img?.width && img?.height ? img.height / img.width : 1.5; // 2:3 fallback, matches the placeholder aspect ratio
+    const estimatedHeight = 300 * ratio + MASONRY_CARD_CHROME_HEIGHT;
+    let shortest = 0;
+    for (let i = 1; i < columnCount; i++) if (heights[i] < heights[shortest]) shortest = i;
+    columns[shortest]!.push(b);
+    heights[shortest] += estimatedHeight;
+  }
+  return columns;
+}
+
 function BriefCard({ b }: { b: Brief }) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
@@ -581,7 +630,7 @@ function BriefCard({ b }: { b: Brief }) {
 
   return (
     <>
-      <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card, breakInside: "avoid", marginBottom: 20 }}>
+      <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid #E4E1D9`, background: PIN.card, marginBottom: 20 }}>
         <div style={{ position: "relative", width: "100%", background: PIN.fieldBg }}>
           {url ? (
             <button type="button" onClick={() => setOpen(true)} className="group block w-full cursor-zoom-in" aria-label="Enlarge pin" style={{ display: "block", width: "100%" }}>
