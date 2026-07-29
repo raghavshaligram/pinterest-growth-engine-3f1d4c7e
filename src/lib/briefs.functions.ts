@@ -382,11 +382,11 @@ GLOBAL BRAND RULES:
 - Typography: headline is ${typography}. Text must be large, correctly spelled, fully inside the canvas.
 - Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
-LOCKED LAYOUT:
-- Top 14-16% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
-- Middle 58-64% is the main themed visual: ${middle}
-- CTA band spans the next 10-12%, directly below the main visual and above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
-- Bottom 5% is a full-width solid brand-color URL bar, flush to bottom, containing only centered light-colored small sans text: "${input.brandHost}".
+LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are internal composition guidance only; never render any numbers, measurements, fractions, or percentages anywhere in the image itself):
+- A compact title band at the very top. Place this exact title text, uppercase when it suits the theme: "${title}".
+- Below it, the main themed visual, filling the large majority of the canvas: ${middle}
+- A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
+- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${input.brandHost}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
 
 QUALITY CONTROL:
