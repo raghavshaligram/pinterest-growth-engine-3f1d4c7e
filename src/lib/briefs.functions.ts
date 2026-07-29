@@ -25,7 +25,9 @@ export const PIN_STYLES = [
 // live in VERTICAL_FLAVOR_REGISTRY below; a shape's own
 // typography_direction (see note on that field) still wins when set,
 // since it's tied to the compositional device, not the vertical.
-export type SiteVertical = "garden_content" | "general_content" | "etsy_product" | "ecomm_product";
+export type SiteVertical =
+  | "garden_content" | "general_content" | "travel_content" | "food_content" | "lifestyle_content"
+  | "etsy_product" | "ecomm_product";
 type GenerationMode = "illustrated";
 export type TemplateId =
   | "quick_tip_grid"
@@ -269,12 +271,80 @@ const VERTICAL_FLAVOR_REGISTRY: FlavorRegistry = {
       typography_default: "clean modern sans",
     },
   },
-  // No flavor entries yet for etsy_product / ecomm_product -- out of
-  // scope for this pass. buildThemedPinPrompt falls back to
-  // general_content's neutral flavor for these until real flavor
-  // profiles land, rather than throwing.
-  etsy_product: {},
-  ecomm_product: {},
+  travel_content: {
+    illustrated: {
+      genre_lock: "travel/lifestyle friendly",
+      palette_fallback: "terracotta #C1592C, sky blue #6FA8D8, warm sand #E8D9BE, cream #FFFCF6, deep teal #1F6F6E",
+      typography_default: "clean modern sans",
+    },
+  },
+  food_content: {
+    illustrated: {
+      genre_lock: "food/recipe friendly",
+      palette_fallback: "cream #FFF8ED, deep red #A32F2F, herb green #4F7A42, warm brown #6B4A2F, soft gold #D9A441",
+      typography_default: "warm rounded sans",
+    },
+  },
+  lifestyle_content: {
+    illustrated: {
+      genre_lock: "home/lifestyle/wellness friendly",
+      palette_fallback: "blush #E8C9C3, sage #9CAF88, warm gray #A69C93, cream #FAF6F1, charcoal #3A3632",
+      typography_default: "soft modern sans",
+    },
+  },
+  // Flavor-layer only for now, ahead of the product_composite generation
+  // mode landing later -- sites on these verticals render via the
+  // existing illustrated templates with this flavor until then. No
+  // genre_lock (same reasoning as general_content): product photography
+  // shouldn't be pinned to one industry look, just a clean/commercial
+  // tone. Distinct palettes so etsy_product and ecomm_product can
+  // diverge visually later without a registry change.
+  etsy_product: {
+    illustrated: {
+      palette_fallback: "warm white #FAF9F6, charcoal #2B2B2B, soft taupe #B8A98E, muted rust #A65A3A, sage #7C8B6F",
+      typography_default: "clean modern sans",
+    },
+  },
+  ecomm_product: {
+    illustrated: {
+      palette_fallback: "cool white #F7F7F5, slate #2E3238, soft blue-gray #8C9AA6, muted coral #D97B6C, warm gray #B7B2AA",
+      typography_default: "clean modern sans",
+    },
+  },
+};
+
+// UI-facing metadata (label + one-line description) for the verticals a
+// website-type site can actually pick from a selector -- deliberately
+// only the 5 general "content flavor" verticals, NOT etsy_product/
+// ecomm_product. Those two are auto-derived by the DB trigger
+// (tg_sites_default_vertical) from site_type ('etsy'/'ecomm'), never a
+// manual choice for a 'website' site, so they're intentionally absent
+// from this map. sites.functions.ts's WEBSITE_VERTICAL_OPTIONS derives
+// directly from this object (Object.entries) rather than duplicating
+// vertical ids in a second hardcoded list -- adding a new selectable
+// vertical here is the only change needed for it to show up in the
+// Sites wizard's Content Vertical picker.
+export const VERTICAL_UI_META: Partial<Record<SiteVertical, { label: string; description: string }>> = {
+  general_content: {
+    label: "General content",
+    description: "Neutral palette, no industry-specific look -- the safe default for most blogs, lifestyle, or niche sites.",
+  },
+  garden_content: {
+    label: "Gardening & home",
+    description: "Gardening/home-improvement palette and tone (deep greens, blues, cream). Doesn't limit which pin templates are available -- just the color/genre flavor.",
+  },
+  travel_content: {
+    label: "Travel",
+    description: "Warm, adventurous palette (terracotta, sky blue, sand) for travel and lifestyle content. Doesn't limit which pin templates are available -- just the color/genre flavor.",
+  },
+  food_content: {
+    label: "Food & recipes",
+    description: "Warm, appetizing palette (cream, deep red, herb green) for food and recipe content. Doesn't limit which pin templates are available -- just the color/genre flavor.",
+  },
+  lifestyle_content: {
+    label: "Home & lifestyle",
+    description: "Soft neutral palette (blush, sage, warm gray) for home, lifestyle, and wellness content. Doesn't limit which pin templates are available -- just the color/genre flavor.",
+  },
 };
 
 

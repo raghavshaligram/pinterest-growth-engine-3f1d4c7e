@@ -2,32 +2,24 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { SiteVertical } from "@/lib/briefs.functions";
+import { VERTICAL_UI_META } from "@/lib/briefs.functions";
 
 export const SITE_TYPES = ["website", "etsy", "ecomm"] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
 
-// The two content-flavor verticals a website-type site can actually
-// choose between (see VERTICAL_FLAVOR_REGISTRY in briefs.functions.ts,
-// which is what actually reads this value at generation time). Etsy/
-// eComm sites don't get a choice here at all -- a DB trigger
+// Derived from VERTICAL_UI_META (briefs.functions.ts), NOT a second
+// hardcoded list of vertical ids -- adding a new selectable content
+// vertical is a one-place change (that map) and it shows up here and in
+// the Sites wizard's Content Vertical picker automatically. Etsy/eComm
+// sites don't get a choice here at all -- a DB trigger
 // (tg_sites_default_vertical, see the pin_gen_vertical_and_rotation
 // migration) auto-derives etsy_product/ecomm_product for those
-// site_types on insert, and neither has a flavor entry of its own yet
-// anyway (buildThemedPinPrompt falls back to general_content's neutral
-// flavor for them). Only garden_content/general_content are genuinely
-// selectable content flavors today.
-export const WEBSITE_VERTICAL_OPTIONS: ReadonlyArray<{ value: SiteVertical; label: string; description: string }> = [
-  {
-    value: "general_content",
-    label: "General content",
-    description: "Neutral palette, no industry-specific look -- the safe default for most blogs, lifestyle, or niche sites.",
-  },
-  {
-    value: "garden_content",
-    label: "Gardening & home",
-    description: "Gardening/home-improvement palette and tone (deep greens, blues, cream). Doesn't limit which pin templates are available -- just the color/genre flavor.",
-  },
-];
+// site_types on insert, which is why VERTICAL_UI_META deliberately omits
+// them (see its own comment) rather than this array filtering them out.
+export const WEBSITE_VERTICAL_OPTIONS: ReadonlyArray<{ value: SiteVertical; label: string; description: string }> =
+  (Object.entries(VERTICAL_UI_META) as [SiteVertical, { label: string; description: string }][]).map(
+    ([value, meta]) => ({ value, ...meta }),
+  );
 export const DEFAULT_WEBSITE_VERTICAL: SiteVertical = "general_content";
 
 // Which image-generation backend a site uses. Per-site (not account-wide
@@ -195,11 +187,19 @@ export const upsertSite = createServerFn({ method: "POST" })
       brand_font: z.string().optional(),
       brand_notes: z.string().optional(),
       image_provider: z.enum(IMAGE_PROVIDERS).optional(),
-      // No z.enum ceiling here on purpose -- etsy_product/ecomm_product
-      // remain valid values (assigned by the DB trigger, never through
-      // this field from the client) even though WEBSITE_VERTICAL_OPTIONS
-      // above only ever offers the two content verticals in the UI.
-      vertical: z.enum(["garden_content", "general_content", "etsy_product", "ecomm_product"]).optional(),
+      // sites.vertical is a plain `text` column at the DB level (no
+      // CHECK constraint/enum -- see the pin_gen_vertical_followup
+      // migration's own comment), so this zod enum is the only real
+      // ceiling on which strings can land here. Keep it in sync with
+      // SiteVertical's full union (briefs.functions.ts) whenever a new
+      // vertical is added, content-selectable or trigger-only alike --
+      // etsy_product/ecomm_product remain valid values here even though
+      // WEBSITE_VERTICAL_OPTIONS never offers them in the UI, since the
+      // DB trigger assigns them directly.
+      vertical: z.enum([
+        "garden_content", "general_content", "travel_content", "food_content", "lifestyle_content",
+        "etsy_product", "ecomm_product",
+      ]).optional(),
       // Nullable (not just optional) so the Connections section can
       // explicitly clear a mapping (e.g. after disconnecting the
       // underlying Google account) by sending null rather than needing
