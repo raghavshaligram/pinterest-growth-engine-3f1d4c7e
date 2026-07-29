@@ -133,7 +133,7 @@ export async function listPinterestConnectionsForUser(userId: string): Promise<P
     .eq("user_id", userId)
     .order("connected_at", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as PinterestConnectionSummary[];
 }
 
 // Shared by both the on-demand path (getValidPinterestAccessToken, called
@@ -227,7 +227,7 @@ export async function getPinterestConnectionForSite(siteId: string, userId: stri
   if (connErr || !conn) {
     throw new Error("This site's mapped Pinterest connection no longer exists — re-map it in the site's Connections section.");
   }
-  return { connectionId: conn.id, publish_mode: conn.publish_mode, webhook_url: conn.webhook_url };
+  return { connectionId: conn.id, publish_mode: conn.publish_mode as "api" | "webhook", webhook_url: conn.webhook_url };
 }
 
 export const setPinterestConnectionPublishModeAndWebhook = async (
