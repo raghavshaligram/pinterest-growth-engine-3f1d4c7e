@@ -377,14 +377,15 @@ export function buildThemedPinPrompt(input: {
 COMPOSITION GUIDANCE (internal art direction only -- describes the intended visual style and layout; never render this description, or any part of it, as literal text on the pin): ${shape.visual_description}
 
 GLOBAL BRAND RULES:
-- Palette only (these are color descriptions, not text -- never render any color name or code as a visible word, label, or UI element): ${palette}. No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
+- Palette only (these are color descriptions, not text, and not a swatch to depict): ${palette}. Render the entire image using tones drawn from this palette throughout the actual scene, objects, and background -- do not depict the palette itself as a visible color swatch, stripe, gradient bar, or legend anywhere in the composition, including behind, near, or as part of the CTA band. Never render any color name or code as a visible word or label either.
+- No purple gradients, no random neon colors, no black/dark app UI, no generic AI glow.
 - Typography: headline is ${typography}. Text must be large, correctly spelled, fully inside the canvas.
 - Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
 LOCKED LAYOUT:
 - Top 14-16% is a clean title zone. Place this exact title text, uppercase when it suits the theme: "${title}".
 - Middle 58-64% is the main themed visual: ${middle}
-- CTA band spans the next 10-12%, directly below the main visual and above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
+- CTA band spans the next 10-12%, directly below the main visual and above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
 - Bottom 5% is a full-width solid brand-color URL bar, flush to bottom, containing only centered light-colored small sans text: "${input.brandHost}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
 
@@ -392,6 +393,7 @@ QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
 - Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
 - The ONLY text allowed anywhere on the pin is the title, the CTA text, and the URL bar host, exactly as quoted above -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
+- The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
 
