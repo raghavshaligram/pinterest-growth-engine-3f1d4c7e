@@ -85,17 +85,33 @@ export type SiteOverviewRow = {
   google_connection_id: string | null;
   ga4_property_id: string | null;
   ga4_property_label: string | null;
+  // Same pattern, for Pinterest -- points at a row in the separate
+  // multi-account pinterest_connections table (see the
+  // pinterest_connections migration). NULL for every new site by
+  // default; only set explicitly (or via the one-time legacy backfill,
+  // see pinterest-connections.server.ts) -- never inferred from any
+  // account-wide status. This is the fix for the site-isolation bug
+  // where a brand-new site showed "Connected" with another site's real
+  // boards: that read a single account-wide integrations row instead of
+  // this per-site column.
+  pinterest_connection_id: string | null;
   created_at: string;
   // Computed, not stored -- see getSitesOverview.
   pageCount: number;
   pinsCreated: number;
   lastCrawledAt: string | null;
-  // Count of boards that would actually publish to this site -- boards
-  // with this site explicitly in board.site_ids, plus boards with an
-  // empty site_ids (meaning "any site", same rule pages.functions.ts's
-  // scoring logic uses). Used by the site's Connections section as a
-  // one-glance Pinterest summary instead of relocating the full Boards
-  // CRUD UI (which remains a many-to-many, dedicated /boards page).
+  // Count of boards that would actually publish to this site --
+  // DELIBERATELY strict here: only boards with this site explicitly
+  // listed in board.site_ids count. This is a narrower rule than
+  // boards.functions.ts's own site-selection scoring (which treats an
+  // empty site_ids as "any site" for content-generation purposes, and
+  // stays that way -- unchanged, still correct for its own purpose).
+  // Reusing that same "empty = any site" semantic for this display tile
+  // was the second half of the site-isolation bug: every unrestricted
+  // board (the common case, since restricting a board to specific sites
+  // is a manual extra step) counted for every site, new or not, making
+  // a brand-new untouched site show the same board count as an
+  // established one.
   boardsMappedCount: number;
 };
 
@@ -149,10 +165,11 @@ export const getSitesOverview = createServerFn({ method: "GET" })
     const boards = (boardRows ?? []) as { id: string; site_ids: string[] | null }[];
     const boardsMappedCountBySite = new Map<string, number>();
     for (const siteId of siteIds) {
-      const count = boards.filter((b) => {
-        const ids = Array.isArray(b.site_ids) ? b.site_ids : [];
-        return ids.length === 0 || ids.includes(siteId);
-      }).length;
+      // Strict inclusion only -- see boardsMappedCount's own comment on
+      // SiteOverviewRow for why this deliberately does NOT treat an
+      // empty site_ids as "any site" the way boards.functions.ts's
+      // generation-time scoring does.
+      const count = boards.filter((b) => (Array.isArray(b.site_ids) ? b.site_ids : []).includes(siteId)).length;
       boardsMappedCountBySite.set(siteId, count);
     }
 
@@ -173,6 +190,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
     image_provider?: ImageProvider; vertical?: SiteVertical;
     google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
+    pinterest_connection_id?: string | null;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -207,6 +225,7 @@ export const upsertSite = createServerFn({ method: "POST" })
       google_connection_id: z.string().uuid().nullable().optional(),
       ga4_property_id: z.string().nullable().optional(),
       ga4_property_label: z.string().nullable().optional(),
+      pinterest_connection_id: z.string().uuid().nullable().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

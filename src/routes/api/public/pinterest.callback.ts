@@ -26,7 +26,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
         }
 
         try {
-          const { pinterestAppConfig, verifyState, exchangeCode } = await import("@/lib/pinterest-oauth.server");
+          const { pinterestAppConfig, verifyState, exchangeCode, fetchPinterestUsername } = await import("@/lib/pinterest-oauth.server");
           const verified = verifyState(state);
           if (!verified) {
             return Response.redirect(`${settingsUrl}?pinterest=error&reason=bad_state`, 302);
@@ -39,6 +39,47 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
           const { appId, appSecret, redirectUri } = pinterestAppConfig();
           const tokens = await exchangeCode({ appId, appSecret, code, redirectUri });
 
+          if (verified.mode === "connection") {
+            // New multi-connection flow ("Connect another Pinterest
+            // account" in Settings) -- always INSERTs a new
+            // pinterest_connections row, never touches `integrations`.
+            // Every successful connect here is a distinct account, same
+            // reasoning as google_connections.
+            if (!tokens.refresh_token) {
+              throw new Error("Pinterest didn't return a refresh token — please try connecting again.");
+            }
+            const username = await fetchPinterestUsername(tokens.access_token);
+            const { encrypt } = await import("@/lib/crypto.server");
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            const now = Date.now();
+            const storedTokens = {
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+              access_token_expires_at: now + (tokens.expires_in ?? 0) * 1000,
+            };
+            const refreshExpiresAt = tokens.refresh_token_expires_in
+              ? new Date(now + tokens.refresh_token_expires_in * 1000).toISOString()
+              : null;
+            const { error } = await supabaseAdmin.from("pinterest_connections").insert({
+              user_id: verified.userId,
+              label: username ? `@${username}` : "Pinterest account",
+              pinterest_username: username,
+              token_ciphertext: encrypt(JSON.stringify(storedTokens)),
+              refresh_token_expires_at: refreshExpiresAt,
+            });
+            if (error) throw error;
+            // Distinct query param from the legacy flow's ?pinterest=connected
+            // on purpose -- Settings' existing effect treats that as "maybe
+            // show the publishing-age prompt," which only makes sense for the
+            // original single-account flow, not for adding an Nth connection.
+            return Response.redirect(`${successUrl}${successUrl.includes("?") ? "&" : "?"}pinterest_connection=connected`, 302);
+          }
+
+          // Legacy single-account flow -- unchanged from before this
+          // patch. Still what publisher.server.ts/syncPinterestBoards
+          // actually read at publish/sync time (see the migration's own
+          // comment); this restructure is additive to that, not a
+          // replacement of it yet.
           const { getIntegration } = await import("@/lib/integrations.server");
           const cfg = await getIntegration(verified.userId, "pinterest");
 

@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestSettings } from "@/lib/integrations.functions";
 import { listGoogleConnections, startGoogleOAuth, disconnectGoogleConnection } from "@/lib/google.functions";
+import { listPinterestConnections, startPinterestConnectionOAuth, disconnectPinterestConnection } from "@/lib/pinterest-connections.functions";
 import { getPublishingProfile, savePublishingProfile, getAccountHealth, setCapMode } from "@/lib/publishing-profile.functions";
 import { describeCapEvent, capEventIsWarning, type CapEvent } from "@/lib/cap-event-copy";
 
@@ -88,6 +89,13 @@ function IntegrationsPage() {
       toast.error(`Google connect failed: ${p.get("reason") ?? "unknown"}`);
       window.history.replaceState({}, "", window.location.pathname);
     }
+    const pc = p.get("pinterest_connection");
+    if (pc === "connected") {
+      toast.success("Pinterest account connected");
+      qc.invalidateQueries({ queryKey: ["pinterest-connections"] });
+      qc.invalidateQueries({ queryKey: ["sites-overview"] });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [qc]);
 
   return (
@@ -144,6 +152,7 @@ function IntegrationsPage() {
           status={data?.find((i) => i.provider === "pinterest")}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
         />
+        <PinterestConnectionsCard />
         <GoogleConnectionsCard />
       </div>
 
@@ -390,6 +399,111 @@ function PinterestCard(props: {
           </div>
         </div>
       </CollapsibleSection>
+    </Card>
+  );
+}
+
+// Multi-account Pinterest connections -- deliberately separate from the
+// PinterestCard above (which still owns publish_mode/webhook config,
+// reading/writing the original `integrations` row, unchanged). This
+// list is what the per-site Connections picker (sites.tsx) actually
+// draws from. Styled identically to GoogleConnectionsCard below (same
+// row shape, status dot, quiet text Disconnect) for consistency between
+// the two multi-account integrations.
+function PinterestConnectionsCard() {
+  const qc = useQueryClient();
+  const list = useServerFn(listPinterestConnections);
+  const startOAuth = useServerFn(startPinterestConnectionOAuth);
+  const disconnect = useServerFn(disconnectPinterestConnection);
+
+  const { data, isLoading } = useQuery({ queryKey: ["pinterest-connections"], queryFn: () => list() });
+
+  const connectMut = useMutation({
+    mutationFn: () => startOAuth(),
+    onSuccess: (r) => { window.location.href = r.authorizeUrl; },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const disconnectMut = useMutation({
+    mutationFn: (id: string) => disconnect({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Pinterest account disconnected");
+      qc.invalidateQueries({ queryKey: ["pinterest-connections"] });
+      // Any site mapped to this connection loses its mapping too (ON
+      // DELETE SET NULL on sites.pinterest_connection_id) -- refresh the
+      // site-data queries the Connections card actually reads.
+      qc.invalidateQueries({ queryKey: ["sites-overview"] });
+      qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const connections = data ?? [];
+
+  return (
+    <Card className="p-6">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" />
+          <h3 className="text-lg font-semibold">Pinterest accounts</h3>
+        </div>
+        <Badge variant={connections.length > 0 ? "default" : "secondary"}>
+          {connections.length > 0
+            ? <><CheckCircle2 className="mr-1 h-3 w-3" />{connections.length} connected</>
+            : "Not configured"}
+        </Badge>
+      </div>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Map each site to its own Pinterest account below (Sites page → that site's Connections section). Separate from the publish-mode config on the left, which still applies account-wide.
+      </p>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {!isLoading && connections.length === 0 && (
+        <p className="mb-4 text-sm text-muted-foreground">No Pinterest accounts connected yet.</p>
+      )}
+
+      {connections.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {connections.map((conn) => (
+            <div key={conn.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white"
+                  style={{ background: "#E60023" }}
+                  aria-hidden
+                >
+                  <LinkIcon className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{conn.label}</div>
+                  {conn.pinterest_username && (
+                    <div className="truncate text-xs text-muted-foreground">@{conn.pinterest_username}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="flex items-center gap-1 text-xs text-emerald-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Connected
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-destructive hover:underline"
+                  onClick={() => disconnectMut.mutate(conn.id)}
+                  disabled={disconnectMut.isPending}
+                >
+                  Disconnect
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button type="button" size="sm" variant="outline" onClick={() => connectMut.mutate()} disabled={connectMut.isPending}>
+        <Plus className="mr-1 h-4 w-4" />
+        {connectMut.isPending ? "Redirecting…" : "Connect another Pinterest account"}
+      </Button>
     </Card>
   );
 }

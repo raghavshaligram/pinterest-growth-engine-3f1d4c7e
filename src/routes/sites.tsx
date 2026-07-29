@@ -28,7 +28,7 @@ import {
 } from "@/lib/sites.functions";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
-import { listIntegrations } from "@/lib/integrations.functions";
+import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -155,13 +155,6 @@ function SitesPage() {
   const { data: sites } = useQuery({ queryKey: ["sites-overview"], queryFn: () => overviewFn() });
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  // Shared across every SiteCard's Connections section -- one query,
-  // not one per card (react-query dedupes by key regardless, but this
-  // keeps the intent explicit).
-  const listInt = useServerFn(listIntegrations);
-  const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listInt() });
-  const pinterestConnected = integrations?.find((i) => i.provider === "pinterest")?.status === "ok";
-
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["sites-overview"] });
     // SiteSwitcher/SiteProvider (Dashboard/Schedule) read the lighter
@@ -214,7 +207,6 @@ function SitesPage() {
             onCrawl={() => crawlMut.mutate(site.id)}
             crawlPending={crawlMut.isPending}
             onSaved={invalidate}
-            pinterestConnected={pinterestConnected}
           />
         ))}
       </div>
@@ -658,36 +650,119 @@ export function AddSiteWizard({
 // crippling it down to a single-site view. A concise glanceable summary
 // + link preserves the real data model instead of faking a 1:1 one.
 function SiteConnectionsSection({
-  site, pinterestConnected, onSaved,
+  site, onSaved,
 }: {
   site: SiteOverviewRow;
-  pinterestConnected: boolean;
   onSaved: () => void;
 }) {
   return (
     <div className="mt-5 border-t border-border pt-5">
       <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-border p-3">
-          <div className="mb-1.5 flex items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
-              <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
-            </span>
-            <span className="text-sm font-medium">Pinterest</span>
-            <span className={`ml-auto flex items-center gap-1 text-xs ${pinterestConnected ? "text-emerald-600" : "text-muted-foreground"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${pinterestConnected ? "bg-emerald-500" : "bg-neutral-300"}`} />
-              {pinterestConnected ? "Connected" : "Not connected"}
-            </span>
-          </div>
-          <p className="mb-2 text-xs text-muted-foreground">
-            {site.boardsMappedCount > 0
-              ? `${site.boardsMappedCount} board${site.boardsMappedCount === 1 ? "" : "s"} publish here`
-              : "No boards target this site yet"}
-          </p>
-          <Link to="/boards" className="text-xs font-medium text-primary hover:underline">Manage boards →</Link>
-        </div>
+        <PinterestSiteConnectionCard site={site} onSaved={onSaved} />
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
       </div>
+    </div>
+  );
+}
+
+// Reads/writes site.pinterest_connection_id directly -- deliberately NOT
+// a shared account-wide boolean prop the way this used to work. That
+// shared-prop version was the confirmed root cause of a site-isolation
+// bug: every SiteCard rendered the exact same "Connected" status because
+// they all read one account-wide listIntegrations() result, regardless
+// of which site the card was actually for. Each card now independently
+// reflects its own site's own pinterest_connection_id, same pattern
+// GoogleAnalyticsConnectionCard already uses for GA4 (which was never
+// affected by this bug in the first place, since it was built site-
+// scoped from the start).
+function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow; onSaved: () => void }) {
+  const upsert = useServerFn(upsertSite);
+  const listConns = useServerFn(listPinterestConnections);
+  const { data: connections } = useQuery({ queryKey: ["pinterest-connections"], queryFn: () => listConns() });
+  const [editing, setEditing] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: (connectionId: string) =>
+      upsert({
+        data: {
+          id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
+          pinterest_connection_id: connectionId,
+        },
+      }),
+    onSuccess: () => { toast.success("Pinterest connection mapped"); setEditing(false); onSaved(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const mapped = Boolean(site.pinterest_connection_id);
+  const mappedLabel = connections?.find((c) => c.id === site.pinterest_connection_id)?.label;
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
+          <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
+        </span>
+        <span className="text-sm font-medium">Pinterest</span>
+        <span className={`ml-auto flex items-center gap-1 text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
+          {mapped ? "Connected" : "Not connected"}
+        </span>
+      </div>
+
+      {!editing && (
+        <>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {mapped ? (
+              <>
+                {mappedLabel ?? "Pinterest account"}
+                {" · "}
+                {site.boardsMappedCount > 0
+                  ? `${site.boardsMappedCount} board${site.boardsMappedCount === 1 ? "" : "s"} publish here`
+                  : "no boards target this site yet"}
+              </>
+            ) : (
+              "Not mapped to a Pinterest account yet"
+            )}
+          </p>
+          <div className="flex items-center gap-3">
+            {connections?.length ? (
+              <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+                {mapped ? "Change →" : "Map a connection →"}
+              </button>
+            ) : (
+              <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+                Connect a Pinterest account →
+              </Link>
+            )}
+            <Link to="/boards" className="text-xs font-medium text-primary hover:underline">Manage boards →</Link>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {connections!.map((c) => {
+              const active = site.pinterest_connection_id === c.id;
+              return (
+                <button
+                  key={c.id} type="button" onClick={() => saveMut.mutate(c.id)}
+                  disabled={saveMut.isPending}
+                  className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
+                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                >
+                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+          <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -829,10 +904,9 @@ function RouterLinkToSettings() {
 }
 
 function SiteCard({
-  site, onDelete, onCrawl, crawlPending, onSaved, pinterestConnected,
+  site, onDelete, onCrawl, crawlPending, onSaved,
 }: {
   site: SiteOverviewRow; onDelete: () => void; onCrawl: () => void; crawlPending: boolean; onSaved: () => void;
-  pinterestConnected: boolean;
 }) {
   const upsert = useServerFn(upsertSite);
   const [editing, setEditing] = useState(false);
@@ -921,7 +995,7 @@ function SiteCard({
           </div>
         )}
 
-        <SiteConnectionsSection site={site} pinterestConnected={pinterestConnected} onSaved={onSaved} />
+        <SiteConnectionsSection site={site} onSaved={onSaved} />
 
         <div className="mt-5 flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing((v) => !v)}>
