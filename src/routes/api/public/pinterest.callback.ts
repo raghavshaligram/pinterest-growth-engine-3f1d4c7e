@@ -12,6 +12,11 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
         const state = url.searchParams.get("state");
         const err = url.searchParams.get("error");
         const settingsUrl = `${url.origin}/settings/integrations`;
+        // verifyState below tells us whether this flow started from the
+        // onboarding wizard (see OAuthReturnTo in pinterest-oauth.server.ts)
+        // -- until it's decoded, errors fall back to Settings, the same
+        // page every pre-onboarding-wizard error already redirected to.
+        let successUrl = settingsUrl;
 
         if (err) {
           return Response.redirect(`${settingsUrl}?pinterest=error&reason=${encodeURIComponent(err)}`, 302);
@@ -26,6 +31,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
           if (!verified) {
             return Response.redirect(`${settingsUrl}?pinterest=error&reason=bad_state`, 302);
           }
+          successUrl = verified.returnTo === "onboarding" ? `${url.origin}/onboarding?step=3` : settingsUrl;
 
           // Deployment-level app credentials — same ones startPinterestOAuth
           // used to build the authorize URL. Throws (caught below) if the
@@ -56,7 +62,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
           );
           if (error) throw error;
 
-          return Response.redirect(`${settingsUrl}?pinterest=connected`, 302);
+          return Response.redirect(`${successUrl}${successUrl.includes("?") ? "&" : "?"}pinterest=connected`, 302);
         } catch (e) {
           const msg = getErrorMessage(e);
           return Response.redirect(

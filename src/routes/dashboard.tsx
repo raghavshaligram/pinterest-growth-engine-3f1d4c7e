@@ -18,6 +18,8 @@ import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { TopBar } from "@/components/PinTopBar";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
+import { DashboardEmptyState } from "@/components/DashboardEmptyState";
+import { useSetupStatus } from "@/lib/onboarding-gate";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
 import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
@@ -46,14 +48,24 @@ function DashboardPage() {
   const { user } = Route.useRouteContext();
   return (
     <PinShell active="dashboard" userEmail={user?.email}>
-      <DashboardContent />
+      <DashboardContent userEmail={user?.email} />
     </PinShell>
   );
 }
 
-function DashboardContent() {
+function DashboardContent({ userEmail }: { userEmail?: string | null }) {
   const qc = useQueryClient();
   const { selectedSiteId } = useSiteContext();
+  // Same live signal (pin_images count > 0, account-wide) the onboarding
+  // wizard and Finish-setup banner already read via useSetupStatus --
+  // deliberately not a second, separately-computed "is this account
+  // empty" check, so this can never disagree with either about whether
+  // an account has moved past its first-run state. Not gated on
+  // selectedSiteId -- "zero generated pins" is an account-wide question,
+  // same as the spec's framing, independent of which site happens to be
+  // selected in the switcher.
+  const { data: setupStatus, isLoading: setupLoading } = useSetupStatus();
+  const showEmptyState = !setupLoading && setupStatus && !setupStatus.hasFirstBatch;
   const listFn = useServerFn(listScheduled);
   const statsFn = useServerFn(dashboardStats);
   const publishNowFn = useServerFn(publishNow);
@@ -150,6 +162,12 @@ function DashboardContent() {
       return title.toLowerCase().includes(search.trim().toLowerCase());
     })
     .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+
+  // All hooks above this line run unconditionally on every render (same
+  // Rules-of-Hooks discipline as the Pin Assets masonry fix elsewhere in
+  // this app) -- this just branches which JSX comes back, after every
+  // hook this component owns has already been called.
+  if (showEmptyState) return <DashboardEmptyState userEmail={userEmail} />;
 
   return (
     <>

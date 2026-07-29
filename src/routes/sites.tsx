@@ -110,22 +110,22 @@ const SITE_TYPE_CONFIG: Record<SiteType, {
   },
 };
 
-const ACCENT_PRESETS = [
+export const ACCENT_PRESETS = [
   "#E60023", "#F97316", "#EAB308", "#22C55E", "#3B82F6",
   "#8B5CF6", "#EC4899", "#14B8A6", "#111111", "#6B7280",
 ];
 
-const TYPOGRAPHY_PRESETS = [
+export const TYPOGRAPHY_PRESETS = [
   { value: "Playfair Display + Inter", headingFont: "'Playfair Display', Georgia, serif", bodyFont: "'Inter', sans-serif" },
   { value: "DM Sans only", headingFont: "'DM Sans', sans-serif", bodyFont: "'DM Sans', sans-serif" },
   { value: "Poppins + IBM Plex Mono", headingFont: "'Poppins', sans-serif", bodyFont: "'IBM Plex Mono', monospace" },
   { value: "Serif Display + Clean Sans", headingFont: "Georgia, serif", bodyFont: "system-ui, sans-serif" },
 ] as const;
 
-function hostFromUrl(url: string): string {
+export function hostFromUrl(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
-function normalizeUrl(raw: string): string {
+export function normalizeUrl(raw: string): string {
   const trimmed = raw.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
@@ -215,7 +215,7 @@ function SitesPage() {
 
 // ---------- Shared brand editor (used by both the wizard step 3 and each card's inline "Brand" panel) ----------
 
-function BrandEditorFields({
+export function BrandEditorFields({
   brandName, onBrandName,
   tagline, onTagline,
   accentColor, onAccentColor,
@@ -397,7 +397,18 @@ function BrandEditorFields({
 
 type WizardStep = 1 | 2 | 3;
 
-function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
+// onCreated optionally receives the just-created/updated site row --
+// used by the onboarding wizard (routes/onboarding.tsx) to know which
+// site its later brand-identity/crawl steps operate on without having
+// to re-guess "the most recently created site" from a second query.
+// The plain Sites page usage below (`onCreated={() => {...}}`) is still
+// valid -- a callback that ignores its argument satisfies this type.
+export function AddSiteWizard({
+  onCancel, onCreated,
+}: {
+  onCancel: () => void;
+  onCreated: (site?: { id: string; url: string; brand_name: string | null; accent_color: string | null }) => void;
+}) {
   const upsert = useServerFn(upsertSite);
   const [step, setStep] = useState<WizardStep>(1);
   const [siteType, setSiteType] = useState<SiteType>("website");
@@ -427,7 +438,10 @@ function AddSiteWizard({ onCancel, onCreated }: { onCancel: () => void; onCreate
         image_provider: imageProvider,
       },
     }),
-    onSuccess: () => { toast.success("Site added"); onCreated(); },
+    onSuccess: (site) => {
+      toast.success("Site added");
+      onCreated(site as unknown as { id: string; url: string; brand_name: string | null; accent_color: string | null });
+    },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 

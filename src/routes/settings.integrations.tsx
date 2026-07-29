@@ -17,6 +17,7 @@ import { describeCapEvent, capEventIsWarning, type CapEvent } from "@/lib/cap-ev
 // enforced server-side in publishing-profile.functions.ts:setCapMode;
 // this is just the input's UI-level max hint.
 const MAX_DAILY_CAP = 25;
+import { Link as RouterLink } from "@tanstack/react-router";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,9 +82,22 @@ function IntegrationsPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="font-display text-4xl">Integrations</h1>
-        <p className="text-sm text-muted-foreground">Bring your own credentials. Values are encrypted at rest with AES-256-GCM. Never leaves the server.</p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-4xl">Integrations</h1>
+          <p className="text-sm text-muted-foreground">Bring your own credentials. Values are encrypted at rest with AES-256-GCM. Never leaves the server.</p>
+        </div>
+        {/* Re-opens the same wizard the account either finished or
+            skipped on first login (routes/onboarding.tsx) -- e.g. to
+            connect Pinterest later, or revisit brand identity. Doesn't
+            touch any real data, just restarts the guided flow. */}
+        <RouterLink
+          to="/onboarding"
+          search={{ step: 3 }}
+          className="inline-flex h-9 shrink-0 items-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
+        >
+          Setup guide
+        </RouterLink>
       </header>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -131,7 +145,7 @@ function IntegrationsPage() {
 // user hasn't answered it before. Three buttons, not a form — this only
 // sets a starting point; reconcileTier() (publishing-profile.server.ts)
 // keeps adjusting it against real account activity afterward.
-function PublishingAgePrompt({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function PublishingAgePrompt({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const qc = useQueryClient();
   const save = useServerFn(savePublishingProfile);
   const mut = useMutation({
@@ -188,10 +202,10 @@ function PublishingAgePrompt({ open, onOpenChange }: { open: boolean; onOpenChan
   );
 }
 
-function PinterestConnectButton() {
+export function PinterestConnectButton({ returnTo }: { returnTo?: "settings" | "onboarding" }) {
   const start = useServerFn(startPinterestOAuth);
   const connect = useMutation({
-    mutationFn: () => start(),
+    mutationFn: () => start({ data: { returnTo } }),
     onSuccess: (r) => { window.location.href = r.authorizeUrl; },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
@@ -361,7 +375,7 @@ function PinterestCard(props: {
   );
 }
 
-function IntegrationCard(props: {
+export function IntegrationCard(props: {
   provider: Provider;
   title: string;
   description: string;

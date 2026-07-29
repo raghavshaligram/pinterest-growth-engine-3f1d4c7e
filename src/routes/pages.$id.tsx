@@ -16,6 +16,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
+import { useSetupGate } from "@/lib/onboarding-gate";
 import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { toast } from "sonner";
 import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap } from "lucide-react";
@@ -78,6 +79,7 @@ function PageDetail() {
   const gen = useServerFn(generateBriefs);
   const renderPage = useServerFn(renderImagesForPage);
   const delAll = useServerFn(deleteBriefsForPage);
+  const { guard } = useSetupGate();
 
 
   const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
@@ -207,7 +209,7 @@ function PageDetail() {
           {pendingRender > 0 && (
             <button
               type="button"
-              onClick={() => imgMut.mutate()}
+              onClick={() => { if (guard()) imgMut.mutate(); }}
               disabled={imgMut.isPending}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", borderRadius: 999,
@@ -238,7 +240,7 @@ function PageDetail() {
           (see pages.index.tsx). */}
       <div style={{ flexShrink: 0, display: "flex", gap: 8, padding: "14px 24px 0" }}>
         <ActionButton icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} label="Analyze" onClick={() => anaMut.mutate()} disabled={anaMut.isPending} />
-        <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => genMut.mutate(10)} disabled={genMut.isPending || !analyzed} />
+        <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => { if (guard()) genMut.mutate(10); }} disabled={genMut.isPending || !analyzed} />
         {briefs.length > 0 && (
           <button
             type="button"

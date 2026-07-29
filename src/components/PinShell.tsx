@@ -10,7 +10,7 @@
 // collapsed "more" dropdown while their pages still rendered through
 // the old AppShell -- now that every screen shares this chrome, there's
 // no reason to hide them).
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Calendar, Layers, Globe, FileText, Images,
   KeyRound, Settings2, ScrollText, LogOut,
@@ -19,7 +19,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { SiteProvider } from "@/lib/site-context";
-import type { ReactNode } from "react";
+import { FinishSetupBanner } from "@/components/FinishSetupBanner";
+import { useSetupStatus } from "@/lib/onboarding-gate";
+import { useEffect, type ReactNode } from "react";
 
 type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "keywords" | "logs" | "settings";
 
@@ -128,11 +130,39 @@ export function PinShell({
       <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: PIN.bg, fontFamily: PIN_FONT, color: PIN.textPrimary }}>
         <Sidebar active={active} userEmail={userEmail} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <OnboardingRedirectGuard />
+          <FinishSetupBanner />
           {children}
         </div>
       </div>
     </SiteProvider>
   );
+}
+
+// Sends a not-yet-onboarded account into the wizard automatically, once,
+// on first login -- every PinShell-rendered page mounts this (instead of
+// duplicating the check into each route's own beforeLoad, the way the
+// auth guard itself is currently duplicated 9x -- see the file-level
+// comment above) so there's exactly one place this logic lives. Settings
+// is deliberately excluded: it's both "onboarding, accessible again
+// later" per the spec, and the Pinterest OAuth callback's landing page
+// when a connect was started from inside the wizard (see
+// StepIntegrations in routes/onboarding.tsx) -- redirecting away from it
+// the instant it renders would yank a user off the very page confirming
+// their Pinterest connection before they see it.
+function OnboardingRedirectGuard() {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { data, isLoading } = useSetupStatus();
+
+  useEffect(() => {
+    if (isLoading || !data) return;
+    if (data.hasCompletedOnboarding) return;
+    if (pathname.startsWith("/settings") || pathname.startsWith("/onboarding")) return;
+    navigate({ to: "/onboarding" });
+  }, [isLoading, data, pathname, navigate]);
+
+  return null;
 }
 
 // The dedicated ShellHeader strip that used to live here (just the

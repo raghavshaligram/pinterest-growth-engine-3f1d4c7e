@@ -9,10 +9,13 @@ import { getErrorMessage } from "@/lib/error-message";
 // beyond clicking Connect.
 export const startPinterestOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i?: { returnTo?: "settings" | "onboarding" }) =>
+    z.object({ returnTo: z.enum(["settings", "onboarding"]).default("settings") }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { pinterestAppConfig, signState, buildAuthorizeUrl } = await import("./pinterest-oauth.server");
     const { appId, redirectUri } = pinterestAppConfig();
-    const state = signState(context.userId);
+    const state = signState(context.userId, data.returnTo);
     return {
       authorizeUrl: buildAuthorizeUrl({ appId, redirectUri, state }),
       redirectUri,
