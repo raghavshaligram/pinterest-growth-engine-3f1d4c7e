@@ -47,13 +47,18 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       }
 
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
+      // Tag the destination link with UTM params keyed on brief.id so
+      // GA4's sessionManualContent dimension can be joined back to a
+      // specific brief/template on the Insights page.
+      const { buildUtmLink } = await import("./utm");
+      const taggedLink = buildUtmLink(pageUrl, brief.id);
       const input = {
         userId,
         scheduledPinId: sp.id,
         boardId: board.pinterest_board_id ?? board.id,
         title: brief.title,
         description: brief.description,
-        link: pageUrl,
+        link: taggedLink,
         imageUrl,
         altText: brief.alt_text ?? undefined,
       };

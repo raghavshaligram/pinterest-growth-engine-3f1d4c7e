@@ -13,7 +13,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Calendar, Layers, Globe, FileText, Images,
-  KeyRound, Settings2, ScrollText, LogOut,
+  KeyRound, Settings2, ScrollText, LogOut, BarChart3,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
@@ -23,7 +23,7 @@ import { FinishSetupBanner } from "@/components/FinishSetupBanner";
 import { useSetupStatus } from "@/lib/onboarding-gate";
 import { useEffect, type ReactNode } from "react";
 
-type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "keywords" | "logs" | "settings";
+type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "settings";
 
 const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboard; key: NavKey }> = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -32,6 +32,11 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   { to: "/sites", label: "Sites", icon: Globe, key: "sites" },
   { to: "/pages", label: "Pages", icon: FileText, key: "pages" },
   { to: "/pins", label: "Pins", icon: Images, key: "pins" },
+  // Distinct from Dashboard (what's queued/posted) and Settings
+  // (connections/config) -- this answers "what worked," pulling live
+  // GA4 data for the currently-selected site, so it gets its own
+  // top-level rail icon rather than living inside either of those.
+  { to: "/insights", label: "Insights", icon: BarChart3, key: "insights" },
   { to: "/keywords", label: "Keywords", icon: KeyRound, key: "keywords" },
   { to: "/logs", label: "Logs", icon: ScrollText, key: "logs" },
   { to: "/settings/integrations", label: "Settings", icon: Settings2, key: "settings" },

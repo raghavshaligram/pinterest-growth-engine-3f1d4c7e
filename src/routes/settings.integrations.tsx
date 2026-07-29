@@ -9,6 +9,7 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth, getPinterestSettings } from "@/lib/integrations.functions";
+import { listGoogleConnections, startGoogleOAuth, disconnectGoogleConnection } from "@/lib/google.functions";
 import { getPublishingProfile, savePublishingProfile, getAccountHealth, setCapMode } from "@/lib/publishing-profile.functions";
 import { describeCapEvent, capEventIsWarning, type CapEvent } from "@/lib/cap-event-copy";
 
@@ -27,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
-import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon } from "lucide-react";
+import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 
 type Provider = "openai" | "replicate" | "apify" | "pinterest";
@@ -76,6 +77,15 @@ function IntegrationsPage() {
         .catch(() => { /* non-fatal — just skip the prompt if the check fails */ });
     } else if (s === "error") {
       toast.error(`Pinterest connect failed: ${p.get("reason") ?? "unknown"}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    const g = p.get("google");
+    if (g === "connected") {
+      toast.success("Google account connected");
+      qc.invalidateQueries({ queryKey: ["google-connections"] });
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (g === "error") {
+      toast.error(`Google connect failed: ${p.get("reason") ?? "unknown"}`);
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [qc]);
@@ -134,6 +144,7 @@ function IntegrationsPage() {
           status={data?.find((i) => i.provider === "pinterest")}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
         />
+        <GoogleConnectionsCard />
       </div>
 
       <AccountHealthSection />
@@ -379,6 +390,116 @@ function PinterestCard(props: {
           </div>
         </div>
       </CollapsibleSection>
+    </Card>
+  );
+}
+
+// Deliberately a list of rows, not a single fixed card like the other
+// providers -- google_connections is a genuinely multi-row table (one
+// user can connect several Google accounts, e.g. an agency managing
+// multiple clients), unlike openai/replicate/apify/pinterest which are
+// UNIQUE(user_id, provider) and can only ever have one row. Styled to
+// match PinterestCard/IntegrationCard's existing look (same Card,
+// KeyRound-weight icon slot, status dot+text, quiet text actions)
+// rather than a data-table with columns/checkboxes.
+function GoogleConnectionsCard() {
+  const qc = useQueryClient();
+  const list = useServerFn(listGoogleConnections);
+  const startOAuth = useServerFn(startGoogleOAuth);
+  const disconnect = useServerFn(disconnectGoogleConnection);
+
+  const { data, isLoading } = useQuery({ queryKey: ["google-connections"], queryFn: () => list() });
+
+  const connectMut = useMutation({
+    mutationFn: () => startOAuth(),
+    onSuccess: (r) => { window.location.href = r.authorizeUrl; },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const disconnectMut = useMutation({
+    mutationFn: (id: string) => disconnect({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Google account disconnected");
+      qc.invalidateQueries({ queryKey: ["google-connections"] });
+      // Any site mapped to this connection loses its GA4 mapping too
+      // (ON DELETE SET NULL on sites.google_connection_id) -- refresh
+      // both site-data query keys sites.tsx actually uses so that's
+      // reflected (ga4_property_id/_label are left stale on the row
+      // itself, but the "mapped" check reads google_connection_id and
+      // that's genuinely nulled, so this doesn't show as connected).
+      qc.invalidateQueries({ queryKey: ["sites-overview"] });
+      qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const connections = data ?? [];
+
+  return (
+    <Card className="p-6">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" />
+          <h3 className="text-lg font-semibold">Google Analytics</h3>
+        </div>
+        <Badge variant={connections.length > 0 ? "default" : "secondary"}>
+          {connections.length > 0
+            ? <><CheckCircle2 className="mr-1 h-3 w-3" />{connections.length} connected</>
+            : "Not configured"}
+        </Badge>
+      </div>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Connect one or more Google accounts to read GA4 traffic on the Insights page and each site's Connections section — read-only, never modifies your Analytics data.
+      </p>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+
+      {!isLoading && connections.length === 0 && (
+        <p className="mb-4 text-sm text-muted-foreground">No Google accounts connected yet.</p>
+      )}
+
+      {connections.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {connections.map((conn) => (
+            <div key={conn.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                  style={{ background: "#4285F4" }}
+                  aria-hidden
+                >
+                  G
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{conn.label}</div>
+                  {conn.google_email && (
+                    <div className="truncate text-xs text-muted-foreground">{conn.google_email}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="flex items-center gap-1 text-xs text-emerald-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Connected
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-destructive hover:underline"
+                  onClick={() => disconnectMut.mutate(conn.id)}
+                  disabled={disconnectMut.isPending}
+                >
+                  Disconnect
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button type="button" size="sm" variant="outline" onClick={() => connectMut.mutate()} disabled={connectMut.isPending}>
+        <Plus className="mr-1 h-4 w-4" />
+        {connectMut.isPending ? "Redirecting…" : "Connect another Google account"}
+      </Button>
     </Card>
   );
 }

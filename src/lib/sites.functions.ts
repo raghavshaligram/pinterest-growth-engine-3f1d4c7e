@@ -85,11 +85,26 @@ export type SiteOverviewRow = {
   // BrandEditorFields, which is website-only; etsy/ecomm sites carry
   // etsy_product/ecomm_product here without ever showing a picker.
   vertical: SiteVertical;
+  // GA4 mapping -- set via the site's Connections section (upsertSite).
+  // google_connection_id points at a row in the separate multi-account
+  // google_connections table (see 20260730100000 migration); a site has
+  // at most one active GA4 mapping even though a user can hold several
+  // Google connections overall.
+  google_connection_id: string | null;
+  ga4_property_id: string | null;
+  ga4_property_label: string | null;
   created_at: string;
   // Computed, not stored -- see getSitesOverview.
   pageCount: number;
   pinsCreated: number;
   lastCrawledAt: string | null;
+  // Count of boards that would actually publish to this site -- boards
+  // with this site explicitly in board.site_ids, plus boards with an
+  // empty site_ids (meaning "any site", same rule pages.functions.ts's
+  // scoring logic uses). Used by the site's Connections section as a
+  // one-glance Pinterest summary instead of relocating the full Boards
+  // CRUD UI (which remains a many-to-many, dedicated /boards page).
+  boardsMappedCount: number;
 };
 
 // Richer version of listSites for the My Sites page: folds in a
@@ -138,11 +153,23 @@ export const getSitesOverview = createServerFn({ method: "GET" })
       briefCountBySite.set(siteId, (briefCountBySite.get(siteId) ?? 0) + 1);
     }
 
+    const { data: boardRows } = await s.from("boards").select("id, site_ids");
+    const boards = (boardRows ?? []) as { id: string; site_ids: string[] | null }[];
+    const boardsMappedCountBySite = new Map<string, number>();
+    for (const siteId of siteIds) {
+      const count = boards.filter((b) => {
+        const ids = Array.isArray(b.site_ids) ? b.site_ids : [];
+        return ids.length === 0 || ids.includes(siteId);
+      }).length;
+      boardsMappedCountBySite.set(siteId, count);
+    }
+
     return sites.map((site: Record<string, unknown>) => ({
       ...site,
       pageCount: pageCountBySite.get(site.id as string) ?? 0,
       pinsCreated: briefCountBySite.get(site.id as string) ?? 0,
       lastCrawledAt: lastCrawledBySite.get(site.id as string) ?? null,
+      boardsMappedCount: boardsMappedCountBySite.get(site.id as string) ?? 0,
     })) as SiteOverviewRow[];
   });
 
@@ -153,6 +180,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     site_type?: SiteType; brand_name?: string; tagline?: string;
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
     image_provider?: ImageProvider; vertical?: SiteVertical;
+    google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -172,6 +200,13 @@ export const upsertSite = createServerFn({ method: "POST" })
       // this field from the client) even though WEBSITE_VERTICAL_OPTIONS
       // above only ever offers the two content verticals in the UI.
       vertical: z.enum(["garden_content", "general_content", "etsy_product", "ecomm_product"]).optional(),
+      // Nullable (not just optional) so the Connections section can
+      // explicitly clear a mapping (e.g. after disconnecting the
+      // underlying Google account) by sending null rather than needing
+      // a separate "unset" endpoint.
+      google_connection_id: z.string().uuid().nullable().optional(),
+      ga4_property_id: z.string().nullable().optional(),
+      ga4_property_label: z.string().nullable().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

@@ -27,6 +27,8 @@ import {
   type SiteOverviewRow, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
 import type { SiteVertical } from "@/lib/briefs.functions";
+import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
+import { listIntegrations } from "@/lib/integrations.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -153,6 +155,13 @@ function SitesPage() {
   const { data: sites } = useQuery({ queryKey: ["sites-overview"], queryFn: () => overviewFn() });
   const [wizardOpen, setWizardOpen] = useState(false);
 
+  // Shared across every SiteCard's Connections section -- one query,
+  // not one per card (react-query dedupes by key regardless, but this
+  // keeps the intent explicit).
+  const listInt = useServerFn(listIntegrations);
+  const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listInt() });
+  const pinterestConnected = integrations?.find((i) => i.provider === "pinterest")?.status === "ok";
+
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["sites-overview"] });
     // SiteSwitcher/SiteProvider (Dashboard/Schedule) read the lighter
@@ -205,6 +214,7 @@ function SitesPage() {
             onCrawl={() => crawlMut.mutate(site.id)}
             crawlPending={crawlMut.isPending}
             onSaved={invalidate}
+            pinterestConnected={pinterestConnected}
           />
         ))}
       </div>
@@ -633,10 +643,196 @@ export function AddSiteWizard({
 
 // ---------- Site card ----------
 
+// Top-level per-site "Connections" area -- deliberately NOT inside the
+// Advanced/collapsible section of BrandEditorFields (that stays scoped
+// to brand_notes/typography_direction/brand palette only, per spec).
+// Two side-by-side summary cards, same visual tier as the primary
+// Brand/Crawl/Delete action row above them, matching the "brand summary
+// card" feel rather than a settings form.
+//
+// Pinterest here is a status + mapped-boards-count summary linking out
+// to /boards, not a relocated CRUD UI -- boards are a genuine many-to-
+// many relationship (board.site_ids: uuid[], a board can target 0+
+// sites) managed on their own dedicated page, so "moving" board mapping
+// into a per-site card would mean either duplicating that whole UI or
+// crippling it down to a single-site view. A concise glanceable summary
+// + link preserves the real data model instead of faking a 1:1 one.
+function SiteConnectionsSection({
+  site, pinterestConnected, onSaved,
+}: {
+  site: SiteOverviewRow;
+  pinterestConnected: boolean;
+  onSaved: () => void;
+}) {
+  return (
+    <div className="mt-5 border-t border-border pt-5">
+      <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-border p-3">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
+              <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
+            </span>
+            <span className="text-sm font-medium">Pinterest</span>
+            <span className={`ml-auto flex items-center gap-1 text-xs ${pinterestConnected ? "text-emerald-600" : "text-muted-foreground"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${pinterestConnected ? "bg-emerald-500" : "bg-neutral-300"}`} />
+              {pinterestConnected ? "Connected" : "Not connected"}
+            </span>
+          </div>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {site.boardsMappedCount > 0
+              ? `${site.boardsMappedCount} board${site.boardsMappedCount === 1 ? "" : "s"} publish here`
+              : "No boards target this site yet"}
+          </p>
+          <Link to="/boards" className="text-xs font-medium text-primary hover:underline">Manage boards →</Link>
+        </div>
+        <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
+      </div>
+    </div>
+  );
+}
+
+function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRow; onSaved: () => void }) {
+  const upsert = useServerFn(upsertSite);
+  const listConns = useServerFn(listGoogleConnections);
+  const listProps = useServerFn(listGa4PropertiesForConnection);
+
+  const { data: connections } = useQuery({ queryKey: ["google-connections"], queryFn: () => listConns() });
+  const [editing, setEditing] = useState(false);
+  const [connId, setConnId] = useState<string | null>(site.google_connection_id);
+
+  // Auto-select the only connection when there's nothing mapped yet and
+  // exactly one Google account is available -- per spec, this is the
+  // one case that shouldn't make the user pick from a list of one.
+  const autoSelected = !site.google_connection_id && connections?.length === 1 ? connections[0].id : null;
+  const effectiveConnId = connId ?? autoSelected;
+
+  const { data: properties, isLoading: propsLoading } = useQuery({
+    queryKey: ["ga4-properties", effectiveConnId],
+    queryFn: () => listProps({ data: { connectionId: effectiveConnId! } }),
+    enabled: editing && !!effectiveConnId,
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (vars: { propertyId: string; propertyLabel: string }) =>
+      upsert({
+        data: {
+          id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
+          google_connection_id: effectiveConnId,
+          ga4_property_id: vars.propertyId,
+          ga4_property_label: vars.propertyLabel,
+        },
+      }),
+    onSuccess: () => { toast.success("Google Analytics property mapped"); setEditing(false); onSaved(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const mapped = site.google_connection_id && site.ga4_property_id;
+  const mappedConnLabel = connections?.find((c) => c.id === site.google_connection_id)?.label;
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: "#4285F4" }} aria-hidden>G</span>
+        <span className="text-sm font-medium">Google Analytics</span>
+        <span className={`ml-auto flex items-center gap-1 text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
+          {mapped ? "Connected" : "Not mapped"}
+        </span>
+      </div>
+
+      {!editing && (
+        <>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {mapped
+              ? <>{site.ga4_property_label ?? site.ga4_property_id}{mappedConnLabel ? ` · ${mappedConnLabel}` : ""}</>
+              : (connections?.length ? "Pick which GA4 property tracks this site" : "No Google accounts connected yet")}
+          </p>
+          {connections?.length ? (
+            <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+              {mapped ? "Change →" : "Map a property →"}
+            </button>
+          ) : (
+            <RouterLinkToSettings />
+          )}
+        </>
+      )}
+
+      {editing && (
+        <div className="space-y-3">
+          {(connections?.length ?? 0) > 1 && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-muted-foreground">Google account</div>
+              <div className="flex flex-wrap gap-1.5">
+                {connections!.map((c) => {
+                  const active = effectiveConnId === c.id;
+                  return (
+                    <button
+                      key={c.id} type="button" onClick={() => setConnId(c.id)}
+                      className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
+                      style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                    >
+                      {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {effectiveConnId && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-muted-foreground">GA4 property</div>
+              {propsLoading && <p className="text-xs text-muted-foreground">Loading properties…</p>}
+              {!propsLoading && properties?.length === 0 && (
+                <p className="text-xs text-muted-foreground">No GA4 properties visible to this Google account.</p>
+              )}
+              <div className="flex flex-col gap-1.5">
+                {properties?.map((p) => {
+                  const active = saveMut.variables?.propertyId === p.propertyId || (!saveMut.variables && site.ga4_property_id === p.propertyId);
+                  return (
+                    <button
+                      key={p.propertyId} type="button"
+                      onClick={() => saveMut.mutate({ propertyId: p.propertyId, propertyLabel: p.displayName })}
+                      disabled={saveMut.isPending}
+                      className="rounded-md border p-2 text-left text-xs transition-colors hover:border-neutral-400"
+                      style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                    >
+                      <div className="flex items-center gap-1 font-medium">
+                        {active && <Check className="h-3 w-3 shrink-0" style={{ color: "#E60023" }} />}
+                        {p.displayName}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">{p.accountName}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouterLinkToSettings() {
+  return (
+    <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+      Connect a Google account →
+    </Link>
+  );
+}
+
 function SiteCard({
-  site, onDelete, onCrawl, crawlPending, onSaved,
+  site, onDelete, onCrawl, crawlPending, onSaved, pinterestConnected,
 }: {
   site: SiteOverviewRow; onDelete: () => void; onCrawl: () => void; crawlPending: boolean; onSaved: () => void;
+  pinterestConnected: boolean;
 }) {
   const upsert = useServerFn(upsertSite);
   const [editing, setEditing] = useState(false);
@@ -725,7 +921,9 @@ function SiteCard({
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <SiteConnectionsSection site={site} pinterestConnected={pinterestConnected} onSaved={onSaved} />
+
+        <div className="mt-5 flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing((v) => !v)}>
             Brand<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${editing ? "rotate-180" : ""}`} />
           </Button>
