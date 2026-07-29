@@ -27,6 +27,7 @@ import { useSiteContext } from "@/lib/site-context";
 import { TopBar } from "@/components/PinTopBar";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { useSetupGate } from "@/lib/onboarding-gate";
+import { useSiteStyleGate } from "@/lib/site-style-gate";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ChevronRight, RefreshCw, Zap, Loader2, EyeOff, Eye } from "lucide-react";
@@ -69,6 +70,7 @@ function PagesPage({ search }: { search: string }) {
   const crawl = useServerFn(crawlSite);
   const pipeline = useServerFn(runFullPipeline);
   const { guard } = useSetupGate();
+  const { guard: styleGuard } = useSiteStyleGate();
   const setExcluded = useServerFn(setPageExcluded);
   const autoExclude = useServerFn(autoExcludePages);
 
@@ -169,7 +171,7 @@ function PagesPage({ search }: { search: string }) {
           </button>
           <button
             type="button"
-            onClick={() => { if (guard()) pipelineM.mutate(); }}
+            onClick={() => { if (guard() && styleGuard()) pipelineM.mutate(); }}
             disabled={pipelineM.isPending}
             style={{
               display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,

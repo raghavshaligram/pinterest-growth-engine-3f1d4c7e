@@ -41,6 +41,7 @@ import { getPublishingProfile } from "@/lib/publishing-profile.functions";
 import {
   IntegrationCard, PinterestConnectButton, PublishingAgePrompt,
 } from "@/routes/settings.integrations";
+import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 
 export const Route = createFileRoute("/onboarding")({
   ssr: false,
@@ -67,6 +68,7 @@ type SiteRow = {
   brand_notes: string | null;
   image_provider: ImageProvider;
   sitemap_url: string | null;
+  style_locked_at: string | null;
 };
 
 // Shared by every step 2+ component -- one cached query (queryKey
@@ -244,7 +246,7 @@ function OnboardingWizard() {
             )
             : <CenteredSpinner />)}
           {step === 4 && (siteId
-            ? <StepCrawlPreview siteId={siteId} onNext={() => setStep(5)} onBack={() => setStep(3)} />
+            ? <StepCrawlPreview siteId={siteId} onNext={() => setStep(5)} onBack={() => setStep(3)} onAdjustBrand={() => setStep(2)} />
             : <CenteredSpinner />)}
           {step === 5 && (
             <StepComplete
@@ -291,6 +293,7 @@ function StepWelcome({
       <AddSiteWizard
         onCancel={onSkip}
         onCreated={(site) => site && onSiteReady(site)}
+        showStyleSetupStep={false}
       />
     </div>
   );
@@ -706,11 +709,12 @@ function SubStepTabs({
 // ---------- Step 4: First crawl preview ----------
 
 function StepCrawlPreview({
-  siteId, onNext, onBack,
+  siteId, onNext, onBack, onAdjustBrand,
 }: {
   siteId: string;
   onNext: () => void;
   onBack: () => void;
+  onAdjustBrand: () => void;
 }) {
   const qc = useQueryClient();
   const { data: sites } = useSitesList();
@@ -718,6 +722,13 @@ function StepCrawlPreview({
   const crawlFn = useServerFn(crawlSite);
   const listPagesFn = useServerFn(listPages);
   const generateFirstBatch = useGenerateFirstBatch();
+  // "Generate first batch" calls generateBriefs under the hood, which is
+  // gated on style_locked_at (see briefs.functions.ts) -- this is the
+  // first point in onboarding where a real image provider is guaranteed
+  // connected (step 3, just before this one), so it's the right place to
+  // surface Pin Style Setup rather than forcing it back at step 1's site
+  // creation, when no provider exists yet to render a real preview with.
+  const styleLocked = Boolean(site?.style_locked_at);
 
   const crawlMut = useMutation({
     mutationFn: () => crawlFn({ data: { siteId } }),
@@ -784,17 +795,29 @@ function StepCrawlPreview({
           No pages found yet — double check the sitemap URL in Sites, or add pages there once your site's live.
         </p>
       )}
-      <div className="flex justify-between pt-2">
-        <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-        <Button
-          type="button"
-          className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-          onClick={() => generateFirstBatch.mutate(undefined, { onSuccess: onNext, onError: (e) => toast.error(getErrorMessage(e)) })}
-          disabled={!preview.length || generateFirstBatch.isPending}
-        >
-          {generateFirstBatch.isPending ? "Generating…" : "Generate first batch →"}
-        </Button>
-      </div>
+      {!styleLocked && site && (
+        <div className="border-t border-border pt-5">
+          <PinStyleSetupPanel
+            site={{ id: site.id, brand_name: site.brand_name, url: site.url }}
+            onDone={() => qc.invalidateQueries({ queryKey: ["sites-switcher"] })}
+            onAdjust={onAdjustBrand}
+          />
+        </div>
+      )}
+
+      {styleLocked && (
+        <div className="flex justify-between pt-2">
+          <Button type="button" variant="outline" onClick={onBack}>Back</Button>
+          <Button
+            type="button"
+            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
+            onClick={() => generateFirstBatch.mutate(undefined, { onSuccess: onNext, onError: (e) => toast.error(getErrorMessage(e)) })}
+            disabled={!preview.length || generateFirstBatch.isPending}
+          >
+            {generateFirstBatch.isPending ? "Generating…" : "Generate first batch →"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@
 import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,18 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Globe, Store, ShoppingBag, Trash2, RefreshCcw, ChevronDown, Plus, X, Check, BookOpen, Link2, Map,
+  ImageIcon, Upload, Loader2, Sparkles,
 } from "lucide-react";
 import {
   getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS,
-  WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL,
-  type SiteOverviewRow, type SiteType, type ImageProvider,
+  WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL, BRAND_DISPLAY_MODES, BRAND_NAME_MODES,
+  type SiteOverviewRow, type SiteType, type ImageProvider, type BrandDisplayMode, type BrandNameMode,
 } from "@/lib/sites.functions";
+import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
@@ -228,6 +231,7 @@ export function BrandEditorFields({
   notes, onNotes,
   imageProvider, onImageProvider,
   siteType, vertical, onVertical,
+  logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
   previewHost = "www",
@@ -244,6 +248,12 @@ export function BrandEditorFields({
   // trigger with no UI choice, so siteType decides whether this section
   // renders at all rather than the caller conditionally omitting props.
   siteType: SiteType; vertical: SiteVertical; onVertical: (v: SiteVertical) => void;
+  // Storage path (sites.logo_url), not a signed URL -- LogoUploadField
+  // resolves its own preview. null both for a genuinely logo-less site
+  // AND for the AddSiteWizard before anything's been uploaded yet.
+  logoPath: string | null; onLogoChange: (path: string | null) => void;
+  displayMode: BrandDisplayMode; onDisplayMode: (v: BrandDisplayMode) => void;
+  nameMode: BrandNameMode; onNameMode: (v: BrandNameMode) => void;
   advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
   previewHost?: string;
@@ -317,6 +327,13 @@ export function BrandEditorFields({
           <span className="h-2 w-2 rounded-full" style={{ background: accentColor }} />accent
         </span>
       </div>
+
+      <BrandDisplayFields
+        logoPath={logoPath} onLogoChange={onLogoChange}
+        displayMode={displayMode} onDisplayMode={onDisplayMode}
+        nameMode={nameMode} onNameMode={onNameMode}
+        brandName={brandName} previewHost={previewHost ?? "www"}
+      />
 
       {siteType === "website" && (
         <div>
@@ -433,9 +450,145 @@ export function BrandEditorFields({
   );
 }
 
+// ---------- Brand display (logo vs. text, brand name vs. domain) ----------
+// Deliberately its own component rather than inlined in BrandEditorFields
+// -- it owns real client-side upload I/O (Storage), unlike every other
+// field there which is just local form state until the caller's Save/
+// Create mutation fires.
+function BrandDisplayFields({
+  logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode, brandName, previewHost,
+}: {
+  logoPath: string | null; onLogoChange: (path: string | null) => void;
+  displayMode: BrandDisplayMode; onDisplayMode: (v: BrandDisplayMode) => void;
+  nameMode: BrandNameMode; onNameMode: (v: BrandNameMode) => void;
+  brandName: string; previewHost: string;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let ok = true;
+    if (!logoPath) { setPreviewUrl(null); return; }
+    supabase.storage.from("pins").createSignedUrl(logoPath, 3600).then((r) => {
+      if (ok) setPreviewUrl(r.data?.signedUrl ?? null);
+    });
+    return () => { ok = false; };
+  }, [logoPath]);
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) throw new Error("Not signed in");
+      const ext = file.type.includes("png") ? "png" : file.type.includes("svg") ? "svg" : file.type.includes("webp") ? "webp" : "jpg";
+      // Path lives under the existing 'pins' bucket, prefixed by
+      // auth.uid() -- same folder the storage RLS policies already
+      // scope reads/writes to (see the pin_style_setup migration's own
+      // comment), just under a logos/ subfolder instead of a brief id.
+      const path = `${uid}/logos/${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from("pins").upload(path, file, { contentType: file.type, upsert: true });
+      if (up.error) throw up.error;
+      onLogoChange(path);
+      toast.success("Logo uploaded");
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <Label className="mb-0 block">
+        Brand display <span className="font-normal text-muted-foreground">how pins show your brand in the URL bar</span>
+      </Label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+          {previewUrl ? (
+            <img src={previewUrl} alt="Logo" className="h-full w-full object-contain" />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
+            />
+            <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+              {uploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+              {logoPath ? "Change logo" : "Upload logo"}
+            </Button>
+            {logoPath && (
+              <button type="button" onClick={() => onLogoChange(null)} className="text-xs text-muted-foreground hover:text-destructive">
+                Remove
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">PNG, JPG, WebP, or SVG.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Show in URL bar</div>
+          <div className="flex gap-1.5">
+            {BRAND_DISPLAY_MODES.map((mode) => {
+              const active = displayMode === mode;
+              const disabled = mode === "logo" && !logoPath;
+              return (
+                <button
+                  key={mode} type="button"
+                  disabled={disabled}
+                  title={disabled ? "Upload a logo first" : undefined}
+                  onClick={() => onDisplayMode(mode)}
+                  className="flex-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                >
+                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+                  {mode === "logo" ? "Logo" : "Brand text"}
+                </button>
+              );
+            })}
+          </div>
+          {displayMode === "logo" && !logoPath && (
+            <p className="mt-1 text-[11px] text-amber-700">No logo uploaded yet -- pins will show brand text until you add one.</p>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">Text shows</div>
+          <div className="flex gap-1.5">
+            {BRAND_NAME_MODES.map((mode) => {
+              const active = nameMode === mode;
+              return (
+                <button
+                  key={mode} type="button"
+                  disabled={displayMode === "logo" && Boolean(logoPath)}
+                  onClick={() => onNameMode(mode)}
+                  className="flex-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                >
+                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+                  {mode === "brand_name" ? (brandName || "Brand name") : previewHost}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Add-site wizard ----------
 
-type WizardStep = 1 | 2 | 3;
+type WizardStep = 1 | 2 | 3 | 4;
 
 // onCreated optionally receives the just-created/updated site row --
 // used by the onboarding wizard (routes/onboarding.tsx) to know which
@@ -444,10 +597,19 @@ type WizardStep = 1 | 2 | 3;
 // The plain Sites page usage below (`onCreated={() => {...}}`) is still
 // valid -- a callback that ignores its argument satisfies this type.
 export function AddSiteWizard({
-  onCancel, onCreated,
+  onCancel, onCreated, showStyleSetupStep = true,
 }: {
   onCancel: () => void;
   onCreated: (site?: { id: string; url: string; brand_name: string | null; accent_color: string | null }) => void;
+  // Whether step 4 (Pin Style Setup) is part of this flow at all.
+  // Defaults to true (Sites-page usage). The onboarding wizard's own
+  // embedded usage (step 1, site creation) sets this false: no image
+  // provider is connected yet at that point (that happens at
+  // onboarding's own step 3), so Pin Style Setup would always fail
+  // there -- onboarding instead surfaces it itself at step 4
+  // (StepCrawlPreview), right before "Generate first batch," which is
+  // the earliest point a provider is guaranteed to exist.
+  showStyleSetupStep?: boolean;
 }) {
   const upsert = useServerFn(upsertSite);
   const [step, setStep] = useState<WizardStep>(1);
@@ -463,10 +625,20 @@ export function AddSiteWizard({
   const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
   const [vertical, setVertical] = useState<SiteVertical>(DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<BrandDisplayMode>("text");
+  const [nameMode, setNameMode] = useState<BrandNameMode>("domain");
+  const [createdSite, setCreatedSite] = useState<{ id: string; url: string; brand_name: string | null; accent_color: string | null } | null>(null);
 
   const createMut = useMutation({
     mutationFn: () => upsert({
       data: {
+        // Once createdSite exists (the user went back from step 4 to
+        // adjust brand settings), include its id so this becomes an
+        // UPDATE of the same row instead of a second INSERT -- without
+        // this, "Adjust brand settings" -> "Add site" again would
+        // silently create a duplicate site.
+        id: createdSite?.id,
         url: normalizeUrl(url),
         sitemap_url: siteType === "website" && sitemapUrl.trim() ? normalizeUrl(sitemapUrl) : undefined,
         site_type: siteType,
@@ -482,11 +654,21 @@ export function AddSiteWizard({
         // etsy_product/ecomm_product itself instead of this always-set
         // website-flavored value overriding it.
         vertical: siteType === "website" ? vertical : undefined,
+        logo_url: logoPath,
+        display_mode: displayMode,
+        name_mode: nameMode,
       },
     }),
     onSuccess: (site) => {
       toast.success("Site added");
-      onCreated(site as unknown as { id: string; url: string; brand_name: string | null; accent_color: string | null });
+      const created = site as unknown as { id: string; url: string; brand_name: string | null; accent_color: string | null };
+      if (!showStyleSetupStep) { onCreated(created); return; }
+      // Move into Pin Style Setup instead of closing the wizard right
+      // away -- onCreated (which actually closes/refreshes the parent)
+      // only fires once that step is done or explicitly skipped, see
+      // step 4 below.
+      setCreatedSite(created);
+      setStep(4);
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
@@ -506,11 +688,12 @@ export function AddSiteWizard({
               {step === 1 && "Choose your site type"}
               {step === 2 && "Enter your site URL"}
               {step === 3 && "Set brand identity"}
+              {step === 4 && "Preview your pin style"}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {([1, 2, 3] as const).map((n) => (
+          {([1, 2, 3, 4] as const).map((n) => (
             <span
               key={n}
               className="h-2 rounded-full"
@@ -602,11 +785,34 @@ export function AddSiteWizard({
             notes={notes} onNotes={setNotes}
             imageProvider={imageProvider} onImageProvider={setImageProvider}
             siteType={siteType} vertical={vertical} onVertical={setVertical}
+            logoPath={logoPath} onLogoChange={setLogoPath}
+            displayMode={displayMode} onDisplayMode={setDisplayMode}
+            nameMode={nameMode} onNameMode={setNameMode}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
         )}
 
+        {step === 4 && createdSite && (
+          <div className="space-y-4">
+            <PinStyleSetupPanel
+              site={createdSite}
+              onDone={() => onCreated(createdSite)}
+              onAdjust={() => setStep(3)}
+            />
+            <div className="text-center">
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:underline"
+                onClick={() => onCreated(createdSite)}
+              >
+                Skip for now -- I&rsquo;ll set this up before my first batch
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step < 4 && (
         <div className="mt-6 flex justify-end gap-2">
           {step > 1 && <Button variant="outline" className="rounded-full" onClick={() => setStep((s) => (s - 1) as WizardStep)}>Back</Button>}
           {step === 2 && (
@@ -624,10 +830,11 @@ export function AddSiteWizard({
               onClick={() => createMut.mutate()}
               disabled={!brandName.trim() || createMut.isPending}
             >
-              <Plus className="mr-1.5 h-4 w-4" />Add site
+              <Plus className="mr-1.5 h-4 w-4" />{createdSite ? "Save & preview style" : "Add site"}
             </Button>
           )}
         </div>
+        )}
       </div>
     </Card>
   );
@@ -919,6 +1126,10 @@ function SiteCard({
   const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "openai");
   const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [logoPath, setLogoPath] = useState<string | null>(site.logo_url ?? null);
+  const [displayMode, setDisplayMode] = useState<BrandDisplayMode>(site.display_mode ?? "text");
+  const [nameMode, setNameMode] = useState<BrandNameMode>(site.name_mode ?? "domain");
+  const [styleSetupOpen, setStyleSetupOpen] = useState(false);
 
   const saveMut = useMutation({
     mutationFn: () => upsert({
@@ -936,6 +1147,9 @@ function SiteCard({
         // send this for etsy/ecomm sites so nothing can ever override
         // their trigger-assigned vertical through this form.
         vertical: site.site_type === "website" ? vertical : undefined,
+        logo_url: logoPath,
+        display_mode: displayMode,
+        name_mode: nameMode,
       },
     }),
     onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
@@ -997,6 +1211,15 @@ function SiteCard({
 
         <SiteConnectionsSection site={site} onSaved={onSaved} />
 
+        {!site.style_locked_at && (
+          <div className="mt-5 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" />Pin style not previewed yet -- required before generating pins for this site.</span>
+            <button type="button" onClick={() => setStyleSetupOpen(true)} className="shrink-0 font-medium underline underline-offset-2">
+              Set up now →
+            </button>
+          </div>
+        )}
+
         <div className="mt-5 flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing((v) => !v)}>
             Brand<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${editing ? "rotate-180" : ""}`} />
@@ -1040,6 +1263,9 @@ function SiteCard({
               notes={notes} onNotes={setNotes}
               imageProvider={imageProvider} onImageProvider={setImageProvider}
               siteType={site.site_type as SiteType} vertical={vertical} onVertical={setVertical}
+              logoPath={logoPath} onLogoChange={setLogoPath}
+              displayMode={displayMode} onDisplayMode={setDisplayMode}
+              nameMode={nameMode} onNameMode={setNameMode}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}
               previewHost={host}
@@ -1050,6 +1276,19 @@ function SiteCard({
           </div>
         )}
       </div>
+
+      <Dialog open={styleSetupOpen} onOpenChange={setStyleSetupOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Pin Style Setup</DialogTitle>
+          </DialogHeader>
+          <PinStyleSetupPanel
+            site={site}
+            onDone={() => { setStyleSetupOpen(false); onSaved(); }}
+            onAdjust={() => { setStyleSetupOpen(false); setEditing(true); }}
+          />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

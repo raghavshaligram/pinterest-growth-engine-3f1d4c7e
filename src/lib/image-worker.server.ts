@@ -7,8 +7,6 @@ import type { ImageProvider } from "@/lib/sites.functions";
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { getIntegration, markIntegration } = await import("./integrations.server");
-  const { replicatePredict } = await import("./replicate.server");
-  const { openaiGenerateImage } = await import("./openai-image.server");
   const { buildThemedPinPrompt } = await import("./briefs.functions");
 
   // Provider is now chosen per-site (sites.image_provider), so we can't
@@ -60,7 +58,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_colors, brand_font, vertical, image_provider))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider, display_mode, name_mode, logo_url))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -74,7 +72,11 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       const page = (brief as {
         pages?: {
           url?: string; title?: string | null; analysis?: unknown; excluded?: boolean;
-          sites?: { url?: string; brand_colors?: unknown; brand_font?: string | null; vertical?: SiteVertical | null; image_provider?: ImageProvider | null };
+          sites?: {
+            url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
+            vertical?: SiteVertical | null; image_provider?: ImageProvider | null;
+            display_mode?: "logo" | "text" | null; name_mode?: "brand_name" | "domain" | null; logo_url?: string | null;
+          };
         };
       }).pages;
 
@@ -93,6 +95,18 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       const brandHost = siteUrl ? new URL(siteUrl).hostname.replace(/^www\./, "") : "";
       const brandColors = Array.isArray(page?.sites?.brand_colors) ? page!.sites!.brand_colors as string[] : [];
       const analysis = (page?.analysis ?? {}) as { topic?: string; primary_keyword?: string };
+
+      // Resolve a signed URL for the site's logo ONLY when display_mode
+      // is actually 'logo' and a logo has really been uploaded -- per
+      // spec, an unset logo_url always falls back to text mode even if
+      // display_mode says 'logo' (a site that flips the toggle before
+      // uploading anything shouldn't silently lose its brand text).
+      let logoSignedUrl: string | null = null;
+      if (page?.sites?.display_mode === "logo" && page.sites.logo_url) {
+        const signed = await supabaseAdmin.storage.from("pins").createSignedUrl(page.sites.logo_url, 3600);
+        logoSignedUrl = signed.data?.signedUrl ?? null;
+      }
+      const hasLogo = Boolean(logoSignedUrl);
       // If image_prompt was manually edited after the brief was created
       // (image_prompt_edited_at set -- see trg_pin_briefs_image_prompt_edit),
       // it's already final/themed: use it as-is instead of re-deriving via
@@ -118,6 +132,10 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
             brandFont: page?.sites?.brand_font,
             vertical: page?.sites?.vertical,
             middlePrompt: brief.image_prompt,
+            brandName: page?.sites?.brand_name,
+            displayMode: page?.sites?.display_mode,
+            nameMode: page?.sites?.name_mode,
+            hasLogo,
           });
 
       const promptHash = createHash("sha1").update(themedPrompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
@@ -133,34 +151,18 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
 
       provider = page?.sites?.image_provider ?? "openai";
 
-      let imageBytes: Uint8Array;
-      let contentType: string;
-      let providerPredictionId: string;
-      let modelUsed: string;
-
-      if (provider === "openai") {
-        if (!openaiCfg) throw new Error("OpenAI not configured -- connect it in Settings > Integrations");
-        modelUsed = "gpt-image-1";
-        const result = await openaiGenerateImage({ apiKey: openaiCfg.api_key, model: modelUsed, prompt: themedPrompt });
-        imageBytes = result.imageBytes;
-        contentType = result.contentType;
-        providerPredictionId = result.id;
-      } else {
-        if (!replicateCfg) throw new Error("Replicate not configured -- connect it in Settings > Integrations");
-        modelUsed = "google/nano-banana-2";
-        const pred = await replicatePredict({
-          token: replicateCfg.api_token,
-          model: modelUsed,
-          input: { prompt: themedPrompt, aspect_ratio: "2:3" },
-          maxWaitMs: 90_000,
-        });
-        const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
-        const imgResp = await fetch(outUrl);
-        if (!imgResp.ok) throw new Error(`Replicate output download ${imgResp.status}`);
-        imageBytes = new Uint8Array(await imgResp.arrayBuffer());
-        contentType = imgResp.headers.get("content-type") ?? "image/png";
-        providerPredictionId = pred.id;
-      }
+      const { renderPinImage } = await import("./pin-render.server");
+      const rendered = await renderPinImage({
+        provider,
+        prompt: themedPrompt,
+        openaiApiKey: openaiCfg?.api_key,
+        replicateToken: replicateCfg?.api_token,
+        referenceImageUrl: hasLogo ? logoSignedUrl : null,
+      });
+      const imageBytes = rendered.imageBytes;
+      const contentType = rendered.contentType;
+      const providerPredictionId = rendered.providerPredictionId;
+      const modelUsed = rendered.modelUsed;
 
       const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
       const path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext}`;

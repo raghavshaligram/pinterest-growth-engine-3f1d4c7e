@@ -408,6 +408,27 @@ export function buildThemedPinPrompt(input: {
    */
   visualThemeHint?: string | null;
   trendSignal?: string | null;
+  /**
+   * Brand display settings (sites.display_mode/name_mode/brand_name) --
+   * all optional and additive: when displayMode/nameMode are omitted
+   * (every pre-existing caller), the LOCKED LAYOUT's bottom zone renders
+   * exactly as it always has (brandHost as plain text), so this can't
+   * change output for anything that doesn't explicitly opt in.
+   */
+  brandName?: string | null;
+  displayMode?: "logo" | "text" | null;
+  nameMode?: "brand_name" | "domain" | null;
+  /**
+   * Whether a real logo has actually been uploaded for this site AND a
+   * reference image URL will actually be handed to the provider for
+   * this render. Callers resolve this themselves (see
+   * image-worker.server.ts / pin-style-setup.functions.ts) rather than
+   * this function reaching into Storage -- it has no I/O of its own.
+   * If this is false, 'logo' display_mode silently falls back to text,
+   * per spec (a site that flips the toggle before uploading anything
+   * shouldn't lose its brand text on the pin).
+   */
+  hasLogo?: boolean;
 }) {
   // general_content, not garden_content -- that's the DB trigger's own
   // neutral default for website sites now (tg_sites_default_vertical),
@@ -441,6 +462,21 @@ export function buildThemedPinPrompt(input: {
   const typography = input.brandFont?.trim() || shape.typography_direction || flavor.typography_default;
   const genreSuffix = flavor.genre_lock ? `, ${flavor.genre_lock}` : "";
 
+  // Effective logo mode requires BOTH the explicit setting AND a real
+  // uploaded logo (see hasLogo's own doc comment) -- this is the single
+  // place that decision is made for prompt-text purposes, mirrored by
+  // callers' own identical fallback when deciding whether to actually
+  // pass a reference image URL to the provider.
+  const wantsLogo = input.displayMode === "logo" && Boolean(input.hasLogo);
+  const footerText = !wantsLogo && input.nameMode === "brand_name" && input.brandName
+    ? input.brandName
+    : input.brandHost;
+  const footerZoneLines = wantsLogo
+    ? `- A thin, full-width solid brand-color bar flush to the very bottom edge, in the exact same position and dimensions as a standard URL bar. Composite the supplied brand logo reference image centered within this bar, sized to fit its height with a small margin, preserving its original proportions and colors exactly as provided -- do not redraw, restyle, distort, recolor, or reinterpret the logo.
+- No wordmark, no tagline, no social handle, no extra URL, no watermark, no text of any kind in this bar beyond the composited logo image itself.`
+    : `- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${footerText}".
+- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.`;
+
   let middle = input.middlePrompt?.trim() || shape.default_middle_prompt(topic);
   if (input.visualThemeHint) {
     middle += ` Trending visual approach for this topic: ${input.visualThemeHint}. Incorporate where it fits the brand's identity.`;
@@ -467,13 +503,12 @@ LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are
 - A compact title band at the very top. Place this exact title text, uppercase when it suits the theme: "${title}".
 - Below it, the main themed visual, filling the large majority of the canvas: ${middle}
 - A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
-- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${input.brandHost}".
-- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
+${footerZoneLines}
 
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
 - Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
-- The ONLY text allowed anywhere on the pin is the title, the CTA text, and the URL bar host, exactly as quoted above -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
+- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- the bottom bar is the composited logo image only, with no text of its own" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
@@ -497,6 +532,17 @@ export const generateBriefs = createServerFn({ method: "POST" })
     if (!analysis.primary_keyword) throw new Error("Analyze the page first.");
 
     const { data: site } = await context.supabase.from("sites").select("*").eq("id", page.site_id).single();
+    // Batch generation is gated on Pin Style Setup having been
+    // completed at least once for this site (sites.style_locked_at) --
+    // see useSiteStyleGate (site-style-gate.ts) for the client-side
+    // pre-emptive redirect; this is the authoritative server-side
+    // backstop, same pattern as requireIntegration below. Existing
+    // sites were backfilled to a real timestamp by the migration that
+    // added this column, so this can only ever block a genuinely new,
+    // never-set-up site.
+    if (!site?.style_locked_at) {
+      throw new Error("Complete Pin Style Setup for this site before generating pins.");
+    }
     const brandName = site?.brand_name ?? (site ? new URL(site.url).hostname.replace(/^www\./, "") : "");
     const brandHost = site ? new URL(site.url).hostname.replace(/^www\./, "") : "";
     const brandColors = Array.isArray(site?.brand_colors) ? (site!.brand_colors as string[]) : [];
@@ -707,6 +753,10 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           brandFont,
           vertical,
           middlePrompt: b.image_prompt,
+          brandName: site?.brand_name,
+          displayMode: site?.display_mode,
+          nameMode: site?.name_mode,
+          hasLogo: Boolean(site?.logo_url),
         }),
         status: "image_pending" as const,
         // Traceability: record whether this batch used the competitive

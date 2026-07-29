@@ -13,6 +13,10 @@ export type SiteOption = {
   url: string;
   brand_name: string | null;
   accent_color: string | null;
+  // Present because listSites (below) selects("*") -- added here so
+  // useSiteStyleGate (site-style-gate.ts) can read the currently
+  // selected site's lock state without a second query.
+  style_locked_at?: string | null;
 };
 
 type SiteContextValue = {
