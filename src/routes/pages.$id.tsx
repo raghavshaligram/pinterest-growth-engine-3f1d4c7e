@@ -154,6 +154,23 @@ function PageDetail() {
     });
   }, [data]);
 
+  // Both memoized here (not after the `!data` early return below) so
+  // these hooks run unconditionally on every render, same reason
+  // `angles` above already does -- calling a hook only on some renders
+  // (e.g. once data loads) is a Rules-of-Hooks violation ("Rendered
+  // more hooks than during the previous render").
+  const filtered = useMemo(() => {
+    const briefs = data?.briefs ?? [];
+    return briefs.filter((b) => {
+      if (tab === "all") return true;
+      if (tab === "ready") return b.status === "ready" || b.status === "scheduled";
+      if (tab === "rendering") return b.status === "image_pending" || b.is_rendering;
+      if (tab === "scheduled") return b.status === "scheduled";
+      return true;
+    });
+  }, [data, tab]);
+  const masonryColumns = useMemo(() => bucketIntoMasonryColumns(filtered, columnCount), [filtered, columnCount]);
+
   if (!data) return <p style={{ fontFamily: PIN_FONT, fontSize: 13, color: TEXT_MUTED, padding: 24 }}>Loading…</p>;
   const { page, briefs } = data;
   const analysis = (page.analysis ?? {}) as Record<string, unknown>;
@@ -163,15 +180,6 @@ function PageDetail() {
   const pendingRender = briefs.filter((b) => b.status === "image_pending").length;
   const domain = hostOf(page.url);
   const contentType = typeof analysis.category === "string" ? analysis.category : null;
-
-  const filtered = briefs.filter((b) => {
-    if (tab === "all") return true;
-    if (tab === "ready") return b.status === "ready" || b.status === "scheduled";
-    if (tab === "rendering") return b.status === "image_pending" || b.is_rendering;
-    if (tab === "scheduled") return b.status === "scheduled";
-    return true;
-  });
-  const masonryColumns = useMemo(() => bucketIntoMasonryColumns(filtered, columnCount), [filtered, columnCount]);
 
   return (
     // Root of this page's content -- fills PinShell's main-column slot
