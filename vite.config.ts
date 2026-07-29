@@ -26,6 +26,14 @@ const supabaseKey =
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_12wGvWpw5vh2uZAqrC8A3Q_Km6xgjAq";
 
+const serverOnlySecretNames: string[] = [
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "INTEGRATIONS_ENC_KEY",
+  "PINTEREST_APP_ID",
+  "PINTEREST_APP_SECRET",
+  "PINTEREST_REDIRECT_URI",
+];
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
