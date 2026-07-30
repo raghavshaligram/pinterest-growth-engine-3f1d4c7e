@@ -29,6 +29,7 @@ import {
   type SiteOverviewRow, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
@@ -323,8 +324,9 @@ export function BrandEditorFields({
 
       {siteType === "website" && (
         <div>
-          <Label className="mb-2 block">
+          <Label className="mb-2 flex items-center gap-1.5">
             Content vertical <span className="font-normal text-muted-foreground">affects pin palette/tone only, not which templates are available</span>
+            <InfoTooltip text="Content Vertical shapes the palette, tone, and template flavor used when generating pins for this site. It only affects visual style -- it doesn't restrict which templates are available." />
           </Label>
           <div className="grid gap-2 sm:grid-cols-2">
             {WEBSITE_VERTICAL_OPTIONS.map((opt) => {

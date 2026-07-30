@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
@@ -552,6 +553,10 @@ function PinterestConnectionRow({
 
       <CollapsibleSection open={expanded}>
         <div className="mt-3 space-y-2 border-t pt-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Publish mode</span>
+            <InfoTooltip text="API publishes directly to this connection's Pinterest account. Webhook sends each pin's data to a URL you provide instead, so you can route publishing through your own automation." />
+          </div>
           <div className="inline-flex rounded-md border p-0.5">
             <Button
               type="button" size="sm"

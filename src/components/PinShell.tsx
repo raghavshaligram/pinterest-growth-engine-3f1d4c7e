@@ -13,15 +13,16 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Calendar, Layers, Globe, FileText, Images,
-  KeyRound, Settings2, ScrollText, LogOut, BarChart3,
+  KeyRound, Settings2, ScrollText, LogOut, BarChart3, PanelLeftClose, PanelLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { SiteProvider } from "@/lib/site-context";
 import { FinishSetupBanner } from "@/components/FinishSetupBanner";
+import { HelpMenu } from "@/components/HelpMenu";
 import { useSetupStatus } from "@/lib/onboarding-gate";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "settings";
 
@@ -46,9 +47,22 @@ function RedMark({ size = 34 }: { size?: number }) {
   return <PinspiderMark size={size} />;
 }
 
-function railItemStyle(active: boolean): React.CSSProperties {
+// Icon-only width (unchanged from before this change) vs. the
+// expanded, label-showing width -- expanded is the DEFAULT (see
+// SIDEBAR_COLLAPSED_KEY below): the spec calls for visible text labels
+// next to each icon, not hover-only tooltips, so collapsing is an
+// opt-in a user reaches for when they want the horizontal space back,
+// not the default state.
+const RAIL_WIDTH_COLLAPSED = 64;
+const RAIL_WIDTH_EXPANDED = 208;
+const SIDEBAR_COLLAPSED_KEY = "pinspider_sidebar_collapsed";
+
+function railItemStyle(active: boolean, collapsed: boolean): React.CSSProperties {
   return {
-    width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
+    height: 40, borderRadius: 12, display: "flex", alignItems: "center",
+    justifyContent: collapsed ? "center" : "flex-start",
+    width: collapsed ? 40 : "100%",
+    gap: 10, padding: collapsed ? 0 : "0 10px",
     background: active ? PIN.roseTint : "transparent",
     color: active ? PIN.accent : PIN.textSecondary,
     transition: "background-color 120ms ease, color 120ms ease",
@@ -57,6 +71,24 @@ function railItemStyle(active: boolean): React.CSSProperties {
 
 function Sidebar({ active, userEmail }: { active: NavKey; userEmail?: string | null }) {
   const navigate = useNavigate();
+  // Read synchronously on mount (not in an effect) so the very first
+  // render already reflects a returning user's saved preference --
+  // avoids a one-frame flash of the wrong width. Same
+  // typeof-window-guard pattern site-context.tsx already uses for its
+  // own localStorage read.
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     navigate({ to: "/auth" });
@@ -65,38 +97,56 @@ function Sidebar({ active, userEmail }: { active: NavKey; userEmail?: string | n
   return (
     <aside
       style={{
-        width: 64, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center",
-        background: PIN.card, borderRight: `1px solid ${PIN.border}`, padding: "16px 0",
+        width: collapsed ? RAIL_WIDTH_COLLAPSED : RAIL_WIDTH_EXPANDED, flexShrink: 0,
+        display: "flex", flexDirection: "column", alignItems: collapsed ? "center" : "stretch",
+        background: PIN.card, borderRight: `1px solid ${PIN.border}`, padding: "16px 12px",
+        transition: "width 150ms ease", overflow: "hidden",
       }}
     >
-      <Link to="/dashboard" aria-label="Dashboard">
+      <Link to="/dashboard" aria-label="Dashboard" style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: collapsed ? 0 : 2, justifyContent: collapsed ? "center" : "flex-start" }}>
         <RedMark />
+        {!collapsed && <span style={{ fontSize: 15, fontWeight: 700, color: PIN.textPrimary }}>Pinspider</span>}
       </Link>
 
       <nav
         className="no-scrollbar"
         style={{
-          marginTop: 24, display: "flex", flexDirection: "column", gap: 6,
-          overflowY: "auto", flex: 1, minHeight: 0, scrollbarWidth: "none",
+          marginTop: 24, display: "flex", flexDirection: "column", gap: 4,
+          overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0, scrollbarWidth: "none",
         }}
       >
         {NAV.map(({ to, label, icon: Icon, key }) => (
-          <Link key={to} to={to} title={label} style={railItemStyle(active === key)}>
-            <Icon size={19} />
+          <Link key={to} to={to} title={label} style={railItemStyle(active === key, collapsed)}>
+            <Icon size={19} style={{ flexShrink: 0 }} />
+            {!collapsed && <span style={{ fontSize: 14, fontWeight: active === key ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>}
           </Link>
         ))}
       </nav>
 
       <button
         type="button"
-        title="Sign out"
-        onClick={signOut}
-        style={{ ...railItemStyle(false), border: "none", cursor: "pointer", marginTop: 12, marginBottom: 12 }}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={toggleCollapsed}
+        style={{ ...railItemStyle(false, collapsed), border: "none", cursor: "pointer", marginTop: 8, background: "transparent" }}
       >
-        <LogOut size={19} />
+        {collapsed ? <PanelLeft size={18} style={{ flexShrink: 0 }} /> : <PanelLeftClose size={18} style={{ flexShrink: 0 }} />}
+        {!collapsed && <span style={{ fontSize: 13, fontWeight: 500 }}>Collapse</span>}
       </button>
 
-      <Avatar email={userEmail} />
+      <button
+        type="button"
+        title="Sign out"
+        onClick={signOut}
+        style={{ ...railItemStyle(false, collapsed), border: "none", cursor: "pointer", marginTop: 4, marginBottom: 12 }}
+      >
+        <LogOut size={19} style={{ flexShrink: 0 }} />
+        {!collapsed && <span style={{ fontSize: 14, fontWeight: 500 }}>Sign out</span>}
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: collapsed ? 0 : 2, justifyContent: collapsed ? "center" : "flex-start" }}>
+        <Avatar email={userEmail} />
+        {!collapsed && <span style={{ fontSize: 13, color: PIN.textSecondary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{userEmail ?? "Account"}</span>}
+      </div>
     </aside>
   );
 }
@@ -136,6 +186,7 @@ export function PinShell({
         <Sidebar active={active} userEmail={userEmail} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <OnboardingRedirectGuard />
+          <HelpMenu />
           <FinishSetupBanner />
           {children}
         </div>
