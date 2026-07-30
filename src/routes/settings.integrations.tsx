@@ -28,7 +28,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InfoTooltip } from "@/components/InfoTooltip";
+import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
@@ -66,6 +68,18 @@ function IntegrationsPage() {
   const getProfile = useServerFn(getPublishingProfile);
   const { data } = useQuery({ queryKey: ["integrations"], queryFn: () => list() });
   const [showAgePrompt, setShowAgePrompt] = useState(false);
+
+  const getDefaults = useServerFn(getAccountProviderDefaults);
+  const setDefault = useServerFn(setAccountProviderDefault);
+  const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
+  const setDefaultMut = useMutation({
+    mutationFn: (vars: { kind: "image" | "copy"; provider: string }) => setDefault({ data: vars }),
+    onSuccess: (_r, vars) => {
+      toast.success(`Default ${vars.kind === "image" ? "image" : "copy"} generation provider updated`);
+      qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -127,17 +141,21 @@ function IntegrationsPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <GenerationProvidersCard
           title="Image Generation"
-          description="Each site picks which of these to use for its own pin artwork (Sites -> Brand settings -> Advanced). Adding a future provider is one row here, never a new card."
+          description="Sets the account-wide default for pin artwork. Any site can override this individually in that site's Connections section. Adding a future provider is one row here, never a new card."
           providers={IMAGE_GEN_PROVIDERS}
           integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
+          currentDefault={providerDefaults?.default_image_provider}
+          onSetDefault={(provider) => setDefaultMut.mutate({ kind: "image", provider })}
         />
         <GenerationProvidersCard
           title="Copy Generation"
-          description="Each site picks which of these writes its pin titles, taglines, and calls-to-action (Sites -> Brand settings -> Advanced)."
+          description="Sets the account-wide default for pin titles, taglines, and calls-to-action. Any site can override this individually in that site's Connections section."
           providers={COPY_GEN_PROVIDERS}
           integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
+          currentDefault={providerDefaults?.default_copy_provider}
+          onSetDefault={(provider) => setDefaultMut.mutate({ kind: "copy", provider })}
         />
         <IntegrationCard
           provider="apify"
@@ -492,15 +510,23 @@ function GenerationProviderRow({
 // below, just listing GenerationProviderRow instead of
 // PinterestConnectionRow.
 function GenerationProvidersCard({
-  title, description, providers, integrationsData, onChanged,
+  title, description, providers, integrationsData, onChanged, currentDefault, onSetDefault,
 }: {
   title: string;
   description: string;
   providers: GenProviderMeta[];
   integrationsData?: { provider: string; status: string; last_error?: string | null; has_value?: boolean }[];
   onChanged: () => void;
+  // Account-level default for this card's provider kind (image or
+  // copy) -- per-site overrides (ProviderOverrideCard, sites.tsx) fall
+  // back to whatever this is set to. Only connected providers are
+  // offered as a default (can't default an account to a provider with
+  // no credential behind it).
+  currentDefault?: string;
+  onSetDefault: (provider: string) => void;
 }) {
-  const connectedCount = providers.filter((p) => integrationsData?.find((i) => i.provider === p.provider)?.has_value).length;
+  const connectedProviders = providers.filter((p) => integrationsData?.find((i) => i.provider === p.provider)?.has_value);
+  const connectedCount = connectedProviders.length;
   return (
     <Card className="p-6">
       <div className="mb-2 flex items-center justify-between">
@@ -513,6 +539,22 @@ function GenerationProvidersCard({
         </Badge>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">{description}</p>
+
+      {connectedCount > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <Label className="shrink-0 text-xs font-medium text-muted-foreground">Default provider</Label>
+          <Select value={currentDefault} onValueChange={onSetDefault}>
+            <SelectTrigger className="h-8 flex-1 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {connectedProviders.map((p) => (
+                <SelectItem key={p.provider} value={p.provider}>{p.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <InfoTooltip text="Every site inherits this unless it has its own override set in that site's Connections section." />
+        </div>
+      )}
+
       <div className="space-y-2">
         {providers.map((p) => (
           <GenerationProviderRow

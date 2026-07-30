@@ -41,7 +41,8 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
     const { data: site, error } = await context.supabase.from("sites").select("*").eq("id", data.siteId).single();
     if (error || !site) throw error ?? new Error("Site not found");
 
-    const provider: ImageProvider = (site.image_provider as ImageProvider) ?? "openai";
+    const { resolveImageProvider } = await import("@/lib/provider-resolution.server");
+    const provider: ImageProvider = await resolveImageProvider(context.userId, site.image_provider_override as ImageProvider | null);
     const providerCfg = await getIntegration(context.userId, provider);
     if (!providerCfg) {
       throw new Error(`${provider} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`);

@@ -48,7 +48,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider_override))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -64,7 +64,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
           url?: string; title?: string | null; analysis?: unknown; excluded?: boolean;
           sites?: {
             url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
-            vertical?: SiteVertical | null; image_provider?: ImageProvider | null;
+            vertical?: SiteVertical | null; image_provider_override?: ImageProvider | null;
           };
         };
       }).pages;
@@ -123,11 +123,12 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         }
       }
 
-      provider = page?.sites?.image_provider ?? "openai";
+      const { resolveImageProvider } = await import("./provider-resolution.server");
+      provider = await resolveImageProvider(userId, page?.sites?.image_provider_override);
 
       // One image-generation provider is configured/credentialed at a
-      // time per job now that there are 7 possible choices
-      // (sites.image_provider) -- fetching all 7 integrations eagerly
+      // time per job now that there are 7 possible choices -- fetching
+      // all 7 integrations eagerly
       // for every batch (the way this used to fetch openai+replicate
       // unconditionally) would be wasteful, so this resolves just the
       // one credential this specific job actually needs.

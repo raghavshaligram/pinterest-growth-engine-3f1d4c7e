@@ -34,6 +34,7 @@ import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
 import { listIntegrations } from "@/lib/integrations.functions";
+import { getAccountProviderDefaults } from "@/lib/account-provider-defaults.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -249,9 +250,6 @@ export function BrandEditorFields({
   brandColors, onToggleBrandColor, onRemoveLegacyColor,
   typography, onTypography,
   notes, onNotes,
-  imageProvider, onImageProvider,
-  copyProvider, onCopyProvider,
-  connectedImageProviders, connectedCopyProviders,
   siteType, vertical, onVertical,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
@@ -263,17 +261,12 @@ export function BrandEditorFields({
   brandColors: string[]; onToggleBrandColor: (hex: string) => void; onRemoveLegacyColor: (hex: string) => void;
   typography: string; onTypography: (v: string) => void;
   notes: string; onNotes: (v: string) => void;
-  imageProvider: ImageProvider; onImageProvider: (v: ImageProvider) => void;
-  copyProvider: CopyProvider; onCopyProvider: (v: CopyProvider) => void;
-  // Which providers this account has actually connected (Settings ->
-  // Integrations) -- both pickers only offer connected providers, per
-  // spec, so a site can never be silently pointed at a provider with no
-  // credential behind it. The currently-selected value is always kept
-  // in the list too (see the filter below) so an already-saved choice
-  // never disappears from its own dropdown just because it was
-  // disconnected later.
-  connectedImageProviders: ReadonlySet<ImageProvider>;
-  connectedCopyProviders: ReadonlySet<CopyProvider>;
+  // Image/Copy generation provider pickers used to live here (Advanced
+  // section, below) -- moved to each site's Connections section
+  // instead (ProviderOverrideCard, SiteConnectionsSection) once they
+  // became optional per-site OVERRIDES of an account-level default
+  // rather than a mandatory per-site choice, per spec: this section is
+  // Brand settings, overrides are a connections/integration concern.
   // Vertical selector is website-only (see WEBSITE_VERTICAL_OPTIONS) --
   // Etsy/eComm sites auto-derive etsy_product/ecomm_product via a DB
   // trigger with no UI choice, so siteType decides whether this section
@@ -443,40 +436,6 @@ export function BrandEditorFields({
           </div>
 
           <div>
-            <Label className="mb-2 block">Image generation provider</Label>
-            <Select value={imageProvider} onValueChange={(v) => onImageProvider(v as ImageProvider)}>
-              <SelectTrigger><SelectValue placeholder="Choose a provider" /></SelectTrigger>
-              <SelectContent>
-                {IMAGE_PROVIDERS.filter((p) => connectedImageProviders.has(p) || p === imageProvider).map((p) => (
-                  <SelectItem key={p} value={p}>{IMAGE_PROVIDER_LABELS[p]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Only providers connected in{" "}
-              <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">
-                Settings &rarr; Integrations
-              </Link>{" "}
-              are offered here.
-            </p>
-          </div>
-
-          <div>
-            <Label className="mb-2 block">Copy generation provider</Label>
-            <Select value={copyProvider} onValueChange={(v) => onCopyProvider(v as CopyProvider)}>
-              <SelectTrigger><SelectValue placeholder="Choose a provider" /></SelectTrigger>
-              <SelectContent>
-                {COPY_PROVIDERS.filter((p) => connectedCopyProviders.has(p) || p === copyProvider).map((p) => (
-                  <SelectItem key={p} value={p}>{COPY_PROVIDER_LABELS[p]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Writes this site's pin titles, taglines, and calls-to-action. Only connected providers are offered here.
-            </p>
-          </div>
-
-          <div>
             <Label>Brand notes for image gen</Label>
             <Textarea rows={3} value={notes} onChange={(e) => onNotes(e.target.value)} placeholder="Warm editorial photography, minimal overlays, no stock illustrations." />
           </div>
@@ -538,12 +497,9 @@ export function AddSiteWizard({
   const [brandColors, setBrandColors] = useState<string[]>([]);
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
-  const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
-  const [copyProvider, setCopyProvider] = useState<CopyProvider>("openai");
   const [vertical, setVertical] = useState<SiteVertical>(DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createdSite, setCreatedSite] = useState<{ id: string; url: string; brand_name: string | null; accent_color: string | null } | null>(null);
-  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
 
   const createMut = useMutation({
     mutationFn: () => upsert({
@@ -563,8 +519,6 @@ export function AddSiteWizard({
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
-        image_provider: imageProvider,
-        copy_provider: copyProvider,
         // Only sent for website sites -- omitting it entirely for etsy/
         // ecomm lets the DB trigger (tg_sites_default_vertical) assign
         // etsy_product/ecomm_product itself instead of this always-set
@@ -696,9 +650,6 @@ export function AddSiteWizard({
             onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
-            imageProvider={imageProvider} onImageProvider={setImageProvider}
-            copyProvider={copyProvider} onCopyProvider={setCopyProvider}
-            connectedImageProviders={connectedImageProviders} connectedCopyProviders={connectedCopyProviders}
             siteType={siteType} vertical={vertical} onVertical={setVertical}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
@@ -774,13 +725,143 @@ function SiteConnectionsSection({
   site: SiteOverviewRow;
   onSaved: () => void;
 }) {
+  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
+  const getDefaults = useServerFn(getAccountProviderDefaults);
+  const { data: defaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
+
   return (
     <div className="mt-5 border-t border-border pt-5">
       <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>
       <div className="grid gap-3 sm:grid-cols-2">
         <PinterestSiteConnectionCard site={site} onSaved={onSaved} />
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
+        <ProviderOverrideCard
+          site={site} onSaved={onSaved} kind="image"
+          accountDefault={defaults?.default_image_provider ?? null}
+          connected={connectedImageProviders}
+          currentOverride={site.image_provider_override}
+        />
+        <ProviderOverrideCard
+          site={site} onSaved={onSaved} kind="copy"
+          accountDefault={defaults?.default_copy_provider ?? null}
+          connected={connectedCopyProviders}
+          currentOverride={site.copy_provider_override}
+        />
       </div>
+    </div>
+  );
+}
+
+// Per-site override for image/copy generation provider -- defaults to
+// "Use account default," an explicit choice pins this specific site
+// regardless of the account default (set in Settings -> Integrations'
+// "Default provider" selector, GenerationProvidersCard). Styled exactly
+// like PinterestSiteConnectionCard/GoogleAnalyticsConnectionCard right
+// above (same rounded-lg border card, same status-dot + label row,
+// same "editing" toggle showing a row of choice buttons) per spec --
+// this is a Connections-section control, not a Brand-settings form.
+function ProviderOverrideCard({
+  site, onSaved, kind, accountDefault, connected, currentOverride,
+}: {
+  site: SiteOverviewRow;
+  onSaved: () => void;
+  kind: "image" | "copy";
+  accountDefault: string | null;
+  connected: ReadonlySet<string>;
+  currentOverride: string | null;
+}) {
+  const upsert = useServerFn(upsertSite);
+  const [editing, setEditing] = useState(false);
+  const options: readonly string[] = kind === "image" ? IMAGE_PROVIDERS : COPY_PROVIDERS;
+  const labels: Record<string, string> = kind === "image" ? IMAGE_PROVIDER_LABELS : COPY_PROVIDER_LABELS;
+  const title = kind === "image" ? "Image generation" : "Copy generation";
+
+  const saveMut = useMutation({
+    mutationFn: (provider: string | null) =>
+      upsert({
+        data: {
+          id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
+          ...(kind === "image"
+            ? { image_provider_override: provider as ImageProvider | null }
+            : { copy_provider_override: provider as CopyProvider | null }),
+        },
+      }),
+    onSuccess: () => {
+      toast.success(kind === "image" ? "Image provider updated" : "Copy provider updated");
+      setEditing(false);
+      onSaved();
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const overridden = Boolean(currentOverride);
+  const defaultLabel = accountDefault ? labels[accountDefault] : undefined;
+  const connectedOptions = options.filter((p) => connected.has(p));
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#EFEAFB" }}>
+          {kind === "image"
+            ? <ImageIcon className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />
+            : <BookOpen className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />}
+        </span>
+        <span className="text-sm font-medium">{title}</span>
+        <span className={`ml-auto flex items-center gap-1 text-xs ${overridden ? "text-amber-700" : "text-muted-foreground"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${overridden ? "bg-amber-500" : "bg-neutral-300"}`} />
+          {overridden ? "Overridden" : "Account default"}
+        </span>
+      </div>
+
+      {!editing && (
+        <>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Using {overridden ? labels[currentOverride as string] : (defaultLabel ?? "…")}
+            {!overridden && defaultLabel ? " (account default)" : ""}
+          </p>
+          <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+            {overridden ? "Change →" : "Override for this site →"}
+          </button>
+        </>
+      )}
+
+      {editing && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button" onClick={() => saveMut.mutate(null)} disabled={saveMut.isPending}
+              className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
+              style={{ borderColor: !currentOverride ? "#E60023" : "#E5E5E5", borderWidth: !currentOverride ? 2 : 1, background: !currentOverride ? "#FCE9EA" : "transparent" }}
+            >
+              {!currentOverride && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+              Use account default{defaultLabel ? ` (${defaultLabel})` : ""}
+            </button>
+            {connectedOptions.map((p) => {
+              const active = currentOverride === p;
+              return (
+                <button
+                  key={p} type="button" onClick={() => saveMut.mutate(p)} disabled={saveMut.isPending}
+                  className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
+                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                >
+                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+                  {labels[p]}
+                </button>
+              );
+            })}
+          </div>
+          {connectedOptions.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No other providers connected yet --{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">connect one</Link>{" "}
+              to override this site.
+            </p>
+          )}
+          <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1035,12 +1116,9 @@ function SiteCard({
   const [brandColors, setBrandColors] = useState<string[]>(Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []);
   const [typography, setTypography] = useState(site.brand_font ?? "");
   const [notes, setNotes] = useState(site.brand_notes ?? "");
-  const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "openai");
-  const [copyProvider, setCopyProvider] = useState<CopyProvider>((site.copy_provider as CopyProvider) ?? "openai");
   const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [styleSetupOpen, setStyleSetupOpen] = useState(false);
-  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
 
   const saveMut = useMutation({
     mutationFn: () => upsert({
@@ -1053,8 +1131,6 @@ function SiteCard({
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
-        image_provider: imageProvider,
-        copy_provider: copyProvider,
         // Website-only, same reasoning as AddSiteWizard above -- never
         // send this for etsy/ecomm sites so nothing can ever override
         // their trigger-assigned vertical through this form.
@@ -1170,9 +1246,6 @@ function SiteCard({
               onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
               typography={typography} onTypography={setTypography}
               notes={notes} onNotes={setNotes}
-              imageProvider={imageProvider} onImageProvider={setImageProvider}
-              copyProvider={copyProvider} onCopyProvider={setCopyProvider}
-              connectedImageProviders={connectedImageProviders} connectedCopyProviders={connectedCopyProviders}
               siteType={site.site_type as SiteType} vertical={vertical} onVertical={setVertical}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}

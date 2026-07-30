@@ -748,9 +748,10 @@ export type Database = {
           created_at: string
           ga4_property_id: string | null
           ga4_property_label: string | null
+          image_provider_override: string | null
+          copy_provider_override: string | null
           google_connection_id: string | null
           id: string
-          image_provider: string
           pinterest_connection_id: string | null
           recent_styles: Json
           settings: Json
@@ -773,9 +774,10 @@ export type Database = {
           created_at?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
+          image_provider_override?: string | null
+          copy_provider_override?: string | null
           google_connection_id?: string | null
           id?: string
-          image_provider?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
@@ -798,9 +800,10 @@ export type Database = {
           created_at?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
+          image_provider_override?: string | null
+          copy_provider_override?: string | null
           google_connection_id?: string | null
           id?: string
-          image_provider?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json

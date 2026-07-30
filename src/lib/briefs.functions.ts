@@ -509,13 +509,15 @@ export const generateBriefs = createServerFn({ method: "POST" })
       throw new Error("Complete Pin Style Setup for this site before generating pins.");
     }
 
-    // Copy generation provider is a per-site pick (site.copy_provider,
-    // consolidated Copy Generation card) -- resolved here, after site is
-    // fetched, rather than hardcoding "openai" the way this used to.
-    // Declared outside the try block below so the catch block's
+    // Copy generation provider: this site's own override
+    // (copy_provider_override) if it has one, else the account-level
+    // default, else "openai" -- see provider-resolution.server.ts.
+    // Resolved here, after site is fetched, since it depends on site
+    // data. Declared outside the try block below so the catch block's
     // markIntegration call reports against whichever provider was
     // actually in play.
-    const copyProvider: CopyProvider = (site?.copy_provider as CopyProvider) ?? "openai";
+    const { resolveCopyProvider } = await import("./provider-resolution.server");
+    const copyProvider: CopyProvider = await resolveCopyProvider(context.userId, site?.copy_provider_override as CopyProvider | null);
     const cfg = await requireIntegration(context.userId, copyProvider);
     const generateJSON = copyProvider === "anthropic"
       ? (await import("./anthropic.server")).anthropicJSON

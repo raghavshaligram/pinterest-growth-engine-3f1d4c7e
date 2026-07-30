@@ -35,6 +35,7 @@ import {
   listSites, upsertSite, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
 import { crawlSite } from "@/lib/sites.functions";
+import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
 import { listPages } from "@/lib/pages.functions";
 import { listIntegrations } from "@/lib/integrations.functions";
 import { getPublishingProfile } from "@/lib/publishing-profile.functions";
@@ -66,7 +67,6 @@ type SiteRow = {
   brand_colors: unknown;
   brand_font: string | null;
   brand_notes: string | null;
-  image_provider: ImageProvider;
   sitemap_url: string | null;
   style_locked_at: string | null;
 };
@@ -495,12 +495,19 @@ function StepIntegrations({
   const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listIntFn() });
   const { data: sites } = useSitesList();
   const site = (sites ?? []).find((s) => (s as SiteRow).id === siteId) as SiteRow | undefined;
-  const upsert = useServerFn(upsertSite);
+  const setAccountDefault = useServerFn(setAccountProviderDefault);
   const getProfile = useServerFn(getPublishingProfile);
 
   const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
   const [showAgePrompt, setShowAgePrompt] = useState(false);
-  useEffect(() => { if (site?.image_provider) setImageProvider(site.image_provider); }, [site?.image_provider]);
+  // Seeds from the account-level default (not a per-site value -- this
+  // step sets the ACCOUNT default now, see saveProviderMut below) so
+  // revisiting this step shows whatever was already chosen.
+  const getDefaults = useServerFn(getAccountProviderDefaults);
+  const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
+  useEffect(() => {
+    if (providerDefaults?.default_image_provider) setImageProvider(providerDefaults.default_image_provider);
+  }, [providerDefaults?.default_image_provider]);
 
   // Pinterest OAuth is a real cross-site redirect (Pinterest ->
   // pinterest.callback.ts -> back here), so this reads the real browser
@@ -544,12 +551,15 @@ function StepIntegrations({
   }, [pinterestOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveProviderMut = useMutation({
-    mutationFn: () => upsert({
-      data: { id: siteId, url: site!.url, site_type: site!.site_type, image_provider: imageProvider },
-    }),
+    // Sets the ACCOUNT-level default image provider (not this specific
+    // site) -- image_provider is no longer a per-site column at all;
+    // every site now inherits this account default unless it sets its
+    // own override later (Sites -> that site's Connections section).
+    mutationFn: () => setAccountDefault({ data: { kind: "image", provider: imageProvider } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sites-switcher"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
+      qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
       setSub("pinterest");
     },
     onError: (e) => toast.error(getErrorMessage(e)),
@@ -600,7 +610,7 @@ function StepIntegrations({
       {sub === "imagegen" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Choose which model renders your pin images. You can switch this later per-site in Sites → brand settings.
+            Choose which model renders your pin images by default. Any site can override this individually later, in that site's own Connections section (Sites page).
           </p>
           <div className="flex gap-2">
             {/* Deliberately its own fixed 2-item list, NOT a map over the
