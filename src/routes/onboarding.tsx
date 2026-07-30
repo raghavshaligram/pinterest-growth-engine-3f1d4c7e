@@ -632,7 +632,7 @@ function StepIntegrations({
       {sub === "imagegen" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Choose which model renders your pin images by default. Any site can override this individually later, in that site's own Connections section (Sites page).
+            Choose which model renders your pin images by default. Any site can be pinned to a specific key instead later, from that key's row in Settings → Integrations.
           </p>
           <div className="flex gap-2">
             {/* Deliberately its own fixed 2-item list, NOT a map over the
@@ -643,10 +643,10 @@ function StepIntegrations({
                 openai/replicate branching just below) is built
                 specifically around those two providers. The other 5 are
                 connectable in Settings -> Integrations immediately after
-                onboarding and selectable per-site in Sites -> that
-                site's Connections section, which is where
-                ProviderOverrideCard offers the real, un-truncated
-                picker across every connected provider/key. */}
+                onboarding, where each key's row offers a "Used by" site
+                picker -- the real, un-truncated way to pin a specific
+                site to a specific key (the Sites page's own Connections
+                section is read-only and just links back there). */}
             {(["openai", "replicate"] as const).map((p) => (
               <button
                 key={p} type="button" onClick={() => setImageProvider(p)}

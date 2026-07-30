@@ -53,9 +53,12 @@ export const autoSchedule = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Ready briefs with an image + page URL, oldest first so nothing starves.
+    // pages(url, site_id) -- site_id is what resolves each brief's own
+    // Pinterest connection below, so a board synced under a DIFFERENT
+    // site's connection can never be assigned to it (see boardIdsForSite).
     const { data: readyBriefs, error } = await supabaseAdmin
       .from("pin_briefs")
-      .select("id, page_id, pages(url), pin_images(id, storage_path, prompt_hash)")
+      .select("id, page_id, pages(url, site_id), pin_images(id, storage_path, prompt_hash)")
       .eq("user_id", context.userId)
       .eq("status", "ready")
       .order("created_at", { ascending: true })
@@ -63,8 +66,43 @@ export const autoSchedule = createServerFn({ method: "POST" })
     if (error) throw error;
     if (!readyBriefs?.length) return { scheduled: 0, reason: "No ready briefs" };
 
-    const { data: boards } = await supabaseAdmin.from("boards").select("id").eq("user_id", context.userId);
+    const { data: boards } = await supabaseAdmin.from("boards").select("id, pinterest_connection_id").eq("user_id", context.userId);
     if (!boards?.length) return { scheduled: 0, reason: "Add at least one board first" };
+
+    // Map each site to the Pinterest connection it actually publishes
+    // through, so board selection below can be scoped the same way
+    // publisher.server.ts already scopes token resolution at publish time.
+    const { data: sitesForConn } = await supabaseAdmin
+      .from("sites").select("id, pinterest_connection_id").eq("user_id", context.userId);
+    const siteConnectionMap = new Map<string, string | null>(
+      (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
+    );
+
+    // Boards never tagged with a connection (manually added, or synced
+    // before this column existed) are treated as usable by any site --
+    // same "no assignment = universal" convention boards.site_ids
+    // already uses. Boards tagged with a specific connection are only
+    // ever eligible for a site mapped to that exact connection.
+    const universalBoardIds = boards
+      .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
+      .map((b) => b.id);
+    const scopedBoardIdsCache = new Map<string, string[]>();
+    function boardIdsForSite(siteId: string | null): string[] {
+      const connectionId = siteId ? (siteConnectionMap.get(siteId) ?? null) : null;
+      if (!connectionId) return universalBoardIds;
+      const cached = scopedBoardIdsCache.get(connectionId);
+      if (cached) return cached;
+      const scoped = boards
+        .filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
+        .map((b) => b.id);
+      const combined = [...scoped, ...universalBoardIds];
+      scopedBoardIdsCache.set(connectionId, combined);
+      return combined;
+    }
+    // Round-robin cursor kept per eligible board set (keyed by connection,
+    // "universal" for unconnected sites) rather than one shared index --
+    // each site's own board pool spreads independently.
+    const boardIdxBySite = new Map<string, number>();
 
     // Existing scheduled/published pins in the planning window — enforce gaps against real history.
     const windowStart = new Date();
@@ -126,21 +164,25 @@ export const autoSchedule = createServerFn({ method: "POST" })
       return { when: at.getTime(), day, slot };
     }
 
-    let boardIdx = 0;
     let day = 0, slot = 0;
-    const boardIds = boards.map((b) => b.id);
 
     for (const brief of ordered) {
       const img = brief.pin_images?.[0];
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
       const pageId = (brief as { page_id?: string }).page_id ?? "";
+      const siteId = (brief as { pages?: { site_id?: string } }).pages?.site_id ?? null;
       if (!img || !pageUrl) continue;
       // Never repost the exact same rendered image
       if (state.usedImageIds.has(img.id)) continue;
 
+      const boardIds = boardIdsForSite(siteId ?? null);
+      if (!boardIds.length) continue; // this site's connection has no eligible boards yet
+      const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") ?? "universal" : "universal";
+      let boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
+
       let placed = false;
       let tries = 0;
-      while (!placed && tries < data.days * slotsPerDay * boards.length) {
+      while (!placed && tries < data.days * slotsPerDay * boardIds.length) {
         tries++;
         const cand = nextSlot(day, slot);
         if (!cand) break;
@@ -164,6 +206,7 @@ export const autoSchedule = createServerFn({ method: "POST" })
         });
         commitPlacement(state, { when, boardId: found.boardId, pageId, pageUrl, imageId: img.id });
         boardIdx = found.nextBoardIdx;
+        boardIdxBySite.set(boardIdxKey, boardIdx);
         placed = true;
       }
     }

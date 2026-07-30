@@ -46,19 +46,54 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           if (!effective) return { scheduled: 0, reason: "not onboarded" };
           const { tier, limits } = effective;
 
-          const { data: boards } = await supabaseAdmin.from("boards").select("id").eq("user_id", uid);
+          const { data: boards } = await supabaseAdmin.from("boards").select("id, pinterest_connection_id").eq("user_id", uid);
           if (!boards?.length) return { scheduled: 0, reason: "no boards" };
-          const boardIds = boards.map((b) => b.id);
+
+          // Map each site to the Pinterest connection it actually
+          // publishes through, so board selection below is scoped the
+          // same way publisher.server.ts already scopes token resolution
+          // at publish time -- a board synced under one site's connection
+          // must never be assignable to a different site's brief.
+          const { data: sitesForConn } = await supabaseAdmin
+            .from("sites").select("id, pinterest_connection_id").eq("user_id", uid);
+          const siteConnectionMap = new Map<string, string | null>(
+            (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
+          );
+          // Boards never tagged with a connection (manually added, or
+          // synced before this column existed) count as usable by any
+          // site -- same "no assignment = universal" convention
+          // boards.site_ids already uses.
+          const universalBoardIds = boards
+            .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
+            .map((b) => b.id);
+          const scopedBoardIdsCache = new Map<string, string[]>();
+          function boardIdsForSite(siteId: string | null): string[] {
+            const connectionId = siteId ? (siteConnectionMap.get(siteId) ?? null) : null;
+            if (!connectionId) return universalBoardIds;
+            const cached = scopedBoardIdsCache.get(connectionId);
+            if (cached) return cached;
+            const scoped = boards
+              .filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
+              .map((b) => b.id);
+            const combined = [...scoped, ...universalBoardIds];
+            scopedBoardIdsCache.set(connectionId, combined);
+            return combined;
+          }
+          // Round-robin cursor kept per eligible board set (keyed by
+          // connection, "universal" for unconnected sites) rather than
+          // one shared index -- each site's own board pool spreads
+          // independently.
+          const boardIdxBySite = new Map<string, number>();
 
           type ReadyBrief = {
             id: string;
             page_id: string | null;
-            pages: { url?: string; created_at?: string; last_crawled_at?: string | null } | null;
+            pages: { url?: string; site_id?: string; created_at?: string; last_crawled_at?: string | null } | null;
             pin_images: { id: string }[] | null;
           };
           const { data: readyBriefs } = await supabaseAdmin
             .from("pin_briefs")
-            .select("id, page_id, pages(url, created_at, last_crawled_at), pin_images(id, storage_path, prompt_hash)")
+            .select("id, page_id, pages(url, site_id, created_at, last_crawled_at), pin_images(id, storage_path, prompt_hash)")
             .eq("user_id", uid)
             .eq("status", "ready")
             .order("created_at", { ascending: true })
@@ -122,15 +157,20 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
 
           const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "draft" }[] = [];
           const laneCounts: Record<Lane, number> = { fresh: 0, deep_drip: 0, evergreen: 0 };
-          let boardIdx = 0;
           let day = 0, slot = 0;
 
           for (const brief of ordered) {
             const img = brief.pin_images?.[0];
             const pageUrl = brief.pages?.url ?? "";
             const pageId = brief.page_id ?? "";
+            const siteId = brief.pages?.site_id ?? null;
             if (!img || !pageUrl) continue;
             if (state.usedImageIds.has(img.id)) continue;
+
+            const boardIds = boardIdsForSite(siteId);
+            if (!boardIds.length) continue; // this site's connection has no eligible boards yet
+            const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") ?? "universal" : "universal";
+            let boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
 
             let placed = false;
             let tries = 0;
@@ -155,6 +195,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
               });
               commitPlacement(state, { when, boardId: found.boardId, pageId, pageUrl, imageId: img.id });
               boardIdx = found.nextBoardIdx;
+              boardIdxBySite.set(boardIdxKey, boardIdx);
               laneCounts[classifyLane(brief.pages ?? {})]++;
               placed = true;
             }
