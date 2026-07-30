@@ -110,6 +110,13 @@ export type SiteOverviewRow = {
   // boards: that read a single account-wide integrations row instead of
   // this per-site column.
   pinterest_connection_id: string | null;
+  // Opt-in, defaulted false -- see the pinterest_hashtags_setting
+  // migration. When true, publisher.server.ts appends up to 5 of this
+  // brief's stored hashtags to the end of the description sent to
+  // Pinterest; when false (the default for every existing and new
+  // site), hashtags stay generated/stored but are never published,
+  // same as before this setting existed.
+  pinterest_hashtags_enabled: boolean;
   // NULL until Pin Style Setup has been completed at least once for
   // this site -- see useSiteStyleGate (site-style-gate.ts) and the
   // server-side backstop in generateBriefs. Existing sites were
@@ -211,7 +218,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
     image_connection_override_id?: string | null; copy_connection_override_id?: string | null; vertical?: SiteVertical;
     google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
-    pinterest_connection_id?: string | null;
+    pinterest_connection_id?: string | null; pinterest_hashtags_enabled?: boolean;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -248,6 +255,7 @@ export const upsertSite = createServerFn({ method: "POST" })
       ga4_property_id: z.string().nullable().optional(),
       ga4_property_label: z.string().nullable().optional(),
       pinterest_connection_id: z.string().uuid().nullable().optional(),
+      pinterest_hashtags_enabled: z.boolean().optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -847,6 +848,21 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
+  // Defaulted off (see pinterest_hashtags_setting migration) -- publisher.server.ts
+  // reads this to decide whether to append this site's briefs' stored
+  // hashtags (capped at 5) to the end of the description at publish time.
+  const hashtagsMut = useMutation({
+    mutationFn: (enabled: boolean) =>
+      upsert({
+        data: {
+          id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
+          pinterest_hashtags_enabled: enabled,
+        },
+      }),
+    onSuccess: () => onSaved(),
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
   const mapped = Boolean(site.pinterest_connection_id);
   const mappedLabel = connections?.find((c) => c.id === site.pinterest_connection_id)?.label;
 
@@ -916,6 +932,20 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
           <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
             Cancel
           </button>
+        </div>
+      )}
+
+      {mapped && (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2">
+          <div className="min-w-0">
+            <p className="text-xs font-medium">Include hashtags in description</p>
+            <p className="text-xs text-muted-foreground">Appends up to 5 of each pin's hashtags to the end of its description when published.</p>
+          </div>
+          <Switch
+            checked={site.pinterest_hashtags_enabled}
+            disabled={hashtagsMut.isPending}
+            onCheckedChange={(v) => hashtagsMut.mutate(v)}
+          />
         </div>
       )}
     </div>

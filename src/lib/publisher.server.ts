@@ -38,7 +38,15 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       // pages(url, site_id) -- site_id is what resolves this specific
       // pin's Pinterest connection below; url is still the destination
       // link's source, same as before.
-      const { data: brief } = await supabaseAdmin.from("pin_briefs").select("*, pages(url, site_id)").eq("id", sp.brief_id).single();
+      // pages(..., sites(pinterest_hashtags_enabled)) -- resolves the
+      // per-site hashtags-in-description opt-in (see the
+      // pinterest_hashtags_setting migration) in the same query, rather
+      // than a second round trip per pin.
+      const { data: brief } = await supabaseAdmin
+        .from("pin_briefs")
+        .select("*, pages(url, site_id, sites(pinterest_hashtags_enabled))")
+        .eq("id", sp.brief_id)
+        .single();
       const { data: img } = await supabaseAdmin.from("pin_images").select("*").eq("id", sp.image_id!).single();
       const { data: board } = await supabaseAdmin.from("boards").select("*").eq("id", sp.board_id!).single();
       if (!brief || !img || !board) throw new Error("Missing brief/image/board");
@@ -67,12 +75,29 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
       // specific brief/template on the Insights page.
       const { buildUtmLink } = await import("./utm");
       const taggedLink = buildUtmLink(pageUrl, brief.id);
+
+      // Hashtags are generated and stored on every brief (pin_briefs.hashtags,
+      // see briefs.functions.ts's copy prompt) but were never actually sent
+      // to Pinterest -- apiPublish/webhookPublish only ever forwarded
+      // brief.description verbatim. Now opt-in per site (default off, see
+      // the pinterest_hashtags_setting migration): when the site enables
+      // it, append up to 5 hashtags, normalized to a leading "#" with no
+      // duplicate "#", to the end of the description as their own line.
+      const hashtagsEnabled = Boolean(
+        (brief as { pages?: { sites?: { pinterest_hashtags_enabled?: boolean } } }).pages?.sites?.pinterest_hashtags_enabled,
+      );
+      const hashtagList: string[] = Array.isArray(brief.hashtags) ? brief.hashtags : [];
+      const cappedHashtags = hashtagList.slice(0, 5).map((h) => `#${String(h).replace(/^#+/, "")}`);
+      const description = hashtagsEnabled && cappedHashtags.length > 0
+        ? `${brief.description}\n\n${cappedHashtags.join(" ")}`
+        : brief.description;
+
       const input = {
         userId,
         scheduledPinId: sp.id,
         boardId: board.pinterest_board_id ?? board.id,
         title: brief.title,
-        description: brief.description,
+        description,
         link: taggedLink,
         imageUrl,
         altText: brief.alt_text ?? undefined,
