@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
-import type { ImageProvider, LogoPlacement } from "@/lib/sites.functions";
+import type { ImageProvider } from "@/lib/sites.functions";
 
 // Exactly the two templates named in the Pin Style Setup spec -- one
 // discrete/card-based shape (quick_tip_grid) and one single-statement
@@ -53,28 +53,9 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
       );
     }
 
-    // Same "logo mode falls back to text if nothing's uploaded" rule as
-    // image-worker.server.ts -- resolved once here and reused for both
-    // sample renders.
-    let logoSignedUrl: string | null = null;
-    if (site.display_mode === "logo" && site.logo_url) {
-      const signed = await supabaseAdmin.storage.from("pins").createSignedUrl(site.logo_url, 3600);
-      logoSignedUrl = signed.data?.signedUrl ?? null;
-    }
-    const hasLogo = Boolean(logoSignedUrl);
-
     const brandHost = new URL(site.url).hostname.replace(/^www\./, "");
     const brandDisplay = site.brand_name || brandHost;
     const brandColors = Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : [];
-
-    // Fetched once and reused for both sample renders rather than
-    // re-fetching per template.
-    let logoBytes: Uint8Array | null = null;
-    if (hasLogo && logoSignedUrl) {
-      const logoResp = await fetch(logoSignedUrl);
-      if (!logoResp.ok) throw new Error(`Failed to fetch logo for compositing: ${logoResp.status}`);
-      logoBytes = new Uint8Array(await logoResp.arrayBuffer());
-    }
 
     const samples: StyleSample[] = [];
     for (const t of SAMPLE_TEMPLATES) {
@@ -87,10 +68,6 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
         brandColors,
         brandFont: site.brand_font,
         vertical: site.vertical as Parameters<typeof buildThemedPinPrompt>[0]["vertical"],
-        brandName: site.brand_name,
-        displayMode: site.display_mode as "logo" | "text" | null | undefined,
-        nameMode: site.name_mode as "brand_name" | "domain" | null | undefined,
-        hasLogo,
       });
 
       const rendered = await renderPinImage({
@@ -100,24 +77,10 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
         replicateToken: replicateCfg?.api_token,
       });
 
-      let finalBytes = rendered.imageBytes;
-      let finalContentType = rendered.contentType;
-      if (logoBytes) {
-        const { compositeLogoOntoPin } = await import("@/lib/logo-composite.server");
-        const composited = await compositeLogoOntoPin({
-          baseImageBytes: rendered.imageBytes,
-          logoBytes,
-          placement: (site.logo_placement as LogoPlacement | null) ?? "bottom-center",
-          accentColor: site.accent_color ?? null,
-        });
-        finalBytes = composited.imageBytes;
-        finalContentType = composited.contentType;
-      }
-
-      const ext = finalContentType.includes("png") ? "png" : finalContentType.includes("jpeg") ? "jpg" : "webp";
+      const ext = rendered.contentType.includes("png") ? "png" : rendered.contentType.includes("jpeg") ? "jpg" : "webp";
       const path = `${context.userId}/style-samples/${site.id}/${t.templateId}-${Date.now()}.${ext}`;
-      const up = await supabaseAdmin.storage.from("pins").upload(path, finalBytes, {
-        contentType: finalContentType,
+      const up = await supabaseAdmin.storage.from("pins").upload(path, rendered.imageBytes, {
+        contentType: rendered.contentType,
         upsert: true,
       });
       if (up.error) throw up.error;

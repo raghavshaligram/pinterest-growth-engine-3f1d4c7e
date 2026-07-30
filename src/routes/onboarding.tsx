@@ -29,11 +29,10 @@ import { getErrorMessage } from "@/lib/error-message";
 import { useSetupStatus, useGenerateFirstBatch, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
 import {
-  AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl, BrandDisplayFields,
+  AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
 } from "@/routes/sites";
 import {
   listSites, upsertSite, IMAGE_PROVIDERS, type SiteType, type ImageProvider,
-  type BrandDisplayMode, type BrandNameMode, type LogoPlacement,
 } from "@/lib/sites.functions";
 import { crawlSite } from "@/lib/sites.functions";
 import { listPages } from "@/lib/pages.functions";
@@ -70,10 +69,6 @@ type SiteRow = {
   image_provider: ImageProvider;
   sitemap_url: string | null;
   style_locked_at: string | null;
-  logo_url: string | null;
-  display_mode: BrandDisplayMode;
-  name_mode: BrandNameMode;
-  logo_placement: LogoPlacement;
 };
 
 // Shared by every step 2+ component -- one cached query (queryKey
@@ -332,14 +327,6 @@ function StepBrandIdentity({
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  // Logo/display choice lives here too (not just the standalone Sites
-  // page's brand editor) so onboarding's brand-identity step is
-  // actually complete before Pin Style Setup (StepCrawlPreview, step 4)
-  // ever runs -- see that step's own comment on why it's gated this way.
-  const [logoPath, setLogoPath] = useState<string | null>(null);
-  const [displayMode, setDisplayMode] = useState<BrandDisplayMode>("text");
-  const [nameMode, setNameMode] = useState<BrandNameMode>("domain");
-  const [logoPlacement, setLogoPlacement] = useState<LogoPlacement>("bottom-center");
   const seededRef = useRef(false);
 
   useEffect(() => {
@@ -349,10 +336,6 @@ function StepBrandIdentity({
       setBrandColors(Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []);
       setTypography(site.brand_font ?? "");
       setNotes(site.brand_notes ?? "");
-      setLogoPath(site.logo_url ?? null);
-      setDisplayMode(site.display_mode ?? "text");
-      setNameMode(site.name_mode ?? "domain");
-      setLogoPlacement(site.logo_placement ?? "bottom-center");
     }
   }, [site]);
 
@@ -366,10 +349,6 @@ function StepBrandIdentity({
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
-        logo_url: logoPath,
-        display_mode: displayMode,
-        name_mode: nameMode,
-        logo_placement: logoPlacement,
       },
     }),
     onSuccess: () => {
@@ -430,14 +409,6 @@ function StepBrandIdentity({
           })}
         </div>
       </div>
-
-      <BrandDisplayFields
-        logoPath={logoPath} onLogoChange={setLogoPath}
-        displayMode={displayMode} onDisplayMode={setDisplayMode}
-        nameMode={nameMode} onNameMode={setNameMode}
-        logoPlacement={logoPlacement} onLogoPlacement={setLogoPlacement}
-        brandName={site.brand_name ?? ""} previewHost={hostFromUrl(site.url)}
-      />
 
       <button type="button" onClick={() => setAdvancedOpen((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium">
         <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />Advanced

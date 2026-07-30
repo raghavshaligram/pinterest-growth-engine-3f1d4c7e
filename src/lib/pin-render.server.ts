@@ -3,15 +3,6 @@
 // (pin-style-setup.functions.ts) can render a real sample pin through
 // the exact same OpenAI/Replicate logic the batch worker uses, instead
 // of a second, drifting copy of it.
-//
-// Deliberately does NOT accept a reference logo image anymore. An
-// earlier version of this function passed the site's logo to the
-// provider as a compositing reference (OpenAI referenceImageUrls /
-// Replicate image_input) -- that didn't reliably composite the logo
-// into the generated scene (see logo-composite.server.ts's own comment
-// for the root cause). Logo placement is now a fully separate,
-// deterministic post-processing step (compositeLogoOntoPin) applied by
-// the caller AFTER this function returns a plain, logo-free render.
 import type { ImageProvider } from "@/lib/sites.functions";
 
 export async function renderPinImage(opts: {

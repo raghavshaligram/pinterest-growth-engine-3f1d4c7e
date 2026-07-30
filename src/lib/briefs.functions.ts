@@ -408,27 +408,6 @@ export function buildThemedPinPrompt(input: {
    */
   visualThemeHint?: string | null;
   trendSignal?: string | null;
-  /**
-   * Brand display settings (sites.display_mode/name_mode/brand_name) --
-   * all optional and additive: when displayMode/nameMode are omitted
-   * (every pre-existing caller), the LOCKED LAYOUT's bottom zone renders
-   * exactly as it always has (brandHost as plain text), so this can't
-   * change output for anything that doesn't explicitly opt in.
-   */
-  brandName?: string | null;
-  displayMode?: "logo" | "text" | null;
-  nameMode?: "brand_name" | "domain" | null;
-  /**
-   * Whether a real logo has actually been uploaded for this site AND a
-   * reference image URL will actually be handed to the provider for
-   * this render. Callers resolve this themselves (see
-   * image-worker.server.ts / pin-style-setup.functions.ts) rather than
-   * this function reaching into Storage -- it has no I/O of its own.
-   * If this is false, 'logo' display_mode silently falls back to text,
-   * per spec (a site that flips the toggle before uploading anything
-   * shouldn't lose its brand text on the pin).
-   */
-  hasLogo?: boolean;
 }) {
   // general_content, not garden_content -- that's the DB trigger's own
   // neutral default for website sites now (tg_sites_default_vertical),
@@ -462,32 +441,6 @@ export function buildThemedPinPrompt(input: {
   const typography = input.brandFont?.trim() || shape.typography_direction || flavor.typography_default;
   const genreSuffix = flavor.genre_lock ? `, ${flavor.genre_lock}` : "";
 
-  // Effective logo mode requires BOTH the explicit setting AND a real
-  // uploaded logo (see hasLogo's own doc comment) -- this is the single
-  // place that decision is made for prompt-text purposes, mirrored by
-  // callers' own identical fallback when deciding whether to actually
-  // pass a reference image URL to the provider.
-  const wantsLogo = input.displayMode === "logo" && Boolean(input.hasLogo);
-  const footerText = !wantsLogo && input.nameMode === "brand_name" && input.brandName
-    ? input.brandName
-    : input.brandHost;
-  // Logo mode: the model is no longer asked to reserve, leave blank, or
-  // render ANY footer/URL-bar zone at all -- two earlier attempts both
-  // trusted the model to get that zone right (as a reference-image edit,
-  // then as a "leave this bar blank" instruction) and both failed in
-  // practice (see logo-composite.server.ts's own comment for the full
-  // history). Instead the CTA band is simply the last thing in the
-  // image, flush to the real bottom edge; a separate deterministic step
-  // (logo-composite.server.ts) appends a brand-color band below the
-  // model's untouched output afterward and composites the real logo
-  // into that guaranteed-clean, code-drawn band.
-  const ctaIsFinalElement = wantsLogo
-    ? ` This CTA band is the LAST element in the image -- it must sit flush against the canvas's real bottom edge. Do not render a URL bar, footer strip, logo, wordmark, tagline, social handle, extra URL, or watermark of any kind below it, or anywhere else on the pin -- the canvas ends at the bottom of the CTA band. The brand's logo will be added afterward, in a new band appended below this image, outside of this generation step.`
-    : ``;
-  const footerZoneLines = wantsLogo
-    ? ``
-    : `- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${footerText}".
-- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.`;
 
   let middle = input.middlePrompt?.trim() || shape.default_middle_prompt(topic);
   if (input.visualThemeHint) {
@@ -514,13 +467,14 @@ GLOBAL BRAND RULES:
 LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are internal composition guidance only; never render any numbers, measurements, fractions, or percentages anywhere in the image itself):
 - A compact title band at the very top. Place this exact title text, uppercase when it suits the theme: "${title}".
 - Below it, the main themed visual, filling the large majority of the canvas: ${middle}
-- A slim CTA band directly below the main visual${wantsLogo ? "" : " and directly above the URL bar"}. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".${ctaIsFinalElement}
-${footerZoneLines}
+- A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
+- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${input.brandHost}".
+- No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
 
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
-- Must not crop, omit, or shrink the title, CTA band${wantsLogo ? "" : ", URL bar,"} card text, or panel images -- the CTA band is as mandatory as the title${wantsLogo ? "" : " and URL bar"}, not optional.
-- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- nothing else may appear anywhere on the pin, especially not below the CTA band" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
+- Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
+- The ONLY text allowed anywhere on the pin is the title, the CTA text, and the URL bar host, exactly as quoted above -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
@@ -555,7 +509,6 @@ export const generateBriefs = createServerFn({ method: "POST" })
     if (!site?.style_locked_at) {
       throw new Error("Complete Pin Style Setup for this site before generating pins.");
     }
-    const brandName = site?.brand_name ?? (site ? new URL(site.url).hostname.replace(/^www\./, "") : "");
     const brandHost = site ? new URL(site.url).hostname.replace(/^www\./, "") : "";
     const brandColors = Array.isArray(site?.brand_colors) ? (site!.brand_colors as string[]) : [];
     const brandFont = site?.brand_font ?? "";
@@ -765,10 +718,6 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           brandFont,
           vertical,
           middlePrompt: b.image_prompt,
-          brandName: site?.brand_name,
-          displayMode: site?.display_mode as "logo" | "text" | null | undefined,
-          nameMode: site?.name_mode as "brand_name" | "domain" | null | undefined,
-          hasLogo: Boolean(site?.logo_url),
         }),
         status: "image_pending" as const,
         // Traceability: record whether this batch used the competitive

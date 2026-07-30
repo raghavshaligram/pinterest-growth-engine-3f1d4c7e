@@ -746,15 +746,11 @@ export type Database = {
           brand_name: string | null
           brand_notes: string | null
           created_at: string
-          display_mode: string
           ga4_property_id: string | null
           ga4_property_label: string | null
           google_connection_id: string | null
           id: string
           image_provider: string
-          logo_placement: string
-          logo_url: string | null
-          name_mode: string
           pinterest_connection_id: string | null
           recent_styles: Json
           settings: Json
@@ -775,15 +771,11 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
-          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
           google_connection_id?: string | null
           id?: string
           image_provider?: string
-          logo_placement?: string
-          logo_url?: string | null
-          name_mode?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
@@ -804,15 +796,11 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
-          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
           google_connection_id?: string | null
           id?: string
           image_provider?: string
-          logo_placement?: string
-          logo_url?: string | null
-          name_mode?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
