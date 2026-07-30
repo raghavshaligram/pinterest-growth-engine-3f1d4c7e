@@ -85,15 +85,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" },
-      // Both point at the real brand mark (public/brand/pinspider-mark.svg,
-      // see components/Logo.tsx) instead of the generic favicon set
-      // Lovable's scaffolding generated -- dropped the stale
-      // favicon.ico/32x32/16x16 PNG fallbacks rather than leave them
-      // pointing at the old placeholder mark alongside the new SVG.
-      // SVG apple-touch-icon has spotty real-world iOS support; a PNG
-      // export of the same mark is a safe follow-up if that matters.
-      { rel: "icon", href: "/brand/pinspider-mark.svg", type: "image/svg+xml" },
-      { rel: "apple-touch-icon", href: "/brand/pinspider-mark.svg" },
+      // Reverted to the original scaffolded favicon set -- turns out
+      // favicon.svg already IS the real brand mark (same design as
+      // components/Logo.tsx/PinspiderMark.tsx), not a generic
+      // placeholder, and it (plus these PNG fallbacks) was already
+      // being served correctly before any of this session's changes.
+      // Pointing these at a brand-new public/brand/ path instead broke
+      // the login page's logo, since that new path apparently didn't
+      // sync through the deploy pipeline the same way -- reusing the
+      // pre-existing, already-working assets avoids that entirely.
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", href: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { rel: "icon", href: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
       { rel: "manifest", href: "/site.webmanifest" },
     ],
   }),

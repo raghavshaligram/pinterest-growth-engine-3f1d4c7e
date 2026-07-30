@@ -1,8 +1,13 @@
-// Single source of truth for the Pinspider brand mark. Renders the real
-// static asset (public/brand/pinspider-mark.svg) instead of the lucide
-// Sparkles-in-a-rounded-square placeholder that used to stand in for it
-// on the login page, or the hand-coded approximation
-// (components/PinspiderMark.tsx) other screens used in the meantime.
+// Single source of truth for the Pinspider brand mark. Renders the
+// real brand asset that already lives at public/favicon.svg (the same
+// red-circle node-and-thread mark components/PinspiderMark.tsx draws
+// programmatically) instead of the lucide Sparkles-in-a-rounded-square
+// placeholder that used to stand in for it on the login page. No new
+// asset needed -- favicon.svg predates this component and was already
+// being served correctly (it's been in the root route's <head> links
+// since before this component existed), so reusing it directly avoids
+// depending on a brand-new public/ path that may not have synced
+// through the deploy pipeline the same way.
 // PinspiderMark.tsx itself is left alone -- DashboardEmptyState.tsx
 // still uses it deliberately, for its "How it works" illustration that
 // reuses the mark's node-and-thread visual language rather than as the
@@ -10,7 +15,7 @@
 // placeholder occurrence and is out of scope here.
 import { cn } from "@/lib/utils";
 
-const MARK_SRC = "/brand/pinspider-mark.svg";
+const MARK_SRC = "/favicon.svg";
 
 export function Logo({
   size = 32,
