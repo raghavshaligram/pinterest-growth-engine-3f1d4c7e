@@ -12,6 +12,7 @@
 // and publish_mode/webhook_url (the publish pipeline and Settings UI
 // both need to read these without decrypting anything).
 import { decrypt, encrypt } from "./crypto.server";
+import { pinterestApiBaseUrl, type PinterestEnvironment } from "./pinterest-environment";
 
 type StoredPinterestTokens = {
   access_token: string;
@@ -26,6 +27,16 @@ export type PinterestConnectionSummary = {
   connected_at: string;
   publish_mode: "api" | "webhook";
   webhook_url: string | null;
+  environment: PinterestEnvironment;
+  token_source: "oauth" | "manual";
+  // Only ever populated for token_source === "manual" -- Pinterest
+  // issues no refresh_token for a manually-generated sandbox token, so
+  // there's nothing for the background refresh job to renew; this is
+  // what the UI warns from instead (see listPinterestConnectionsForUser).
+  // null for oauth connections, where the background job keeps the
+  // access token continuously valid and a raw expiry isn't meaningful
+  // to show the user.
+  daysToExpiry: number | null;
 };
 
 // One-time, idempotent migration of the old single-account model into
@@ -134,6 +145,12 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
       // publishing as a side effect of this restructure.
       publish_mode: legacyCfg.publish_mode === "webhook" ? "webhook" : "api",
       webhook_url: legacyCfg.webhook_url ?? null,
+      // Explicit, not relying on the column default -- the legacy
+      // single-account flow was always production/oauth, never sandbox,
+      // so this migration path should say so outright rather than
+      // silently inheriting whatever the DB default happens to be.
+      environment: "production",
+      token_source: "oauth",
     })
     .select("id")
     .single();
@@ -170,11 +187,39 @@ export async function listPinterestConnectionsForUser(userId: string): Promise<P
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
     .from("pinterest_connections")
-    .select("id, label, pinterest_username, connected_at, publish_mode, webhook_url")
+    .select("id, label, pinterest_username, connected_at, publish_mode, webhook_url, environment, token_source, token_ciphertext")
     .eq("user_id", userId)
     .order("connected_at", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as PinterestConnectionSummary[];
+  const now = Date.now();
+  return (data ?? []).map((row) => {
+    // Decrypt only for manual connections to compute daysToExpiry --
+    // deliberately NOT decrypting every row on every list call (oauth
+    // connections don't need this at all, and there should only ever be
+    // a handful of dev-created manual connections per account, so this
+    // stays cheap without needing a dedicated plain expiry column the
+    // way refresh_token_expires_at has one for the background job).
+    let daysToExpiry: number | null = null;
+    if (row.token_source === "manual") {
+      try {
+        const tokens = JSON.parse(decrypt(row.token_ciphertext)) as StoredPinterestTokens;
+        daysToExpiry = Math.ceil((tokens.access_token_expires_at - now) / (24 * 60 * 60 * 1000));
+      } catch {
+        daysToExpiry = null; // corrupt/unreadable -- don't block the whole list over one bad row
+      }
+    }
+    return {
+      id: row.id,
+      label: row.label,
+      pinterest_username: row.pinterest_username,
+      connected_at: row.connected_at,
+      publish_mode: row.publish_mode,
+      webhook_url: row.webhook_url,
+      environment: row.environment as PinterestEnvironment,
+      token_source: row.token_source as "oauth" | "manual",
+      daysToExpiry,
+    };
+  });
 }
 
 // Shared by both the on-demand path (getValidPinterestAccessToken, called
@@ -182,11 +227,11 @@ export async function listPinterestConnectionsForUser(userId: string): Promise<P
 // via Pinterest's refresh grant and persists the new tokens + a real
 // refresh_token_expires_at, keeping the "how do we refresh and store it"
 // logic in exactly one place.
-async function refreshAndPersist(connectionId: string, refreshToken: string): Promise<StoredPinterestTokens> {
+async function refreshAndPersist(connectionId: string, refreshToken: string, environment: PinterestEnvironment): Promise<StoredPinterestTokens> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { pinterestAppConfig, refreshPinterestToken } = await import("./pinterest-oauth.server");
   const { appId, appSecret } = pinterestAppConfig();
-  const refreshed = await refreshPinterestToken({ appId, appSecret, refreshToken });
+  const refreshed = await refreshPinterestToken({ appId, appSecret, refreshToken, environment });
   const now = Date.now();
   const nextTokens: StoredPinterestTokens = {
     access_token: refreshed.access_token,
@@ -207,30 +252,49 @@ async function refreshAndPersist(connectionId: string, refreshToken: string): Pr
   return nextTokens;
 }
 
+export type ValidPinterestAccess = {
+  accessToken: string;
+  environment: PinterestEnvironment;
+};
+
 // On-demand check-and-refresh, used at actual publish/board-sync time --
 // this is the piece that was missing before this pass (publishing used
 // to just read whatever was stored, no refresh at all). Mirrors
-// google-analytics.server.ts's getValidAccessToken.
-export async function getValidPinterestAccessToken(connectionId: string, userId: string): Promise<string> {
+// google-analytics.server.ts's getValidAccessToken. Returns environment
+// alongside the token (not just the token alone) so every caller that
+// needs to pick an API host gets it from the exact same read as the
+// token itself -- there's no separate lookup a caller could get out of
+// sync with, by construction.
+export async function getValidPinterestAccessToken(connectionId: string, userId: string): Promise<ValidPinterestAccess> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
     .from("pinterest_connections")
-    .select("id, token_ciphertext")
+    .select("id, token_ciphertext, environment, token_source")
     .eq("id", connectionId)
     .eq("user_id", userId)
     .single();
   if (error || !data) throw new Error("Pinterest connection not found");
 
+  const environment = data.environment as PinterestEnvironment;
+  const tokenSource = data.token_source as "oauth" | "manual";
   const tokens = JSON.parse(decrypt(data.token_ciphertext)) as StoredPinterestTokens;
   const oneMinute = 60_000;
   if (tokens.access_token_expires_at - Date.now() > oneMinute) {
-    return tokens.access_token;
+    return { accessToken: tokens.access_token, environment };
+  }
+  if (tokenSource === "manual") {
+    // No refresh_token exists for a manually-entered token -- Pinterest
+    // issues none for these (see addManualPinterestConnection). There is
+    // nothing to refresh; the only fix is entering a fresh token.
+    throw new Error(
+      "This sandbox connection's manually-entered token has expired — enter a new one in Settings → Integrations.",
+    );
   }
   if (!tokens.refresh_token) {
     throw new Error("This Pinterest connection has no refresh token stored — reconnect it in Settings → Integrations.");
   }
-  const refreshed = await refreshAndPersist(connectionId, tokens.refresh_token);
-  return refreshed.access_token;
+  const refreshed = await refreshAndPersist(connectionId, tokens.refresh_token, environment);
+  return { accessToken: refreshed.access_token, environment };
 }
 
 export type SitePinterestConnection = {
@@ -304,7 +368,13 @@ export async function refreshPinterestConnectionsNearingExpiry(): Promise<{
   const threshold = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: rows, error } = await supabaseAdmin
     .from("pinterest_connections")
-    .select("id, token_ciphertext")
+    .select("id, token_ciphertext, environment")
+    // Manual connections have no refresh_token to renew (Pinterest
+    // issues none for a manually-generated sandbox token) -- filtered
+    // out at the query level so they're never even fetched or
+    // decrypted, not just skipped after the fact. "checked" below
+    // therefore only ever counts oauth connections.
+    .eq("token_source", "oauth")
     .or(`refresh_token_expires_at.lt.${threshold},refresh_token_expires_at.is.null`);
   if (error) throw error;
 
@@ -316,7 +386,7 @@ export async function refreshPinterestConnectionsNearingExpiry(): Promise<{
     try {
       const tokens = JSON.parse(decrypt(row.token_ciphertext)) as StoredPinterestTokens;
       if (!tokens.refresh_token) throw new Error("No refresh_token stored for this connection");
-      await refreshAndPersist(row.id, tokens.refresh_token);
+      await refreshAndPersist(row.id, tokens.refresh_token, row.environment as PinterestEnvironment);
       refreshed++;
     } catch (e) {
       errors.push({ id: row.id, message: getErrorMessage(e) });

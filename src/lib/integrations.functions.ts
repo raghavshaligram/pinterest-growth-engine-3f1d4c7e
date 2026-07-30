@@ -183,7 +183,11 @@ export const testIntegration = createServerFn({ method: "POST" })
       } else if (data.provider === "pinterest") {
         const token = (cfg as { access_token?: string }).access_token;
         if (!token) throw new Error("No access token set");
-        const r = await fetch("https://api.pinterest.com/v5/user_account", {
+        // Always production: the legacy single-account `integrations`
+        // row predates the environment concept entirely and was never
+        // sandbox-capable.
+        const { pinterestApiBaseUrl } = await import("./pinterest-environment");
+        const r = await fetch(`${pinterestApiBaseUrl("production")}/user_account`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!r.ok) throw new Error(`Pinterest: HTTP ${r.status}`);

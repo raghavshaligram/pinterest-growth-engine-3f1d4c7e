@@ -15,7 +15,7 @@ import {
 } from "@/lib/api-key-connections.functions";
 import type { ApiKeyConnectionSummary } from "@/lib/api-key-connections.server";
 import { listGoogleConnections, startGoogleOAuth, disconnectGoogleConnection } from "@/lib/google.functions";
-import { listPinterestConnections, startPinterestConnectionOAuth, disconnectPinterestConnection, setPinterestConnectionPublishMode } from "@/lib/pinterest-connections.functions";
+import { listPinterestConnections, startPinterestConnectionOAuth, disconnectPinterestConnection, setPinterestConnectionPublishMode, isSandboxToolsEnabled, addManualPinterestConnection } from "@/lib/pinterest-connections.functions";
 import { getPublishingProfile, savePublishingProfile, getAccountHealth, setCapMode } from "@/lib/publishing-profile.functions";
 import { describeCapEvent, capEventIsWarning, type CapEvent } from "@/lib/cap-event-copy";
 
@@ -42,7 +42,7 @@ import { hostFromUrl } from "@/routes/sites";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useState, useEffect, type ReactNode } from "react";
-import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
+import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus, FlaskConical } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 
 type Provider =
@@ -995,7 +995,82 @@ function PinterestConnectionsCard() {
         <Plus className="mr-1 h-4 w-4" />
         {connectMut.isPending ? "Redirecting…" : "Connect another Pinterest account"}
       </Button>
+
+      <ManualSandboxConnectionForm />
     </Card>
+  );
+}
+
+// Dev-gated: only renders its contents once isSandboxToolsEnabled confirms
+// PINTEREST_SANDBOX_TOOLS_ENABLED=true server-side (see
+// pinterest-connections.functions.ts) -- addManualPinterestConnection
+// re-checks the same env var itself, so hiding this form is a UX nicety,
+// not the actual security boundary.
+function ManualSandboxConnectionForm() {
+  const qc = useQueryClient();
+  const checkEnabled = useServerFn(isSandboxToolsEnabled);
+  const addManual = useServerFn(addManualPinterestConnection);
+  const { data: gate } = useQuery({ queryKey: ["pinterest-sandbox-tools-enabled"], queryFn: () => checkEnabled() });
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState("30");
+
+  const addMut = useMutation({
+    mutationFn: () =>
+      addManual({
+        data: {
+          label: label.trim() || undefined,
+          accessToken: accessToken.trim(),
+          expiresInDays: Number(expiresInDays) || 30,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Sandbox connection added");
+      qc.invalidateQueries({ queryKey: ["pinterest-connections"] });
+      setFormOpen(false);
+      setLabel("");
+      setAccessToken("");
+      setExpiresInDays("30");
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  if (!gate?.enabled) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-amber-800">
+        <FlaskConical className="h-3.5 w-3.5" />
+        Dev tools — sandbox token
+      </div>
+      {!formOpen ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => setFormOpen(true)}>
+          <Plus className="mr-1 h-4 w-4" />
+          Add sandbox connection (manual token)
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Paste a token generated from Pinterest's My Apps page (Sandbox). Manual sandbox tokens last up to 30 days and carry no refresh token — reconnect with a fresh one before it expires.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_90px]">
+            <Input placeholder="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 text-sm" />
+            <Input placeholder="Access token" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} className="h-8 text-sm" type="password" autoComplete="off" />
+            <Input placeholder="Days" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} className="h-8 text-sm" type="number" min={1} max={30} />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={() => addMut.mutate()} disabled={!accessToken.trim() || addMut.isPending}>
+              {addMut.isPending ? "Adding…" : "Add connection"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1118,7 +1193,10 @@ function GoogleConnectionsCard() {
 function PinterestConnectionRow({
   connection, onDisconnect, disconnectPending,
 }: {
-  connection: { id: string; label: string; pinterest_username: string | null; publish_mode: "api" | "webhook"; webhook_url: string | null };
+  connection: {
+    id: string; label: string; pinterest_username: string | null; publish_mode: "api" | "webhook"; webhook_url: string | null;
+    environment: "sandbox" | "production"; token_source: "oauth" | "manual"; daysToExpiry: number | null;
+  };
   onDisconnect: () => void;
   disconnectPending: boolean;
 }) {
@@ -1149,9 +1227,27 @@ function PinterestConnectionRow({
             <LinkIcon className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{connection.label}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-sm font-medium">{connection.label}</span>
+              {connection.environment === "sandbox" && (
+                <span
+                  className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700"
+                  style={{ borderColor: "#F5C177", background: "#FFF6E8" }}
+                  title="Pins created through this connection are only visible to you, not published publicly -- see Pinterest's Sandbox docs."
+                >
+                  Sandbox
+                </span>
+              )}
+            </div>
             {connection.pinterest_username && (
               <div className="truncate text-xs text-muted-foreground">@{connection.pinterest_username}</div>
+            )}
+            {connection.token_source === "manual" && connection.daysToExpiry !== null && (
+              <div className={`text-xs ${connection.daysToExpiry <= 3 ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                {connection.daysToExpiry > 0
+                  ? `Manual token expires in ${connection.daysToExpiry} day${connection.daysToExpiry === 1 ? "" : "s"} -- no auto-refresh`
+                  : "Manual token has expired -- enter a new one"}
+              </div>
             )}
           </div>
         </div>

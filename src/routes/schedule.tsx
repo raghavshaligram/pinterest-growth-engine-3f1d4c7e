@@ -12,6 +12,7 @@ import {
   unscheduleScheduledPin,
 } from "@/lib/schedule.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
 import { PinShell } from "@/components/PinShell";
 import { TopBar } from "@/components/PinTopBar";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
@@ -58,7 +59,7 @@ function SchedulePage() {
 
 function ScheduleContent() {
   const qc = useQueryClient();
-  const { selectedSiteId } = useSiteContext();
+  const { selectedSiteId, sites } = useSiteContext();
   const list = useServerFn(listScheduled);
   const auto = useServerFn(autoSchedule);
   const pub = useServerFn(runPublisher);
@@ -75,6 +76,18 @@ function ScheduleContent() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [open, setOpen] = useState<ScheduledRow | null>(null);
   const [search, setSearch] = useState("");
+
+  // Sandbox-connection warning for the pin detail/composer dialog --
+  // display-only, resolved from data already fetched elsewhere (sites'
+  // pinterest_connection_id via useSiteContext, connections' environment
+  // via the same query the Settings page uses) rather than adding any
+  // new fetch to schedule.functions.ts.
+  const listConnectionsFn = useServerFn(listPinterestConnections);
+  const { data: pinterestConnections } = useQuery({ queryKey: ["pinterest-connections"], queryFn: () => listConnectionsFn() });
+  const openSiteId = (open as { pin_briefs?: { pages?: { site_id?: string } } } | null)?.pin_briefs?.pages?.site_id;
+  const openSiteConnectionId = sites.find((s) => s.id === openSiteId)?.pinterest_connection_id;
+  const targetIsSandbox = !!openSiteConnectionId
+    && (pinterestConnections ?? []).some((c) => c.id === openSiteConnectionId && c.environment === "sandbox");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["scheduled"] });
 
@@ -222,6 +235,7 @@ function ScheduleContent() {
         replacing={replaceMut.isPending}
         publishing={publishNowMut.isPending}
         marking={markPostedMut.isPending}
+        targetIsSandbox={targetIsSandbox}
       />
     </>
   );

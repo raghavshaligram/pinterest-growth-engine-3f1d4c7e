@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Send, RefreshCw, Copy, ExternalLink, Link as LinkIcon, Hash, ImageIcon,
-  Check, PinIcon, Undo2, CalendarOff,
+  Check, PinIcon, Undo2, CalendarOff, AlertTriangle,
 } from "lucide-react";
 import type { listScheduled } from "@/lib/schedule.functions";
 
@@ -19,7 +19,7 @@ export type PinDetailRow = Awaited<ReturnType<typeof listScheduled>>[number];
 
 export function PinDetailDialog({
   row, onOpenChange, onUnschedule, onQueue, onReplace, onPublishNow, onDuplicate, onReschedule, onMarkPosted, onUnmarkPosted,
-  unscheduling, queuing, replacing, publishing, marking,
+  unscheduling, queuing, replacing, publishing, marking, targetIsSandbox,
 }: {
   row: PinDetailRow | null;
   onOpenChange: (v: boolean) => void;
@@ -36,6 +36,11 @@ export function PinDetailDialog({
   replacing: boolean;
   publishing: boolean;
   marking: boolean;
+  // Whether the Pinterest connection this pin's site is mapped to is a
+  // Sandbox connection (see pinterest-environment.ts) -- purely a display
+  // hint resolved by the caller (Schedule page) from data it already
+  // fetches, so this dialog stays free of any new data-fetching logic.
+  targetIsSandbox?: boolean;
 }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
@@ -120,6 +125,13 @@ export function PinDetailDialog({
                   <Button size="sm" variant="outline" onClick={() => onUnmarkPosted(row.id)} disabled={marking} title="Move back to the queue">
                     <Undo2 className="mr-2 h-4 w-4" />Unmark as posted
                   </Button>
+                </div>
+              )}
+
+              {targetIsSandbox && row.status !== "published" && row.status !== "publishing" && (
+                <div className="mt-6 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <p>This pin's site is mapped to a <strong>Sandbox</strong> Pinterest connection -- publishing will only be visible to the connected account owner, not the public.</p>
                 </div>
               )}
 

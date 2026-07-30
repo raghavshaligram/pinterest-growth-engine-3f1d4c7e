@@ -1,5 +1,6 @@
 // Server-only. Pinterest OAuth helpers (state signing + token exchange).
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { pinterestApiBaseUrl, type PinterestEnvironment } from "./pinterest-environment";
 
 const SCOPES = ["boards:read", "boards:write", "pins:read", "pins:write"];
 
@@ -84,6 +85,12 @@ export function verifyState(state: string): { userId: string; returnTo: OAuthRet
   return { userId, returnTo, mode };
 }
 
+// Deliberately NOT routed through pinterestApiBaseUrl -- confirmed
+// against Pinterest's own docs that the OAuth consent page itself has
+// no sandbox variant, only the token endpoint and API calls that come
+// after it do (see pinterest-environment.ts's header comment for the
+// exact sources checked). Always https://www.pinterest.com/oauth/
+// regardless of which environment the resulting connection will use.
 export function buildAuthorizeUrl(params: {
   appId: string;
   redirectUri: string;
@@ -104,6 +111,7 @@ export async function exchangeCode(params: {
   appSecret: string;
   code: string;
   redirectUri: string;
+  environment: PinterestEnvironment;
 }): Promise<{
   access_token: string;
   refresh_token?: string;
@@ -122,7 +130,7 @@ export async function exchangeCode(params: {
     code: params.code,
     redirect_uri: params.redirectUri,
   });
-  const r = await fetch("https://api.pinterest.com/v5/oauth/token", {
+  const r = await fetch(`${pinterestApiBaseUrl(params.environment)}/oauth/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
@@ -141,18 +149,23 @@ export async function exchangeCode(params: {
 // proactive background refresh job (pinterest-connections.server.ts),
 // which calls this for every connection nearing its
 // refresh_token_expires_at rather than waiting for an access_token to
-// actually expire first.
+// actually expire first. Manual (token_source='manual') connections
+// never reach this function at all -- see getValidPinterestAccessToken
+// and refreshPinterestConnectionsNearingExpiry, both of which skip them
+// before ever calling here, since Pinterest issues no refresh_token for
+// a manually-generated sandbox token in the first place.
 export async function refreshPinterestToken(params: {
   appId: string;
   appSecret: string;
   refreshToken: string;
+  environment: PinterestEnvironment;
 }): Promise<{ access_token: string; expires_in: number; refresh_token_expires_in?: number }> {
   const basic = Buffer.from(`${params.appId}:${params.appSecret}`).toString("base64");
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: params.refreshToken,
   });
-  const r = await fetch("https://api.pinterest.com/v5/oauth/token", {
+  const r = await fetch(`${pinterestApiBaseUrl(params.environment)}/oauth/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
@@ -168,9 +181,9 @@ export async function refreshPinterestToken(params: {
 // Best-effort only -- used to default a new connection's label to
 // something more useful than "Pinterest account" right after connect.
 // Never blocks/fails the connect flow itself if this call errors.
-export async function fetchPinterestUsername(accessToken: string): Promise<string | null> {
+export async function fetchPinterestUsername(accessToken: string, environment: PinterestEnvironment): Promise<string | null> {
   try {
-    const r = await fetch("https://api.pinterest.com/v5/user_account", {
+    const r = await fetch(`${pinterestApiBaseUrl(environment)}/user_account`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!r.ok) return null;

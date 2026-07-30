@@ -6,6 +6,7 @@
 // own automation (Make.com, Zapier, etc.) by setting publish_mode: "webhook"
 // and saving a webhook_url on their Pinterest integration config (see
 // integrations.server.ts / integrations.functions.ts).
+import { pinterestApiBaseUrl, type PinterestEnvironment } from "./pinterest-environment";
 export type PublishInput = {
   boardId: string; // Pinterest board id (native)
   title: string;
@@ -60,12 +61,41 @@ export async function webhookPublish(
   return { mode: "webhook", ok: true, pinterestPinId: pinId, status, raw: parsed };
 }
 
+// Pinterest's own numeric error code for "you are not permitted to
+// access that resource" -- fires for several distinct permission
+// reasons, but the specific, verbatim message Pinterest returns for a
+// Trial-access app trying to create a Pin against the production host
+// is a confirmed, known string (checked directly, not guessed):
+// {"code":29,"message":"Apps with Trial access may not create Pins in
+// production https://api.pinterest.com - use API Sandbox
+// https://api-sandbox.pinterest.com instead."}
+// Matched on that specific substring rather than the bare code alone,
+// since code 29 is a shared/generic code Pinterest reuses for other
+// permission failures too -- a bare-code match would mislabel an
+// unrelated permission error as an environment mismatch.
+const PINTEREST_TRIAL_ENVIRONMENT_MISMATCH_HINT = "trial access may not create pins in production";
+
+function describePinterestPublishError(status: number, rawText: string, environment: PinterestEnvironment): string {
+  let parsed: { code?: number; message?: string } = {};
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    // Not JSON -- fall through to the generic message below.
+  }
+  if (parsed.code === 29 && (parsed.message ?? "").toLowerCase().includes(PINTEREST_TRIAL_ENVIRONMENT_MISMATCH_HINT)) {
+    return environment === "production"
+      ? "Pinterest rejected this pin (error 29): this app's Trial access only allows creating Pins in Pinterest's Sandbox, not production. Map this site to a sandbox connection, or request Standard access from Pinterest to publish to production."
+      : "Pinterest rejected this pin (error 29) as an environment mismatch, even though this connection is marked sandbox — the stored token may have been issued for the wrong environment. Reconnect or re-enter this connection's token.";
+  }
+  return `Pinterest v5 pin create ${status}: ${rawText}`;
+}
+
 // Publish straight to Pinterest v5 using the caller's own OAuth access token.
 // https://developers.pinterest.com/docs/api/v5/#operation/pins/create
 export async function apiPublish(
-  input: PublishInput & { accessToken: string },
+  input: PublishInput & { accessToken: string; environment: PinterestEnvironment },
 ): Promise<PublishResult> {
-  const r = await fetch("https://api.pinterest.com/v5/pins", {
+  const r = await fetch(`${pinterestApiBaseUrl(input.environment)}/pins`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.accessToken}`,
@@ -84,7 +114,7 @@ export async function apiPublish(
     }),
   });
   const text = await r.text();
-  if (!r.ok) throw new Error(`Pinterest v5 pin create ${r.status}: ${text}`);
+  if (!r.ok) throw new Error(describePinterestPublishError(r.status, text, input.environment));
   let json: { id?: string };
   try {
     json = text ? JSON.parse(text) : {};
@@ -113,7 +143,11 @@ export type PinterestAccountMetrics = {
 };
 
 export async function fetchUserAccount(accessToken: string): Promise<PinterestAccountMetrics> {
-  const r = await fetch("https://api.pinterest.com/v5/user_account", {
+  // Always production: this is only ever called via reconcileTier
+  // (publishing-profile.server.ts) against the legacy single-account
+  // `integrations` row, which predates and has no environment column at
+  // all -- that flow was never sandbox-capable to begin with.
+  const r = await fetch(`${pinterestApiBaseUrl("production")}/user_account`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const text = await r.text();
@@ -166,8 +200,12 @@ export async function makePinterestClientForSite(params: { siteId: string; userI
   return {
     mode: "api",
     publish: async (i) => {
-      const accessToken = await getValidPinterestAccessToken(conn.connectionId, params.userId);
-      return apiPublish({ ...i, accessToken });
+      // accessToken and environment come from the exact same read (see
+      // getValidPinterestAccessToken) so they can never drift apart --
+      // the token that's used is always sent to the host it was
+      // actually issued for.
+      const { accessToken, environment } = await getValidPinterestAccessToken(conn.connectionId, params.userId);
+      return apiPublish({ ...i, accessToken, environment });
     },
   };
 }

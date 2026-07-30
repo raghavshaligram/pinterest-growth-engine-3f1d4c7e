@@ -17,6 +17,10 @@ export type SiteOption = {
   // useSiteStyleGate (site-style-gate.ts) can read the currently
   // selected site's lock state without a second query.
   style_locked_at?: string | null;
+  // Also present via the same select("*") -- typed here so consumers
+  // (e.g. the Schedule page's sandbox-connection warning) can read which
+  // Pinterest connection a site is mapped to without a second query.
+  pinterest_connection_id?: string | null;
 };
 
 type SiteContextValue = {

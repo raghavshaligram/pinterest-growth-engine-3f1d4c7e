@@ -85,7 +85,8 @@ export const syncPinterestBoards = createServerFn({ method: "POST" })
     const { getValidPinterestAccessToken } = await import("./pinterest-connections.server");
 
     const connectionId = data.connectionId;
-    const token = await getValidPinterestAccessToken(connectionId, context.userId);
+    const { pinterestApiBaseUrl } = await import("./pinterest-environment");
+    const { accessToken, environment } = await getValidPinterestAccessToken(connectionId, context.userId);
 
     // Paginate through /v5/boards
     type PBoard = {
@@ -96,10 +97,10 @@ export const syncPinterestBoards = createServerFn({ method: "POST" })
     let bookmark: string | undefined;
     let guard = 0;
     do {
-      const url = new URL("https://api.pinterest.com/v5/boards");
+      const url = new URL(`${pinterestApiBaseUrl(environment)}/boards`);
       url.searchParams.set("page_size", "100");
       if (bookmark) url.searchParams.set("bookmark", bookmark);
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!r.ok) throw new Error(`Pinterest ${r.status}: ${await r.text()}`);
       const j = await r.json() as { items: PBoard[]; bookmark?: string };
       boards.push(...(j.items ?? []));

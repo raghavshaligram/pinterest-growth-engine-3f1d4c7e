@@ -32,6 +32,13 @@ const serverOnlySecretNames: string[] = [
   "PINTEREST_APP_ID",
   "PINTEREST_APP_SECRET",
   "PINTEREST_REDIRECT_URI",
+  // Not actually a secret -- a plain "true"/unset feature flag gating
+  // the dev-only manual sandbox-token form -- but it's read via
+  // process.env server-side just like the real secrets above, and the
+  // Cloudflare Worker runtime doesn't inherit the host process env any
+  // more for this than it does for those, so it needs the same
+  // build-time inlining to actually be readable at runtime.
+  "PINTEREST_SANDBOX_TOOLS_ENABLED",
 ];
 
 export default defineConfig({

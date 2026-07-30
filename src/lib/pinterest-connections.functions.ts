@@ -82,3 +82,73 @@ export const disconnectPinterestConnection = createServerFn({ method: "POST" })
     if (error) throw error;
     return { ok: true };
   });
+
+// Client-side gate check for the manual sandbox-token form below --
+// this alone is NOT the real gate (a direct call to
+// addManualPinterestConnection re-checks the same env var server-side
+// regardless of what this returns), it only controls whether the form
+// renders at all so a production deployment doesn't show dev tooling
+// that would just fail on submit.
+export const isSandboxToolsEnabled = createServerFn({ method: "GET" })
+  .handler(async () => {
+    return { enabled: process.env.PINTEREST_SANDBOX_TOOLS_ENABLED === "true" };
+  });
+
+// Dev-only escape hatch: creates a sandbox Pinterest connection from a
+// manually-pasted token, e.g. the 30-day quick token Pinterest's own My
+// Apps page can generate directly with no OAuth redirect at all --
+// https://developers.pinterest.com/docs/developer-tools/sandbox/#step-2-generate-a-sandbox-access-token.
+// Real gate is server-side: PINTEREST_SANDBOX_TOOLS_ENABLED must be
+// "true" or this throws outright, so it can't be reached in a real
+// deployment just because someone found the client-side form.
+//
+// Always environment: "sandbox", token_source: "manual", and an empty
+// refresh_token -- Pinterest issues no refresh_token for these tokens
+// at all. getValidPinterestAccessToken and
+// refreshPinterestConnectionsNearingExpiry both already know to treat
+// token_source: "manual" as unrefreshable rather than assuming a
+// refresh_token is ever present.
+export const addManualPinterestConnection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { label?: string; accessToken: string; expiresInDays?: number }) =>
+    z.object({
+      label: z.string().min(1).max(80).optional(),
+      accessToken: z.string().min(1),
+      // Pinterest's own quick-token generator issues 30-day tokens --
+      // allowing a shorter, explicit value covers a token the dev knows
+      // expires sooner (e.g. one pulled from an OAuth sandbox exchange
+      // manually) without ever allowing a wrong, longer-than-real value.
+      expiresInDays: z.number().int().min(1).max(30).default(30),
+    }).parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    if (process.env.PINTEREST_SANDBOX_TOOLS_ENABLED !== "true") {
+      throw new Error("Sandbox tools are not enabled in this environment.");
+    }
+    const { encrypt } = await import("./crypto.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { fetchPinterestUsername } = await import("./pinterest-oauth.server");
+
+    const storedTokens = {
+      access_token: data.accessToken,
+      refresh_token: "", // Pinterest issues none for a manually-generated sandbox token
+      access_token_expires_at: Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000,
+    };
+    // Best-effort label from the account itself, same courtesy the real
+    // OAuth connect flow gets -- never blocks the connection if it fails
+    // (a bad/expired pasted token, a network hiccup, etc.).
+    const username = await fetchPinterestUsername(data.accessToken, "sandbox");
+    const label = data.label || (username ? `@${username} (sandbox)` : "Sandbox connection");
+
+    const { error } = await supabaseAdmin.from("pinterest_connections").insert({
+      user_id: context.userId,
+      label,
+      pinterest_username: username,
+      token_ciphertext: encrypt(JSON.stringify(storedTokens)),
+      refresh_token_expires_at: null,
+      environment: "sandbox",
+      token_source: "manual",
+    });
+    if (error) throw error;
+    return { ok: true };
+  });
