@@ -37,6 +37,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
 import { useSiteContext } from "@/lib/site-context";
+import { listSites, upsertSite, type SiteType } from "@/lib/sites.functions";
+import { hostFromUrl } from "@/routes/sites";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
@@ -45,6 +48,20 @@ import { getErrorMessage } from "@/lib/error-message";
 type Provider =
   | "openai" | "replicate" | "apify" | "pinterest"
   | "fal" | "gemini" | "ideogram" | "recraft" | "stability" | "anthropic";
+
+// Minimal shape this page needs from each site to render/edit the
+// "Used by" picker on a key row -- id/url/sitemap_url/site_type are
+// what upsertSite requires on every call (see sites.functions.ts), the
+// rest is what's actually displayed or checked against.
+type PickableSite = {
+  id: string;
+  url: string;
+  sitemap_url: string | null;
+  site_type: SiteType;
+  brand_name: string | null;
+  image_connection_override_id: string | null;
+  copy_connection_override_id: string | null;
+};
 
 export const Route = createFileRoute("/settings/integrations")({
   ssr: false,
@@ -98,11 +115,22 @@ function IntegrationsPage() {
     qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
   };
 
-  // The default-provider description below links to "that site's
-  // Connections section" -- but this description is account-wide, not
-  // tied to one site, so there's no single right site to send someone
-  // to. Rather than force a "pick a site" intermediate step, this
-  // links straight to whichever site is currently selected via the
+  // Every site this account has, for the "Used by" picker on each key
+  // row below -- this is where a site's provider override now gets
+  // ASSIGNED from (see ApiKeyConnectionRow); the site's own Connections
+  // section (Sites page) still shows the result but is read-only there,
+  // linking back here to change it. Same ["sites"] query key
+  // boards.tsx's own listSites call already uses -- React Query dedupes.
+  const listSitesFn = useServerFn(listSites);
+  const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
+
+  // The default-key description below links out to a site's own
+  // Connections section -- as of this pass that section is read-only
+  // (it just shows the result), since per-site assignment now happens
+  // right here via each key row's "Used by" picker. The link's still
+  // useful for reviewing a specific site's current mapping alongside
+  // its Pinterest/GA4 connections, just no longer where you'd change
+  // it. Links straight to whichever site is currently selected via the
   // site-switcher context (same selectedSiteId every other page reads)
   // and jumps to that site's own card (SiteCard sets id={`site-card-
   // ${site.id}`}) via a hash anchor. Falls back to a plain /sites link
@@ -181,11 +209,13 @@ function IntegrationsPage() {
           title="Image Generation"
           description={
             <>
-              Sets the account-wide default for pin artwork. Any site can override this individually in {connectionsLink}. Adding a future provider is one row here, never a new card.
+              Sets the account-wide default for pin artwork. Expand a key below and check a site under "Used by" to pin that site to this exact key instead -- {connectionsLink} shows the result per site, but assigning happens here.
             </>
           }
           providers={IMAGE_GEN_PROVIDERS}
           connections={apiKeyConnections ?? []}
+          sites={sites ?? []}
+          kind="image"
           onChanged={invalidateConnections}
           currentDefaultConnectionId={providerDefaults?.default_image_connection_id}
           onSetDefault={(connectionId) => setDefaultMut.mutate({ kind: "image", connectionId })}
@@ -194,11 +224,13 @@ function IntegrationsPage() {
           title="Copy Generation"
           description={
             <>
-              Sets the account-wide default for pin titles, taglines, and calls-to-action. Any site can override this individually in {connectionsLink}.
+              Sets the account-wide default for pin titles, taglines, and calls-to-action. Expand a key below and check a site under "Used by" to pin that site to this exact key instead -- {connectionsLink} shows the result per site, but assigning happens here.
             </>
           }
           providers={COPY_GEN_PROVIDERS}
           connections={apiKeyConnections ?? []}
+          sites={sites ?? []}
+          kind="copy"
           onChanged={invalidateConnections}
           currentDefaultConnectionId={providerDefaults?.default_copy_connection_id}
           onSetDefault={(connectionId) => setDefaultMut.mutate({ kind: "copy", connectionId })}
@@ -431,12 +463,20 @@ export const COPY_GEN_PROVIDERS: GenProviderMeta[] = [
 // PinterestConnectionRow already established, just scoped to one
 // API-key credential instead of publish_mode/webhook_url.
 function ApiKeyConnectionRow({
-  connection, meta, onChanged,
+  connection, meta, sites, kind, onChanged,
 }: {
   connection: ApiKeyConnectionSummary;
   meta: GenProviderMeta;
+  // Both optional: FirstApiKeySetup (onboarding's own simpler single-
+  // provider setup UI) reuses this same row but never passes them,
+  // since a brand-new account has no meaningful site-assignment
+  // decision to make yet -- the "Used by" section below just doesn't
+  // render without a kind to know which site column it'd read/write.
+  sites?: PickableSite[];
+  kind?: "image" | "copy";
   onChanged: () => void;
 }) {
+  const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [label, setLabel] = useState(connection.label);
@@ -445,6 +485,7 @@ function ApiKeyConnectionRow({
   const rename = useServerFn(renameApiKeyConnection);
   const test = useServerFn(testApiKeyConnection);
   const del = useServerFn(deleteApiKeyConnection);
+  const upsert = useServerFn(upsertSite);
 
   const saveMut = useMutation({
     mutationFn: () => update({ data: { id: connection.id, config: Object.fromEntries(Object.entries(vals).filter(([, v]) => v)) } }),
@@ -468,6 +509,31 @@ function ApiKeyConnectionRow({
   const delMut = useMutation({
     mutationFn: () => del({ data: { id: connection.id } }),
     onSuccess: () => { toast.success("Deleted"); onChanged(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  // Assigns/unassigns THIS specific connection as a site's provider
+  // override -- this is the feature that moved here from the site's
+  // own Connections section (ProviderOverrideCard, sites.tsx, now
+  // read-only). Writes the exact same image_connection_override_id /
+  // copy_connection_override_id field upsertSite already accepted --
+  // no data-model change, just a different screen setting it.
+  const overrideField = kind === "image" ? "image_connection_override_id" : "copy_connection_override_id";
+  const assignMut = useMutation({
+    mutationFn: (vars: { site: PickableSite; checked: boolean }) =>
+      upsert({
+        data: {
+          id: vars.site.id, url: vars.site.url, sitemap_url: vars.site.sitemap_url ?? undefined, site_type: vars.site.site_type,
+          [overrideField]: vars.checked ? connection.id : null,
+        },
+      }),
+    onSuccess: (_r, vars) => {
+      const siteName = vars.site.brand_name || hostFromUrl(vars.site.url);
+      toast.success(vars.checked ? `${siteName} now uses this key` : `${siteName} no longer pinned to this key`);
+      qc.invalidateQueries({ queryKey: ["sites"] });
+      qc.invalidateQueries({ queryKey: ["sites-overview"] });
+      qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+    },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
@@ -540,6 +606,35 @@ function ApiKeyConnectionRow({
             </div>
             {connection.last_error && <p className="text-xs text-destructive">{connection.last_error}</p>}
           </form>
+
+          {kind && sites && (
+            <div className="border-t pt-3">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <Label className="text-xs">Used by</Label>
+                <InfoTooltip text="Check a site to pin it to this exact key, regardless of the account default. Unchecked sites may still use this key if it's the account default -- they just aren't explicitly pinned to it." />
+              </div>
+              {sites.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No sites yet.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {sites.map((s) => {
+                    const checked = s[overrideField] === connection.id;
+                    const siteName = s.brand_name || hostFromUrl(s.url);
+                    return (
+                      <label key={s.id} className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={checked}
+                          disabled={assignMut.isPending}
+                          onCheckedChange={(v) => assignMut.mutate({ site: s, checked: Boolean(v) })}
+                        />
+                        <span className="truncate">{siteName}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </CollapsibleSection>
     </div>
@@ -645,10 +740,12 @@ export function FirstApiKeySetup({
 // the provider-group level instead of the individual-connection level
 // ApiKeyConnectionRow already collapses at).
 function ProviderKeyGroup({
-  meta, connections, onChanged,
+  meta, connections, sites, kind, onChanged,
 }: {
   meta: GenProviderMeta;
   connections: ApiKeyConnectionSummary[];
+  sites: PickableSite[];
+  kind: "image" | "copy";
   onChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -694,7 +791,7 @@ function ProviderKeyGroup({
           {connections.length > 0 && (
             <div className="space-y-2">
               {connections.map((c) => (
-                <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} onChanged={onChanged} />
+                <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} sites={sites} kind={kind} onChanged={onChanged} />
               ))}
             </div>
           )}
@@ -733,16 +830,26 @@ function ProviderKeyGroup({
 // Card/header/status-badge/description shape as PinterestConnectionsCard
 // below, just listing ProviderKeyGroup instead of PinterestConnectionRow.
 function GenerationProvidersCard({
-  title, description, providers, connections, onChanged, currentDefaultConnectionId, onSetDefault,
+  title, description, providers, connections, sites, kind, onChanged, currentDefaultConnectionId, onSetDefault,
 }: {
   title: string;
   description: ReactNode;
   providers: GenProviderMeta[];
   connections: ApiKeyConnectionSummary[];
+  // This account's sites, threaded down to each ApiKeyConnectionRow's
+  // "Used by" picker -- `kind` tells that picker which of a site's two
+  // override columns (image_connection_override_id vs
+  // copy_connection_override_id) it's reading/writing, since the SAME
+  // connection (e.g. one OpenAI key) can independently appear as a row
+  // in both this card and its sibling, and a site's image/copy
+  // assignments are fully independent of each other.
+  sites: PickableSite[];
+  kind: "image" | "copy";
   onChanged: () => void;
   // Account-level default CONNECTION for this card's generation kind
-  // (image or copy) -- per-site overrides (ProviderOverrideCard,
-  // sites.tsx) fall back to whatever this is set to. Flattened across
+  // (image or copy) -- per-site overrides (now assigned via each key
+  // row's "Used by" picker, ProviderOverrideCard in sites.tsx is
+  // read-only) fall back to whatever this is set to. Flattened across
   // every provider in this card, so "OpenAI (My key)" and "OpenAI
   // (Client A's key)" are both selectable independently even though
   // they're the same provider.
@@ -787,6 +894,8 @@ function GenerationProvidersCard({
             key={p.provider}
             meta={p}
             connections={connections.filter((c) => c.provider === p.provider)}
+            sites={sites}
+            kind={kind}
             onChanged={onChanged}
           />
         ))}

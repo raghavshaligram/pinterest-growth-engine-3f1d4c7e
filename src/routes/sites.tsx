@@ -738,13 +738,13 @@ function SiteConnectionsSection({
         <PinterestSiteConnectionCard site={site} onSaved={onSaved} />
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
         <ProviderOverrideCard
-          site={site} onSaved={onSaved} kind="image"
+          kind="image"
           accountDefaultConnectionId={defaults?.default_image_connection_id ?? null}
           connections={imageConnections}
           currentOverrideConnectionId={site.image_connection_override_id}
         />
         <ProviderOverrideCard
-          site={site} onSaved={onSaved} kind="copy"
+          kind="copy"
           accountDefaultConnectionId={defaults?.default_copy_connection_id ?? null}
           connections={copyConnections}
           currentOverrideConnectionId={site.copy_connection_override_id}
@@ -754,50 +754,30 @@ function SiteConnectionsSection({
   );
 }
 
-// Per-site override for image/copy generation -- defaults to "Use
-// account default," an explicit choice pins this specific site to a
-// SPECIFIC connected key (not just a provider) regardless of the
-// account default -- "OpenAI (Client A's key)" on one site, "OpenAI
-// (My key)" on another, both distinct even though they're the same
-// provider. Set in Settings -> Integrations' "Default key" selector
-// (GenerationProvidersCard). Styled exactly like
-// PinterestSiteConnectionCard/GoogleAnalyticsConnectionCard right
-// above (same rounded-lg border card, same status-dot + label row,
-// same "editing" toggle showing a row of choice buttons) per spec --
-// this is a Connections-section control, not a Brand-settings form.
+// Per-site image/copy generation summary -- READ-ONLY as of this pass.
+// Assigning a site to a specific key now happens on the Integrations
+// page instead (each key's own "Used by" picker,
+// ApiKeyConnectionRow/settings.integrations.tsx) -- this card just
+// reflects whatever that picker last set (same
+// image_connection_override_id/copy_connection_override_id field,
+// same data model, just a different screen writes it now), with a
+// link back there to change it, rather than a second editable control
+// for the same underlying setting. Styled the same as
+// PinterestSiteConnectionCard/GoogleAnalyticsConnectionCard above
+// (same rounded-lg border card, same status-dot + label row) minus
+// the "editing" toggle those still have for their own, still-editable
+// settings.
 function ProviderOverrideCard({
-  site, onSaved, kind, accountDefaultConnectionId, connections, currentOverrideConnectionId,
+  kind, accountDefaultConnectionId, connections, currentOverrideConnectionId,
 }: {
-  site: SiteOverviewRow;
-  onSaved: () => void;
   kind: "image" | "copy";
   accountDefaultConnectionId: string | null;
   connections: ApiKeyConnectionSummary[];
   currentOverrideConnectionId: string | null;
 }) {
-  const upsert = useServerFn(upsertSite);
-  const [editing, setEditing] = useState(false);
   const labels: Record<string, string> = kind === "image" ? IMAGE_PROVIDER_LABELS : COPY_PROVIDER_LABELS;
   const title = kind === "image" ? "Image generation" : "Copy generation";
-  const connectionLabel = (c: ApiKeyConnectionSummary) => `${labels[c.provider] ?? c.provider} (${c.label})`;
-
-  const saveMut = useMutation({
-    mutationFn: (connectionId: string | null) =>
-      upsert({
-        data: {
-          id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
-          ...(kind === "image"
-            ? { image_connection_override_id: connectionId }
-            : { copy_connection_override_id: connectionId }),
-        },
-      }),
-    onSuccess: () => {
-      toast.success(kind === "image" ? "Image provider updated" : "Copy provider updated");
-      setEditing(false);
-      onSaved();
-    },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
+  const connectionLabel = (c: ApiKeyConnectionSummary) => `${labels[c.provider] ?? c.provider} — ${c.label}`;
 
   const overridden = Boolean(currentOverrideConnectionId);
   const accountDefaultConnection = accountDefaultConnectionId
@@ -807,6 +787,9 @@ function ProviderOverrideCard({
     ? connections.find((c) => c.id === currentOverrideConnectionId)
     : undefined;
   const defaultLabel = accountDefaultConnection ? connectionLabel(accountDefaultConnection) : undefined;
+  const usingLabel = overridden
+    ? (currentOverrideConnection ? connectionLabel(currentOverrideConnection) : "a key that's since been removed")
+    : (defaultLabel ?? "no key connected yet");
 
   return (
     <div className="rounded-lg border border-border p-3">
@@ -823,57 +806,13 @@ function ProviderOverrideCard({
         </span>
       </div>
 
-      {!editing && (
-        <>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Using {overridden
-              ? (currentOverrideConnection ? connectionLabel(currentOverrideConnection) : "a key that's since been removed -- pick another")
-              : (defaultLabel ?? "…")}
-            {!overridden && defaultLabel ? " (account default)" : ""}
-          </p>
-          <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
-            {overridden ? "Change →" : "Override for this site →"}
-          </button>
-        </>
-      )}
-
-      {editing && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button" onClick={() => saveMut.mutate(null)} disabled={saveMut.isPending}
-              className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
-              style={{ borderColor: !currentOverrideConnectionId ? "#E60023" : "#E5E5E5", borderWidth: !currentOverrideConnectionId ? 2 : 1, background: !currentOverrideConnectionId ? "#FCE9EA" : "transparent" }}
-            >
-              {!currentOverrideConnectionId && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
-              Use account default{defaultLabel ? ` (${defaultLabel})` : ""}
-            </button>
-            {connections.map((c) => {
-              const active = currentOverrideConnectionId === c.id;
-              return (
-                <button
-                  key={c.id} type="button" onClick={() => saveMut.mutate(c.id)} disabled={saveMut.isPending}
-                  className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
-                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
-                >
-                  {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
-                  {connectionLabel(c)}
-                </button>
-              );
-            })}
-          </div>
-          {connections.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No {kind === "image" ? "image generation" : "copy generation"} keys connected yet --{" "}
-              <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">connect one</Link>{" "}
-              to override this site.
-            </p>
-          )}
-          <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
-        </div>
-      )}
+      <p className="mb-2 text-xs text-muted-foreground">
+        This site uses: <span className="font-medium text-foreground">{usingLabel}</span>
+        {!overridden && defaultLabel ? " (account default)" : ""}
+      </p>
+      <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+        Change in Integrations →
+      </Link>
     </div>
   );
 }
