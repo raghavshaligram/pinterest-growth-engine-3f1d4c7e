@@ -799,8 +799,8 @@ function ProviderOverrideCard({
             ? <ImageIcon className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />
             : <BookOpen className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />}
         </span>
-        <span className="text-sm font-medium">{title}</span>
-        <span className={`ml-auto flex items-center gap-1 text-xs ${overridden ? "text-amber-700" : "text-muted-foreground"}`}>
+        <span className="min-w-0 flex-1 text-sm font-medium">{title}</span>
+        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${overridden ? "text-amber-700" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${overridden ? "bg-amber-500" : "bg-neutral-300"}`} />
           {overridden ? "Overridden" : "Account default"}
         </span>
@@ -854,8 +854,8 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
           <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
         </span>
-        <span className="text-sm font-medium">Pinterest</span>
-        <span className={`ml-auto flex items-center gap-1 text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+        <span className="min-w-0 flex-1 text-sm font-medium">Pinterest</span>
+        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
           {mapped ? "Connected" : "Not connected"}
         </span>
@@ -960,8 +960,8 @@ function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRo
     <div className="rounded-lg border border-border p-3">
       <div className="mb-1.5 flex items-center gap-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: "#4285F4" }} aria-hidden>G</span>
-        <span className="text-sm font-medium">Google Analytics</span>
-        <span className={`ml-auto flex items-center gap-1 text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+        <span className="min-w-0 flex-1 text-sm font-medium">Google Analytics</span>
+        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
           {mapped ? "Connected" : "Not mapped"}
         </span>
