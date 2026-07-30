@@ -634,11 +634,16 @@ export function FirstApiKeySetup({
   );
 }
 
-// One provider group -- icon/title/compositing-note header, the list
-// of THIS provider's connections (0, 1, or several), "+ Add another
-// key," and the provider-level Notes field (unchanged from the old
-// GenerationProviderRow -- notes describe the model's characteristics,
-// not any one key, so they stay keyed by provider, not by connection).
+// One provider group -- collapsed by default (icon, title, summary
+// status), expandable to that provider's own connections list, "+ Add
+// another key," and its Notes field. Reuses the exact same
+// CollapsibleSection + independent per-row useState(false) toggle
+// pattern PinterestConnectionRow already established for the
+// Pinterest-accounts list (confirmed: each Pinterest/Google row
+// manages its own expanded state independently -- opening one doesn't
+// collapse another -- so this does the same, just one level up, at
+// the provider-group level instead of the individual-connection level
+// ApiKeyConnectionRow already collapses at).
 function ProviderKeyGroup({
   meta, connections, onChanged,
 }: {
@@ -646,6 +651,7 @@ function ProviderKeyGroup({
   connections: ApiKeyConnectionSummary[];
   onChanged: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
 
   // Same lightweight per-user preference pattern PinShell's sidebar-
@@ -671,45 +677,54 @@ function ProviderKeyGroup({
           </span>
           <div className="min-w-0 truncate text-sm font-medium">{meta.title}</div>
         </div>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {connections.length > 0 ? `${connections.length} key${connections.length > 1 ? "s" : ""}` : "Not configured"}
-        </span>
-      </div>
-
-      {meta.compositingNote && <p className="mt-1.5 text-xs text-muted-foreground">{meta.compositingNote}</p>}
-
-      {connections.length > 0 && (
-        <div className="mt-2.5 space-y-2">
-          {connections.map((c) => (
-            <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} onChanged={onChanged} />
-          ))}
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {connections.length > 0 ? `${connections.length} key${connections.length > 1 ? "s" : ""} connected` : "Not configured"}
+          </span>
+          <button type="button" className="text-xs text-muted-foreground underline-offset-2 hover:underline" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "Hide" : "Configure"}
+          </button>
         </div>
-      )}
-
-      <div className="mt-2.5">
-        {adding ? (
-          <AddKeyForm meta={meta} onDone={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
-        ) : (
-          <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            {connections.length > 0 ? "Add another key" : "Add key"}
-          </Button>
-        )}
       </div>
 
-      <div className="mt-2.5">
-        <div className="mb-1 flex items-center gap-1.5">
-          <Label className="text-xs">Notes</Label>
-          <InfoTooltip text="Your own reference notes on this provider -- e.g. which templates it renders best. Saved locally to this browser, not shared across devices." />
+      <CollapsibleSection open={expanded}>
+        <div className="mt-2.5">
+          {meta.compositingNote && <p className="mb-2 text-xs text-muted-foreground">{meta.compositingNote}</p>}
+
+          {connections.length > 0 && (
+            <div className="space-y-2">
+              {connections.map((c) => (
+                <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} onChanged={onChanged} />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-2.5">
+            {adding ? (
+              <AddKeyForm meta={meta} onDone={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
+            ) : (
+              <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+                <Plus className="mr-1 h-4 w-4" />
+                {connections.length > 0 ? "Add another key" : "Add key"}
+              </Button>
+            )}
+          </div>
+
+          <div className="mt-2.5">
+            <div className="mb-1 flex items-center gap-1.5">
+              <Label className="text-xs">Notes</Label>
+              <InfoTooltip text="Your own reference notes on this provider -- e.g. which templates it renders best. Saved locally to this browser, not shared across devices." />
+            </div>
+            <Textarea
+              value={note}
+              onChange={(e) => saveNote(e.target.value)}
+              rows={2}
+              className="text-xs"
+              placeholder="Notes on this provider…"
+            />
+          </div>
         </div>
-        <Textarea
-          value={note}
-          onChange={(e) => saveNote(e.target.value)}
-          rows={2}
-          className="text-xs"
-          placeholder="Notes on this provider…"
-        />
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
