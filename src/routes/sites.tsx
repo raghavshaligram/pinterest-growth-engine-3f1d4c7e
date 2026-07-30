@@ -734,7 +734,7 @@ function SiteConnectionsSection({
   return (
     <div className="mt-5 border-t border-border pt-5">
       <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
         <PinterestSiteConnectionCard site={site} onSaved={onSaved} />
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
         <ProviderOverrideCard
@@ -793,14 +793,16 @@ function ProviderOverrideCard({
 
   return (
     <div className="rounded-lg border border-border p-3">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#EFEAFB" }}>
-          {kind === "image"
-            ? <ImageIcon className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />
-            : <BookOpen className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />}
-        </span>
-        <span className="min-w-0 flex-1 text-sm font-medium">{title}</span>
-        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${overridden ? "text-amber-700" : "text-muted-foreground"}`}>
+      <div className="mb-1.5 flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#EFEAFB" }}>
+            {kind === "image"
+              ? <ImageIcon className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />
+              : <BookOpen className="h-3.5 w-3.5" style={{ color: "#7C3AED" }} />}
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium">{title}</span>
+        </div>
+        <span className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${overridden ? "text-amber-700" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${overridden ? "bg-amber-500" : "bg-neutral-300"}`} />
           {overridden ? "Overridden" : "Account default"}
         </span>
@@ -810,7 +812,7 @@ function ProviderOverrideCard({
         This site uses: <span className="font-medium text-foreground">{usingLabel}</span>
         {!overridden && defaultLabel ? " (account default)" : ""}
       </p>
-      <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+      <Link to="/settings/integrations" className="whitespace-nowrap text-xs font-medium text-primary hover:underline">
         Change in Integrations →
       </Link>
     </div>
@@ -850,12 +852,14 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
 
   return (
     <div className="rounded-lg border border-border p-3">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
-          <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
-        </span>
-        <span className="min-w-0 flex-1 text-sm font-medium">Pinterest</span>
-        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+      <div className="mb-1.5 flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "#FCE4E7" }}>
+            <Link2 className="h-3.5 w-3.5" style={{ color: "#E60023" }} />
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium">Pinterest</span>
+        </div>
+        <span className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
           {mapped ? "Connected" : "Not connected"}
         </span>
@@ -876,17 +880,17 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
               "Not mapped to a Pinterest account yet"
             )}
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             {connections?.length ? (
-              <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+              <button type="button" className="whitespace-nowrap text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
                 {mapped ? "Change →" : "Map a connection →"}
               </button>
             ) : (
-              <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+              <Link to="/settings/integrations" className="whitespace-nowrap text-xs font-medium text-primary hover:underline">
                 Connect a Pinterest account →
               </Link>
             )}
-            <Link to="/boards" className="text-xs font-medium text-primary hover:underline">Manage boards →</Link>
+            <Link to="/boards" className="whitespace-nowrap text-xs font-medium text-primary hover:underline">Manage boards →</Link>
           </div>
         </>
       )}
@@ -958,10 +962,12 @@ function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRo
 
   return (
     <div className="rounded-lg border border-border p-3">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: "#4285F4" }} aria-hidden>G</span>
-        <span className="min-w-0 flex-1 text-sm font-medium">Google Analytics</span>
-        <span className={`ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
+      <div className="mb-1.5 flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: "#4285F4" }} aria-hidden>G</span>
+          <span className="min-w-0 truncate text-sm font-medium">Google Analytics</span>
+        </div>
+        <span className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-xs ${mapped ? "text-emerald-600" : "text-muted-foreground"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${mapped ? "bg-emerald-500" : "bg-neutral-300"}`} />
           {mapped ? "Connected" : "Not mapped"}
         </span>
@@ -975,7 +981,7 @@ function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRo
               : (connections?.length ? "Pick which GA4 property tracks this site" : "No Google accounts connected yet")}
           </p>
           {connections?.length ? (
-            <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
+            <button type="button" className="whitespace-nowrap text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
               {mapped ? "Change →" : "Map a property →"}
             </button>
           ) : (
@@ -1048,7 +1054,7 @@ function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRo
 
 function RouterLinkToSettings() {
   return (
-    <Link to="/settings/integrations" className="text-xs font-medium text-primary hover:underline">
+    <Link to="/settings/integrations" className="whitespace-nowrap text-xs font-medium text-primary hover:underline">
       Connect a Google account →
     </Link>
   );
