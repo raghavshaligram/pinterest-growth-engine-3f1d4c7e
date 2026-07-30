@@ -223,7 +223,7 @@ function SitesPage() {
         <AddSiteWizard onCancel={() => setWizardOpen(false)} onCreated={() => { setWizardOpen(false); invalidate(); }} />
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((site) => (
           <SiteCard
             key={site.id}
