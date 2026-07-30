@@ -31,8 +31,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
+import { useSiteContext } from "@/lib/site-context";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -80,6 +81,27 @@ function IntegrationsPage() {
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
+
+  // The default-provider description below links to "that site's
+  // Connections section" -- but this description is account-wide, not
+  // tied to one site, so there's no single right site to send someone
+  // to. Rather than force a "pick a site" intermediate step, this
+  // links straight to whichever site is currently selected via the
+  // site-switcher context (same selectedSiteId every other page reads)
+  // and jumps to that site's own card (SiteCard sets id={`site-card-
+  // ${site.id}`}) via a hash anchor. Falls back to a plain /sites link
+  // when nothing's selected ("All sites").
+  const { selectedSiteId } = useSiteContext();
+  const connectionsHash = selectedSiteId ? `site-card-${selectedSiteId}` : undefined;
+  const connectionsLink = (
+    <Link
+      to="/sites"
+      hash={connectionsHash}
+      className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+    >
+      that site's Connections section
+    </Link>
+  );
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -141,7 +163,11 @@ function IntegrationsPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <GenerationProvidersCard
           title="Image Generation"
-          description="Sets the account-wide default for pin artwork. Any site can override this individually in that site's Connections section. Adding a future provider is one row here, never a new card."
+          description={
+            <>
+              Sets the account-wide default for pin artwork. Any site can override this individually in {connectionsLink}. Adding a future provider is one row here, never a new card.
+            </>
+          }
           providers={IMAGE_GEN_PROVIDERS}
           integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
@@ -150,7 +176,11 @@ function IntegrationsPage() {
         />
         <GenerationProvidersCard
           title="Copy Generation"
-          description="Sets the account-wide default for pin titles, taglines, and calls-to-action. Any site can override this individually in that site's Connections section."
+          description={
+            <>
+              Sets the account-wide default for pin titles, taglines, and calls-to-action. Any site can override this individually in {connectionsLink}.
+            </>
+          }
           providers={COPY_GEN_PROVIDERS}
           integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
@@ -513,7 +543,7 @@ function GenerationProvidersCard({
   title, description, providers, integrationsData, onChanged, currentDefault, onSetDefault,
 }: {
   title: string;
-  description: string;
+  description: ReactNode;
   providers: GenProviderMeta[];
   integrationsData?: { provider: string; status: string; last_error?: string | null; has_value?: boolean }[];
   onChanged: () => void;

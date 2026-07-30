@@ -1148,7 +1148,7 @@ function SiteCard({
   const accent = site.accent_color ?? "#8A867C";
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Card id={`site-card-${site.id}`} className="overflow-hidden p-0">
       <div className="h-1.5 w-full" style={{ background: accent }} />
       <div className="p-5">
         <div className="mb-1 flex items-center gap-2">
