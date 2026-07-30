@@ -68,14 +68,27 @@ export function LegalEmail({ address }: { address: string }) {
   );
 }
 
-export function LegalFooter() {
+// maxWidthClassName/contactEmail are opt-in so the two existing legal
+// pages render byte-identical to before (default 3xl width, no email
+// link) -- the landing page (routes/index.tsx) is the only caller that
+// passes a wider container and a contact email, rather than this
+// component forking into two near-duplicate footers.
+export function LegalFooter({
+  maxWidthClassName = "max-w-3xl", contactEmail,
+}: {
+  maxWidthClassName?: string;
+  contactEmail?: string;
+}) {
   return (
     <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 px-6 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className={`mx-auto flex ${maxWidthClassName} flex-col gap-3 px-6 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between`}>
         <span>&copy; {new Date().getFullYear()} Pinspider</span>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
           <Link to="/privacy" className="hover:text-foreground">Privacy Policy</Link>
           <Link to="/terms" className="hover:text-foreground">Terms of Service</Link>
+          {contactEmail && (
+            <a href={`mailto:${contactEmail}`} className="hover:text-foreground">{contactEmail}</a>
+          )}
           <Link to="/auth" className="hover:text-foreground">Sign in</Link>
         </div>
       </div>
