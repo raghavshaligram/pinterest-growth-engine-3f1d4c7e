@@ -25,8 +25,8 @@ import {
 } from "lucide-react";
 import {
   getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS,
-  WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL, BRAND_DISPLAY_MODES, BRAND_NAME_MODES,
-  type SiteOverviewRow, type SiteType, type ImageProvider, type BrandDisplayMode, type BrandNameMode,
+  WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL, BRAND_DISPLAY_MODES, BRAND_NAME_MODES, LOGO_PLACEMENTS,
+  type SiteOverviewRow, type SiteType, type ImageProvider, type BrandDisplayMode, type BrandNameMode, type LogoPlacement,
 } from "@/lib/sites.functions";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 import type { SiteVertical } from "@/lib/briefs.functions";
@@ -232,6 +232,7 @@ export function BrandEditorFields({
   imageProvider, onImageProvider,
   siteType, vertical, onVertical,
   logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode,
+  logoPlacement, onLogoPlacement,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
   previewHost = "www",
@@ -248,12 +249,13 @@ export function BrandEditorFields({
   // trigger with no UI choice, so siteType decides whether this section
   // renders at all rather than the caller conditionally omitting props.
   siteType: SiteType; vertical: SiteVertical; onVertical: (v: SiteVertical) => void;
-  // Storage path (sites.logo_url), not a signed URL -- LogoUploadField
+  // Storage path (sites.logo_url), not a signed URL -- BrandDisplayFields
   // resolves its own preview. null both for a genuinely logo-less site
   // AND for the AddSiteWizard before anything's been uploaded yet.
   logoPath: string | null; onLogoChange: (path: string | null) => void;
   displayMode: BrandDisplayMode; onDisplayMode: (v: BrandDisplayMode) => void;
   nameMode: BrandNameMode; onNameMode: (v: BrandNameMode) => void;
+  logoPlacement: LogoPlacement; onLogoPlacement: (v: LogoPlacement) => void;
   advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
   previewHost?: string;
@@ -332,6 +334,7 @@ export function BrandEditorFields({
         logoPath={logoPath} onLogoChange={onLogoChange}
         displayMode={displayMode} onDisplayMode={onDisplayMode}
         nameMode={nameMode} onNameMode={onNameMode}
+        logoPlacement={logoPlacement} onLogoPlacement={onLogoPlacement}
         brandName={brandName} previewHost={previewHost ?? "www"}
       />
 
@@ -456,11 +459,13 @@ export function BrandEditorFields({
 // field there which is just local form state until the caller's Save/
 // Create mutation fires.
 function BrandDisplayFields({
-  logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode, brandName, previewHost,
+  logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode,
+  logoPlacement, onLogoPlacement, brandName, previewHost,
 }: {
   logoPath: string | null; onLogoChange: (path: string | null) => void;
   displayMode: BrandDisplayMode; onDisplayMode: (v: BrandDisplayMode) => void;
   nameMode: BrandNameMode; onNameMode: (v: BrandNameMode) => void;
+  logoPlacement: LogoPlacement; onLogoPlacement: (v: LogoPlacement) => void;
   brandName: string; previewHost: string;
 }) {
   const [uploading, setUploading] = useState(false);
@@ -482,7 +487,12 @@ function BrandDisplayFields({
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) throw new Error("Not signed in");
-      const ext = file.type.includes("png") ? "png" : file.type.includes("svg") ? "svg" : file.type.includes("webp") ? "webp" : "jpg";
+      // PNG/JPEG only -- the logo is composited onto generated pins with
+      // Jimp (logo-composite.server.ts), which decodes those reliably;
+      // WebP/SVG support there is inconsistent, so narrowing accepted
+      // uploads here is simpler and more honest than accepting a file
+      // that might silently fail to composite later.
+      const ext = file.type.includes("png") ? "png" : "jpg";
       // Path lives under the existing 'pins' bucket, prefixed by
       // auth.uid() -- same folder the storage RLS policies already
       // scope reads/writes to (see the pin_style_setup migration's own
@@ -500,89 +510,124 @@ function BrandDisplayFields({
   }
 
   return (
-    <div className="space-y-2.5 rounded-lg border border-border p-2.5">
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-          {previewUrl ? (
-            <img src={previewUrl} alt="Logo" className="h-full w-full object-contain" />
-          ) : (
-            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+    <div className="space-y-5">
+      <div>
+        <Label className="mb-2 block">
+          Brand logo <span className="font-normal text-muted-foreground">optional -- composited into the URL bar instead of text</span>
+        </Label>
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/40">
+            {previewUrl ? (
+              <img src={previewUrl} alt="Logo" className="h-full w-full object-contain" />
+            ) : (
+              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+          <input
+            ref={fileInputRef} type="file" accept="image/png,image/jpeg"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
+          />
+          <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            {uploading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+            {logoPath ? "Change logo" : "Upload logo"}
+          </Button>
+          {logoPath && (
+            <button type="button" onClick={() => onLogoChange(null)} className="text-xs text-muted-foreground hover:underline">
+              Remove
+            </button>
           )}
         </div>
-        <Label className="mb-0 flex-1 text-xs font-medium leading-tight text-muted-foreground">
-          Brand display -- how pins show your brand in the URL bar
+      </div>
+
+      <div>
+        <Label className="mb-2 block">
+          Show in URL bar <span className="font-normal text-muted-foreground">how pins display your brand</span>
         </Label>
-        <input
-          ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
-        />
-        <Button
-          type="button" size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs"
-          onClick={() => fileInputRef.current?.click()} disabled={uploading}
-          title="PNG, JPG, WebP, or SVG"
-        >
-          {uploading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
-          {logoPath ? "Change" : "Upload"}
-        </Button>
-        {logoPath && (
-          <button type="button" onClick={() => onLogoChange(null)} className="shrink-0 text-xs text-muted-foreground hover:text-destructive">
-            Remove
-          </button>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {BRAND_DISPLAY_MODES.map((mode) => {
+            const active = displayMode === mode;
+            const disabled = mode === "logo" && !logoPath;
+            return (
+              <button
+                key={mode} type="button"
+                disabled={disabled}
+                title={disabled ? "Upload a logo first" : undefined}
+                onClick={() => onDisplayMode(mode)}
+                className="rounded-lg border p-3 text-left transition-colors hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border"
+                style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+              >
+                <div className="flex items-center gap-1.5 font-medium">
+                  {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#E60023" }} />}
+                  {mode === "logo" ? "Logo" : "Brand text"}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {mode === "logo" ? "Composite your uploaded logo into the footer" : "Show your brand name or domain as text"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {displayMode === "logo" && !logoPath && (
+          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            No logo uploaded yet -- pins will show brand text until you add one.
+          </p>
         )}
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2">
-        <div className="min-w-0">
-          <div className="mb-1 text-[11px] font-medium text-muted-foreground">Show in URL bar</div>
-          <div className="flex gap-1.5">
-            {BRAND_DISPLAY_MODES.map((mode) => {
-              const active = displayMode === mode;
-              const disabled = mode === "logo" && !logoPath;
-              const label = mode === "logo" ? "Logo" : "Brand text";
-              return (
-                <button
-                  key={mode} type="button"
-                  disabled={disabled}
-                  title={disabled ? "Upload a logo first" : label}
-                  onClick={() => onDisplayMode(mode)}
-                  className="min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
-                >
-                  {active && <Check className="mr-1 inline h-3 w-3 shrink-0" style={{ color: "#E60023" }} />}
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {displayMode === "logo" && !logoPath && (
-            <p className="mt-1 text-[10.5px] leading-snug text-amber-700">Falls back to brand text until a logo's uploaded.</p>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <div className="mb-1 text-[11px] font-medium text-muted-foreground">Text shows</div>
-          <div className="flex gap-1.5">
-            {BRAND_NAME_MODES.map((mode) => {
-              const active = nameMode === mode;
-              const label = mode === "brand_name" ? (brandName || "Brand name") : previewHost;
-              return (
-                <button
-                  key={mode} type="button"
-                  disabled={displayMode === "logo" && Boolean(logoPath)}
-                  title={label}
-                  onClick={() => onNameMode(mode)}
-                  className="min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
-                >
-                  {active && <Check className="mr-1 inline h-3 w-3 shrink-0" style={{ color: "#E60023" }} />}
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+      <div>
+        <Label className="mb-2 block">
+          Text shows <span className="font-normal text-muted-foreground">used whenever display is set to Brand text</span>
+        </Label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {BRAND_NAME_MODES.map((mode) => {
+            const active = nameMode === mode;
+            return (
+              <button
+                key={mode} type="button"
+                onClick={() => onNameMode(mode)}
+                className="rounded-lg border p-3 text-left transition-colors hover:border-neutral-400"
+                style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+              >
+                <div className="flex items-center gap-1.5 truncate font-medium">
+                  {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#E60023" }} />}
+                  <span className="truncate">{mode === "brand_name" ? (brandName || "Brand name") : previewHost}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {mode === "brand_name" ? "Your brand name" : "Your site's domain"}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {displayMode === "logo" && (
+        <div>
+          <Label className="mb-2 block">
+            Logo placement <span className="font-normal text-muted-foreground">position within the footer bar</span>
+          </Label>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {LOGO_PLACEMENTS.map((placement) => {
+              const active = logoPlacement === placement;
+              const label = placement === "bottom-left" ? "Bottom left" : placement === "bottom-right" ? "Bottom right" : "Bottom center";
+              return (
+                <button
+                  key={placement} type="button"
+                  onClick={() => onLogoPlacement(placement)}
+                  className="rounded-lg border p-3 text-left transition-colors hover:border-neutral-400"
+                  style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
+                >
+                  <div className="flex items-center gap-1.5 font-medium">
+                    {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#E60023" }} />}
+                    {label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -629,6 +674,7 @@ export function AddSiteWizard({
   const [logoPath, setLogoPath] = useState<string | null>(null);
   const [displayMode, setDisplayMode] = useState<BrandDisplayMode>("text");
   const [nameMode, setNameMode] = useState<BrandNameMode>("domain");
+  const [logoPlacement, setLogoPlacement] = useState<LogoPlacement>("bottom-center");
   const [createdSite, setCreatedSite] = useState<{ id: string; url: string; brand_name: string | null; accent_color: string | null } | null>(null);
 
   const createMut = useMutation({
@@ -658,6 +704,7 @@ export function AddSiteWizard({
         logo_url: logoPath,
         display_mode: displayMode,
         name_mode: nameMode,
+        logo_placement: logoPlacement,
       },
     }),
     onSuccess: (site) => {
@@ -789,6 +836,7 @@ export function AddSiteWizard({
             logoPath={logoPath} onLogoChange={setLogoPath}
             displayMode={displayMode} onDisplayMode={setDisplayMode}
             nameMode={nameMode} onNameMode={setNameMode}
+            logoPlacement={logoPlacement} onLogoPlacement={setLogoPlacement}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
@@ -1130,6 +1178,7 @@ function SiteCard({
   const [logoPath, setLogoPath] = useState<string | null>(site.logo_url ?? null);
   const [displayMode, setDisplayMode] = useState<BrandDisplayMode>(site.display_mode ?? "text");
   const [nameMode, setNameMode] = useState<BrandNameMode>(site.name_mode ?? "domain");
+  const [logoPlacement, setLogoPlacement] = useState<LogoPlacement>(site.logo_placement ?? "bottom-center");
   const [styleSetupOpen, setStyleSetupOpen] = useState(false);
 
   const saveMut = useMutation({
@@ -1151,6 +1200,7 @@ function SiteCard({
         logo_url: logoPath,
         display_mode: displayMode,
         name_mode: nameMode,
+        logo_placement: logoPlacement,
       },
     }),
     onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
@@ -1267,6 +1317,7 @@ function SiteCard({
               logoPath={logoPath} onLogoChange={setLogoPath}
               displayMode={displayMode} onDisplayMode={setDisplayMode}
               nameMode={nameMode} onNameMode={setNameMode}
+              logoPlacement={logoPlacement} onLogoPlacement={setLogoPlacement}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}
               previewHost={host}

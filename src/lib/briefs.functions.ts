@@ -471,9 +471,16 @@ export function buildThemedPinPrompt(input: {
   const footerText = !wantsLogo && input.nameMode === "brand_name" && input.brandName
     ? input.brandName
     : input.brandHost;
+  // Logo mode: the model renders a blank reserved bar; a separate
+  // deterministic step (logo-composite.server.ts) draws the real logo
+  // into it afterward at an exact pixel position. Earlier this asked
+  // the model to composite a supplied reference logo image itself --
+  // that didn't reliably work (see logo-composite.server.ts's own
+  // comment for the root cause), so the model is no longer asked to
+  // place the logo at all, only to leave the space for it empty.
   const footerZoneLines = wantsLogo
-    ? `- A thin, full-width solid brand-color bar flush to the very bottom edge, in the exact same position and dimensions as a standard URL bar. Composite the supplied brand logo reference image centered within this bar, sized to fit its height with a small margin, preserving its original proportions and colors exactly as provided -- do not redraw, restyle, distort, recolor, or reinterpret the logo.
-- No wordmark, no tagline, no social handle, no extra URL, no watermark, no text of any kind in this bar beyond the composited logo image itself.`
+    ? `- A thin, full-width solid brand-color bar flush to the very bottom edge, in the exact same position and dimensions as a standard URL bar. Leave this bar COMPLETELY BLANK -- solid brand color only, no text, no logo, no wordmark, no icon, no pattern, nothing rendered inside it at all. It will be filled in separately, outside of this image generation step.
+- No tagline, no social handle, no extra URL, no watermark anywhere on the pin.`
     : `- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${footerText}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.`;
 
@@ -508,7 +515,7 @@ ${footerZoneLines}
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
 - Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
-- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- the bottom bar is the composited logo image only, with no text of its own" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
+- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- the bottom bar must be left entirely blank, no text or icon of any kind" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }

@@ -40,6 +40,16 @@ export type BrandDisplayMode = (typeof BRAND_DISPLAY_MODES)[number];
 export const BRAND_NAME_MODES = ["brand_name", "domain"] as const;
 export type BrandNameMode = (typeof BRAND_NAME_MODES)[number];
 
+// Where the composited logo lands within the LOCKED LAYOUT's footer
+// zone (see logo-composite.server.ts, the deterministic step that
+// actually places it -- the image model is never asked to position it
+// itself; see that file's own comment for why). 'bottom-center' is the
+// default because that's what the original prompt-only attempt at this
+// feature described ("centered within this bar"), so switching to
+// programmatic compositing doesn't change the default visual result.
+export const LOGO_PLACEMENTS = ["bottom-left", "bottom-center", "bottom-right"] as const;
+export type LogoPlacement = (typeof LOGO_PLACEMENTS)[number];
+
 // Supabase/PostgREST errors cross the server->client RPC boundary through
 // TanStack Start's ShallowErrorPlugin, which only preserves `.message` --
 // the `.code`/`.details`/`.hint` PostgrestError carries (e.g. "23502" for a
@@ -114,6 +124,7 @@ export type SiteOverviewRow = {
   logo_url: string | null;
   display_mode: BrandDisplayMode;
   name_mode: BrandNameMode;
+  logo_placement: LogoPlacement;
   // NULL until Pin Style Setup has been completed at least once for
   // this site -- see useSiteStyleGate (site-style-gate.ts) and the
   // server-side backstop in generateBriefs. Existing sites were
@@ -217,6 +228,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
     pinterest_connection_id?: string | null;
     logo_url?: string | null; display_mode?: BrandDisplayMode; name_mode?: BrandNameMode;
+    logo_placement?: LogoPlacement;
   }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -257,6 +269,7 @@ export const upsertSite = createServerFn({ method: "POST" })
       logo_url: z.string().nullable().optional(),
       display_mode: z.enum(BRAND_DISPLAY_MODES).optional(),
       name_mode: z.enum(BRAND_NAME_MODES).optional(),
+      logo_placement: z.enum(LOGO_PLACEMENTS).optional(),
     }).parse(i),
   )
   .handler(async ({ data, context }) => {

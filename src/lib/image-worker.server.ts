@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
 import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
-import type { ImageProvider } from "@/lib/sites.functions";
+import type { ImageProvider, LogoPlacement } from "@/lib/sites.functions";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -58,7 +58,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider, display_mode, name_mode, logo_url))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider, display_mode, name_mode, logo_url, logo_placement))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -76,6 +76,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
             url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
             vertical?: SiteVertical | null; image_provider?: ImageProvider | null;
             display_mode?: "logo" | "text" | null; name_mode?: "brand_name" | "domain" | null; logo_url?: string | null;
+            logo_placement?: LogoPlacement | null;
           };
         };
       }).pages;
@@ -157,12 +158,29 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         prompt: themedPrompt,
         openaiApiKey: openaiCfg?.api_key,
         replicateToken: replicateCfg?.api_token,
-        referenceImageUrl: hasLogo ? logoSignedUrl : null,
       });
-      const imageBytes = rendered.imageBytes;
-      const contentType = rendered.contentType;
+      let imageBytes = rendered.imageBytes;
+      let contentType = rendered.contentType;
       const providerPredictionId = rendered.providerPredictionId;
       const modelUsed = rendered.modelUsed;
+
+      // Deterministic logo compositing -- see logo-composite.server.ts's
+      // own comment for why this replaced asking the model to draw the
+      // logo itself. Only runs when there's really a logo to place;
+      // otherwise the model's own (text) render is used as-is.
+      if (hasLogo && logoSignedUrl) {
+        const { compositeLogoOntoPin } = await import("./logo-composite.server");
+        const logoResp = await fetch(logoSignedUrl);
+        if (!logoResp.ok) throw new Error(`Failed to fetch logo for compositing: ${logoResp.status}`);
+        const logoBytes = new Uint8Array(await logoResp.arrayBuffer());
+        const composited = await compositeLogoOntoPin({
+          baseImageBytes: imageBytes,
+          logoBytes,
+          placement: (page?.sites?.logo_placement as LogoPlacement | null) ?? "bottom-center",
+        });
+        imageBytes = composited.imageBytes;
+        contentType = composited.contentType;
+      }
 
       const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
       const path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext}`;
