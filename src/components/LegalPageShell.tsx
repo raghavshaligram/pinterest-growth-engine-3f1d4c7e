@@ -8,7 +8,7 @@
 // instead of inventing new colors/type -- no new design system.
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { PinspiderMark } from "@/components/PinspiderMark";
+import { Logo } from "@/components/Logo";
 
 export function LegalPageShell({
   title, lastUpdated, intro, children,
@@ -22,9 +22,8 @@ export function LegalPageShell({
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <Link to="/auth" className="flex items-center gap-2.5">
-            <PinspiderMark size={28} />
-            <span className="font-display text-lg font-semibold">Pinspider</span>
+          <Link to="/auth">
+            <Logo size={28} withWordmark />
           </Link>
           <nav className="flex items-center gap-5 text-sm text-muted-foreground">
             <Link to="/privacy" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Privacy</Link>

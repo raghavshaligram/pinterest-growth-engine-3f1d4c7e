@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PinspiderMark } from "@/components/PinspiderMark";
+import { Logo } from "@/components/Logo";
 import { getErrorMessage } from "@/lib/error-message";
 import { useSetupStatus, useGenerateFirstBatch, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
@@ -195,7 +195,7 @@ function OnboardingWizard() {
       <div className="w-full max-w-2xl">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <PinspiderMark size={28} />
+            <Logo size={28} />
             <span className="font-semibold">Pinspider setup</span>
           </div>
           {step < 5 && (

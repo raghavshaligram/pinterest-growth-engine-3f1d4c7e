@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { Logo } from "@/components/Logo";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -58,9 +58,7 @@ function AuthPage() {
     <div className="halo-bg relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
       <div className="relative w-full max-w-md">
         <div className="mb-8 flex items-center justify-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
-            <Sparkles className="h-4 w-4 text-primary-foreground" />
-          </div>
+          <Logo size={36} className="shadow-glow" />
           <span className="font-display text-3xl">Pinspider</span>
         </div>
         <div className="mb-6 text-center">

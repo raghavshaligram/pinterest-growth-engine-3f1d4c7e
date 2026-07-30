@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
-import { PinspiderMark } from "@/components/PinspiderMark";
+import { Logo } from "@/components/Logo";
 import { SiteProvider } from "@/lib/site-context";
 import { FinishSetupBanner } from "@/components/FinishSetupBanner";
 import { HelpMenu } from "@/components/HelpMenu";
@@ -42,10 +42,6 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   { to: "/logs", label: "Logs", icon: ScrollText, key: "logs" },
   { to: "/settings/integrations", label: "Settings", icon: Settings2, key: "settings" },
 ];
-
-function RedMark({ size = 34 }: { size?: number }) {
-  return <PinspiderMark size={size} />;
-}
 
 // Icon-only width (unchanged from before this change) vs. the
 // expanded, label-showing width -- expanded is the DEFAULT (see
@@ -104,7 +100,7 @@ function Sidebar({ active, userEmail }: { active: NavKey; userEmail?: string | n
       }}
     >
       <Link to="/dashboard" aria-label="Dashboard" style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: collapsed ? 0 : 2, justifyContent: collapsed ? "center" : "flex-start" }}>
-        <RedMark />
+        <Logo size={34} />
         {!collapsed && <span style={{ fontSize: 15, fontWeight: 700, color: PIN.textPrimary }}>Pinspider</span>}
       </Link>
 
