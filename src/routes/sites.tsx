@@ -1070,6 +1070,16 @@ function SiteCard({
   const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [styleSetupOpen, setStyleSetupOpen] = useState(false);
+  // Collapsed by default -- same reasoning as the Image/Copy Generation
+  // provider rows on Integrations (settings.integrations.tsx): with
+  // several sites on this page, every card unconditionally showing its
+  // full Connections section (Pinterest, GA4, image key, copy key, 4
+  // sub-cards) at once reads as clutter, not a scannable list. Mirrors
+  // the "Brand" toggle right below exactly -- same button style, same
+  // ChevronDown rotate, plain boolean-gated render rather than the
+  // grid-animated CollapsibleSection settings.integrations.tsx uses,
+  // to match this component's own existing convention.
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
 
   const saveMut = useMutation({
     mutationFn: () => upsert({
@@ -1145,8 +1155,6 @@ function SiteCard({
           </div>
         )}
 
-        <SiteConnectionsSection site={site} onSaved={onSaved} />
-
         {!site.style_locked_at && (
           <div className="mt-5 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" />Pin style not previewed yet -- required before generating pins for this site.</span>
@@ -1157,6 +1165,9 @@ function SiteCard({
         )}
 
         <div className="mt-5 flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setConnectionsOpen((v) => !v)}>
+            Connections<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${connectionsOpen ? "rotate-180" : ""}`} />
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setEditing((v) => !v)}>
             Brand<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${editing ? "rotate-180" : ""}`} />
           </Button>
@@ -1185,6 +1196,8 @@ function SiteCard({
             </AlertDialogContent>
           </AlertDialog>
         </div>
+
+        {connectionsOpen && <SiteConnectionsSection site={site} onSaved={onSaved} />}
 
         {editing && (
           <div className="mt-5 border-t border-border pt-5">
