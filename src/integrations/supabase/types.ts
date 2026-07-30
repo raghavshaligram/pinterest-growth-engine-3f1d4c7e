@@ -751,6 +751,7 @@ export type Database = {
           google_connection_id: string | null
           id: string
           image_provider: string
+          logo_placement: string
           pinterest_connection_id: string | null
           recent_styles: Json
           settings: Json
@@ -775,6 +776,7 @@ export type Database = {
           google_connection_id?: string | null
           id?: string
           image_provider?: string
+          logo_placement?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
@@ -799,6 +801,7 @@ export type Database = {
           google_connection_id?: string | null
           id?: string
           image_provider?: string
+          logo_placement?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
