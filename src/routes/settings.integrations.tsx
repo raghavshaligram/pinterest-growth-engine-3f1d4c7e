@@ -27,13 +27,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 
-type Provider = "openai" | "replicate" | "apify" | "pinterest";
+type Provider =
+  | "openai" | "replicate" | "apify" | "pinterest"
+  | "fal" | "gemini" | "ideogram" | "recraft" | "stability" | "anthropic";
 
 export const Route = createFileRoute("/settings/integrations")({
   ssr: false,
@@ -122,20 +125,18 @@ function IntegrationsPage() {
       </header>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <IntegrationCard
-          provider="openai"
-          title="OpenAI"
-          description="Powers page analysis, pin copy, and competitive pattern summaries from your SERP sweeps (title formats, themes, and what's saving well) — folded into new briefs when recent."
-          fields={[{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }]}
-          status={data?.find((i) => i.provider === "openai")}
+        <GenerationProvidersCard
+          title="Image Generation"
+          description="Each site picks which of these to use for its own pin artwork (Sites -> Brand settings -> Advanced). Adding a future provider is one row here, never a new card."
+          providers={IMAGE_GEN_PROVIDERS}
+          integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
         />
-        <IntegrationCard
-          provider="replicate"
-          title="Replicate"
-          description="Runs Nano Banana 2 (google/nano-banana-2) to render every pin image."
-          fields={[{ name: "api_token", label: "API token", placeholder: "r8_…", type: "password" }]}
-          status={data?.find((i) => i.provider === "replicate")}
+        <GenerationProvidersCard
+          title="Copy Generation"
+          description="Each site picks which of these writes its pin titles, taglines, and calls-to-action (Sites -> Brand settings -> Advanced)."
+          providers={COPY_GEN_PROVIDERS}
+          integrationsData={data}
           onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
         />
         <IntegrationCard
@@ -276,6 +277,255 @@ function CollapsibleSection(props: { open: boolean; children: React.ReactNode })
   );
 }
 
+
+type GenProviderField = { name: string; label: string; placeholder?: string; type: "text" | "password" };
+type GenProviderMeta = {
+  provider: Provider;
+  title: string;
+  fields: GenProviderField[];
+  // Documented compositing/image-input capability -- only set for image
+  // providers (see IMAGE_GEN_PROVIDERS below), left undefined for copy
+  // providers where it doesn't apply. Confirmed against each provider's
+  // own docs at implementation time (see fal-image.server.ts etc.'s own
+  // comments for the specific endpoints); a provider with no compositing
+  // support at all would say so explicitly here instead of omitting it,
+  // per the "don't invent characteristics without evidence" rule --
+  // in practice every provider checked here does support it.
+  compositingNote?: string;
+  defaultNote?: string;
+};
+
+// Image Generation providers. "replicate" here is specifically Nano
+// Banana 2 (google/nano-banana-2) -- unchanged from before this card
+// existed. Adding a future provider is one entry in this array plus a
+// branch in pin-render.server.ts, never a new top-level card.
+const IMAGE_GEN_PROVIDERS: GenProviderMeta[] = [
+  {
+    provider: "replicate", title: "Nano Banana 2 (Replicate)",
+    fields: [{ name: "api_token", label: "API token", placeholder: "r8_…", type: "password" }],
+    compositingNote: "Supports image compositing/editing (Replicate's broader model catalog).",
+    defaultNote: "Historically stronger at accurate on-image text rendering -- worth testing on text-heavy templates (listicle, quick_tip_grid) per side-by-side testing.",
+  },
+  {
+    provider: "openai", title: "OpenAI",
+    fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }],
+    compositingNote: "Supports image editing/compositing via /v1/images/edits.",
+    defaultNote: "Cleaner on minimal/text-light templates (quote_stat_card, problem_solution_headline) per side-by-side testing. Current default.",
+  },
+  {
+    provider: "fal", title: "fal.ai",
+    fields: [{ name: "api_key", label: "API key", placeholder: "API key…", type: "password" }],
+    compositingNote: "Supports image compositing/editing via its Kontext model family.",
+    defaultNote: "Not yet benchmarked.",
+  },
+  {
+    provider: "gemini", title: "Google Gemini",
+    fields: [{ name: "api_key", label: "API key", placeholder: "AIza…", type: "password" }],
+    compositingNote: "Supports blending/editing multiple images in a single call.",
+    defaultNote: "Not yet benchmarked.",
+  },
+  {
+    provider: "ideogram", title: "Ideogram",
+    fields: [{ name: "api_key", label: "API key", placeholder: "API key…", type: "password" }],
+    compositingNote: "Supports image editing/compositing via its Edit, Remix, and Replace Background endpoints.",
+    defaultNote: "Not yet benchmarked.",
+  },
+  {
+    provider: "recraft", title: "Recraft",
+    fields: [{ name: "api_key", label: "API key", placeholder: "API key…", type: "password" }],
+    compositingNote: "Supports image compositing/editing via its imageToImage endpoint.",
+    defaultNote: "Not yet benchmarked.",
+  },
+  {
+    provider: "stability", title: "Stability AI",
+    fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }],
+    compositingNote: "Supports image compositing/editing via its image-to-image mode.",
+    defaultNote: "Not yet benchmarked.",
+  },
+];
+
+// Copy Generation providers -- write pin titles/taglines/CTAs. OpenAI
+// appears in both this card and Image Generation above -- it's the same
+// underlying credential/row either way (one OpenAI API key covers both
+// uses in this app), so expanding either row edits the same integration.
+const COPY_GEN_PROVIDERS: GenProviderMeta[] = [
+  { provider: "openai", title: "OpenAI", fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }] },
+  { provider: "anthropic", title: "Anthropic (Claude)", fields: [{ name: "api_key", label: "API key", placeholder: "sk-ant-…", type: "password" }] },
+];
+
+// One row per provider -- collapsed by default (icon, name,
+// Connected/Not configured status, quiet expand link), expandable to
+// that provider's own API-key field + Save/Test/Clear, matching the
+// exact CollapsibleSection + status-badge pattern PinterestConnectionRow
+// already established for the Pinterest-accounts list, just scoped to a
+// single API-key credential instead of publish_mode/webhook_url.
+function GenerationProviderRow({
+  meta, status, onChanged,
+}: {
+  meta: GenProviderMeta;
+  status?: { status: string; last_error?: string | null; has_value?: boolean };
+  onChanged: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const save = useServerFn(saveIntegration);
+  const test = useServerFn(testIntegration);
+  const del = useServerFn(deleteIntegration);
+
+  // Editable per-provider notes -- kept in localStorage (same lightweight
+  // per-user preference pattern PinShell's sidebar-collapse state and
+  // site-context.tsx's selected-site already use in this app), not the
+  // encrypted `integrations` row: notes aren't secret, and that row can
+  // be deleted entirely by "Clear" -- persisting a note there would lose
+  // it the moment a key is cleared, which isn't what an editable
+  // reference note should do.
+  const notesKey = `pinspider_provider_note_${meta.provider}`;
+  const [note, setNote] = useState(() => {
+    if (typeof window === "undefined") return meta.defaultNote ?? "";
+    return window.localStorage.getItem(notesKey) ?? meta.defaultNote ?? "";
+  });
+  function saveNote(v: string) {
+    setNote(v);
+    if (typeof window !== "undefined") window.localStorage.setItem(notesKey, v);
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () => save({ data: { provider: meta.provider, config: Object.fromEntries(Object.entries(vals).filter(([, v]) => v)) } }),
+    onSuccess: () => { toast.success("Saved"); setVals({}); onChanged(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+  const testMut = useMutation({
+    mutationFn: () => test({ data: { provider: meta.provider } }),
+    onSuccess: (r) => {
+      const prefix = "Testing saved credential — ";
+      r.ok ? toast.success(prefix + r.message) : toast.error(prefix + r.message);
+      onChanged();
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+  const delMut = useMutation({
+    mutationFn: () => del({ data: { provider: meta.provider } }),
+    onSuccess: () => { toast.success("Cleared"); onChanged(); },
+  });
+
+  const statusVal = status?.status ?? "unconfigured";
+  const hasValue = status?.has_value ?? false;
+
+  return (
+    <div className="rounded-md border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white" style={{ background: "#6B7280" }} aria-hidden>
+            <KeyRound className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 truncate text-sm font-medium">{meta.title}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {statusVal === "ok" ? (
+            <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3 w-3" />Connected</span>
+          ) : statusVal === "error" ? (
+            <span className="flex items-center gap-1 text-xs text-destructive"><AlertCircle className="h-3 w-3" />Error</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Not configured</span>
+          )}
+          <button type="button" className="text-xs text-muted-foreground underline-offset-2 hover:underline" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "Hide" : "Configure"}
+          </button>
+        </div>
+      </div>
+
+      <CollapsibleSection open={expanded}>
+        <div className="mt-3 space-y-3 border-t pt-3">
+          <form onSubmit={(e) => { e.preventDefault(); saveMut.mutate(); }} className="space-y-3">
+            {meta.fields.map((f) => {
+              const placeholder = f.type === "password" && hasValue && !vals[f.name]
+                ? "•••••••• (saved — leave blank to keep)"
+                : f.placeholder;
+              return (
+                <div key={f.name}>
+                  <Label>{f.label}</Label>
+                  <Input
+                    type={f.type}
+                    placeholder={placeholder}
+                    value={vals[f.name] ?? ""}
+                    onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
+                    autoComplete="new-password"
+                  />
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="sm" disabled={saveMut.isPending}>Save</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+                <Beaker className="mr-1 h-4 w-4" />Test
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => delMut.mutate()}>
+                <Trash2 className="mr-1 h-4 w-4" />Clear
+              </Button>
+            </div>
+            {status?.last_error && <p className="text-xs text-destructive">{status.last_error}</p>}
+          </form>
+
+          {meta.compositingNote && <p className="text-xs text-muted-foreground">{meta.compositingNote}</p>}
+
+          <div>
+            <div className="mb-1 flex items-center gap-1.5">
+              <Label className="text-xs">Notes</Label>
+              <InfoTooltip text="Your own reference notes on this provider -- e.g. which templates it renders best. Saved locally to this browser, not shared across devices." />
+            </div>
+            <Textarea
+              value={note}
+              onChange={(e) => saveNote(e.target.value)}
+              rows={2}
+              className="text-xs"
+              placeholder="Notes on this provider…"
+            />
+          </div>
+        </div>
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+// Card shell shared by Image Generation and Copy Generation -- same
+// Card/header/status-badge/description shape as PinterestConnectionsCard
+// below, just listing GenerationProviderRow instead of
+// PinterestConnectionRow.
+function GenerationProvidersCard({
+  title, description, providers, integrationsData, onChanged,
+}: {
+  title: string;
+  description: string;
+  providers: GenProviderMeta[];
+  integrationsData?: { provider: string; status: string; last_error?: string | null; has_value?: boolean }[];
+  onChanged: () => void;
+}) {
+  const connectedCount = providers.filter((p) => integrationsData?.find((i) => i.provider === p.provider)?.has_value).length;
+  return (
+    <Card className="p-6">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" />
+          <h3 className="text-lg font-semibold">{title}</h3>
+        </div>
+        <Badge variant={connectedCount > 0 ? "default" : "secondary"}>
+          {connectedCount > 0 ? <><CheckCircle2 className="mr-1 h-3 w-3" />{connectedCount} connected</> : "Not configured"}
+        </Badge>
+      </div>
+      <p className="mb-4 text-sm text-muted-foreground">{description}</p>
+      <div className="space-y-2">
+        {providers.map((p) => (
+          <GenerationProviderRow
+            key={p.provider}
+            meta={p}
+            status={integrationsData?.find((i) => i.provider === p.provider)}
+            onChanged={onChanged}
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 // Multi-account Pinterest connections -- this is now the ONLY Pinterest
 // card in Settings. The original single-account card (account-wide

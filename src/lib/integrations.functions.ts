@@ -22,7 +22,10 @@ export const startPinterestOAuth = createServerFn({ method: "POST" })
     };
   });
 
-const providerSchema = z.enum(["openai", "replicate", "apify", "pinterest"]);
+const providerSchema = z.enum([
+  "openai", "replicate", "apify", "pinterest",
+  "fal", "gemini", "ideogram", "recraft", "stability", "anthropic",
+]);
 type ProviderName = z.infer<typeof providerSchema>;
 
 // Credential fields are optional at the schema level for every provider —
@@ -41,6 +44,17 @@ const configShapes = {
     publish_mode: z.enum(["api", "webhook"]).optional(),
     webhook_url: z.string().url().optional(),
   }),
+  // New image-generation providers, all uniformly keyed on api_key
+  // (matching how each one's own docs refer to the credential) so the
+  // shared IntegrationRow UI (settings.integrations.tsx) can treat every
+  // row in the consolidated Image Generation / Copy Generation cards
+  // identically.
+  fal: z.object({ api_key: z.string().min(10).optional() }),
+  gemini: z.object({ api_key: z.string().min(10).optional() }),
+  ideogram: z.object({ api_key: z.string().min(10).optional() }),
+  recraft: z.object({ api_key: z.string().min(10).optional() }),
+  stability: z.object({ api_key: z.string().min(10).optional() }),
+  anthropic: z.object({ api_key: z.string().min(10).optional() }),
 } as const;
 
 // The one field per provider that represents "a credential is actually
@@ -54,6 +68,12 @@ const CREDENTIAL_FIELD: Record<ProviderName, string | null> = {
   replicate: "api_token",
   apify: "api_token",
   pinterest: null,
+  fal: "api_key",
+  gemini: "api_key",
+  ideogram: "api_key",
+  recraft: "api_key",
+  stability: "api_key",
+  anthropic: "api_key",
 };
 
 // Returns has_value alongside the usual status metadata — never the
@@ -192,6 +212,39 @@ export const testIntegration = createServerFn({ method: "POST" })
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!r.ok) throw new Error(`Pinterest: HTTP ${r.status}`);
+      } else if (data.provider === "gemini") {
+        // Free, real validation -- lists available models for this key.
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent((cfg as { api_key: string }).api_key)}`,
+        );
+        if (!r.ok) throw new Error(`Gemini: HTTP ${r.status}`);
+      } else if (data.provider === "anthropic") {
+        // Free, real validation -- lists available models for this key.
+        const r = await fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": (cfg as { api_key: string }).api_key,
+            "anthropic-version": "2023-06-01",
+          },
+        });
+        if (!r.ok) throw new Error(`Anthropic: HTTP ${r.status}`);
+      } else if (data.provider === "stability") {
+        // Free, real validation -- account/balance endpoint.
+        const r = await fetch("https://api.stability.ai/v1/user/account", {
+          headers: { Authorization: `Bearer ${(cfg as { api_key: string }).api_key}` },
+        });
+        if (!r.ok) throw new Error(`Stability AI: HTTP ${r.status}`);
+      } else if (data.provider === "fal" || data.provider === "ideogram" || data.provider === "recraft") {
+        // No confirmed zero-cost account/whoami endpoint was found for
+        // these three during integration research -- rather than guess
+        // an endpoint that might not exist (and wrongly fail a real,
+        // working key) or accidentally trigger a paid generation call,
+        // this only checks that a key is actually saved. Real
+        // connectivity is confirmed the first time a pin actually
+        // generates through this provider.
+        const key = (cfg as { api_key?: string }).api_key;
+        if (!key || key.length < 10) throw new Error("No API key saved");
+        await markIntegration(context.userId, data.provider, "ok");
+        return { ok: true, message: "Key saved -- full connectivity confirmed on first use" };
       }
       await markIntegration(context.userId, data.provider, "ok");
       return { ok: true, message: "Connected" };

@@ -4,6 +4,17 @@ import { decrypt } from "./crypto.server";
 export type OpenAIConfig = { api_key: string };
 export type ReplicateConfig = { api_token: string };
 export type ApifyConfig = { api_token: string; actor_id?: string };
+// New image-generation providers (consolidated Image Generation card,
+// settings.integrations.tsx) -- all uniformly keyed on api_key, unlike
+// Replicate/Apify's api_token, matching how each provider's own docs
+// refer to the credential.
+export type FalConfig = { api_key: string };
+export type GeminiConfig = { api_key: string };
+export type IdeogramConfig = { api_key: string };
+export type RecraftConfig = { api_key: string };
+export type StabilityConfig = { api_key: string };
+// New copy-generation provider (consolidated Copy Generation card).
+export type AnthropicConfig = { api_key: string };
 // Legacy single-account shape -- still written by the original OAuth
 // flow (PinterestConnectButton/startPinterestOAuth, mode: "legacy" in
 // pinterest-oauth.server.ts's signState) that the onboarding wizard's
@@ -35,6 +46,12 @@ export type ProviderConfig = {
   replicate: ReplicateConfig;
   apify: ApifyConfig;
   pinterest: PinterestConfig;
+  fal: FalConfig;
+  gemini: GeminiConfig;
+  ideogram: IdeogramConfig;
+  recraft: RecraftConfig;
+  stability: StabilityConfig;
+  anthropic: AnthropicConfig;
 };
 export type Provider = keyof ProviderConfig;
 

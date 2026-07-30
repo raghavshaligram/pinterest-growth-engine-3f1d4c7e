@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
 import { describeColors } from "@/lib/color-naming";
+import type { CopyProvider } from "@/lib/sites.functions";
 
 export const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
@@ -486,9 +487,7 @@ export const generateBriefs = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { requireIntegration, markIntegration } = await import("./integrations.server");
-    const { openaiJSON } = await import("./openai.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const cfg = await requireIntegration(context.userId, "openai");
 
     const { data: page, error } = await context.supabase.from("pages").select("*").eq("id", data.pageId).single();
     if (error || !page) throw error ?? new Error("Page not found");
@@ -509,6 +508,20 @@ export const generateBriefs = createServerFn({ method: "POST" })
     if (!site?.style_locked_at) {
       throw new Error("Complete Pin Style Setup for this site before generating pins.");
     }
+
+    // Copy generation provider is a per-site pick (site.copy_provider,
+    // consolidated Copy Generation card) -- resolved here, after site is
+    // fetched, rather than hardcoding "openai" the way this used to.
+    // Declared outside the try block below so the catch block's
+    // markIntegration call reports against whichever provider was
+    // actually in play.
+    const copyProvider: CopyProvider = (site?.copy_provider as CopyProvider) ?? "openai";
+    const cfg = await requireIntegration(context.userId, copyProvider);
+    const generateJSON = copyProvider === "anthropic"
+      ? (await import("./anthropic.server")).anthropicJSON
+      : (await import("./openai.server")).openaiJSON;
+    const copyModel = copyProvider === "anthropic" ? "claude-sonnet-5" : "gpt-4o-mini";
+
     const brandHost = site ? new URL(site.url).hostname.replace(/^www\./, "") : "";
     const brandColors = Array.isArray(site?.brand_colors) ? (site!.brand_colors as string[]) : [];
     const brandFont = site?.brand_font ?? "";
@@ -667,7 +680,7 @@ Secondary: ${JSON.stringify(analysis.secondary_keywords ?? [])}
 Audience: ${analysis.audience ?? ""}
 Category: ${analysis.category ?? ""}${competitiveBlock}`;
 
-      let resp = await openaiJSON<BriefsResp>({ apiKey: cfg.api_key, model: "gpt-4o-mini", system, user });
+      let resp = await generateJSON<BriefsResp>({ apiKey: cfg.api_key, model: copyModel, system, user });
 
       // The real fix: don't trust the prompt instruction alone. If the
       // model returned fewer than requested, retry ONCE with an amended
@@ -682,7 +695,7 @@ Category: ${analysis.category ?? ""}${competitiveBlock}`;
         const retryUser = `${user}
 
 IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} of the required ${data.count} items (${shortBy} short). This time you MUST return exactly ${data.count} complete items in the briefs array. Do not stop early, and do not omit items for being "similar enough" to earlier ones -- vary style, intent, and template_id further if needed to reach the full count.`;
-        const retryResp = await openaiJSON<BriefsResp>({ apiKey: cfg.api_key, model: "gpt-4o-mini", system, user: retryUser });
+        const retryResp = await generateJSON<BriefsResp>({ apiKey: cfg.api_key, model: copyModel, system, user: retryUser });
         resp = retryResp;
       }
 
@@ -755,7 +768,7 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           .eq("id", site.id);
       }
 
-      await markIntegration(context.userId, "openai", "ok");
+      await markIntegration(context.userId, copyProvider, "ok");
       // Report both numbers -- created can legitimately be less than
       // requested even after the retry above (rare, but the retry is a
       // best-effort, not a guarantee). Callers/UI must not assume
@@ -764,7 +777,7 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
       return { requested: data.count, created: inserted!.length };
     } catch (e) {
       const msg = getErrorMessage(e);
-      await markIntegration(context.userId, "openai", "error", msg);
+      await markIntegration(context.userId, copyProvider, "error", msg);
       throw e;
     }
   });

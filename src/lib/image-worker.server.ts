@@ -9,16 +9,6 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
   const { getIntegration, markIntegration } = await import("./integrations.server");
   const { buildThemedPinPrompt } = await import("./briefs.functions");
 
-  // Provider is now chosen per-site (sites.image_provider), so we can't
-  // gate the whole queue on a single provider's config the way this used
-  // to. Fetch both up front and only bail out entirely if NEITHER is
-  // configured; per-job provider checks below handle the rest.
-  const [replicateCfg, openaiCfg] = await Promise.all([
-    getIntegration(userId, "replicate"),
-    getIntegration(userId, "openai"),
-  ]);
-  if (!replicateCfg && !openaiCfg) return { processed: 0, note: "No image provider configured" };
-
   let briefIdFilter: string[] | null = null;
   if (opts?.briefId) {
     briefIdFilter = [opts.briefId];
@@ -135,12 +125,23 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
 
       provider = page?.sites?.image_provider ?? "openai";
 
+      // One image-generation provider is configured/credentialed at a
+      // time per job now that there are 7 possible choices
+      // (sites.image_provider) -- fetching all 7 integrations eagerly
+      // for every batch (the way this used to fetch openai+replicate
+      // unconditionally) would be wasteful, so this resolves just the
+      // one credential this specific job actually needs.
+      const providerCfg = await getIntegration(userId, provider);
+      if (!providerCfg) throw new Error(`Missing ${provider} integration -- add it in Settings.`);
+      const apiKey = (providerCfg as { api_key?: string; api_token?: string }).api_key
+        ?? (providerCfg as { api_key?: string; api_token?: string }).api_token;
+      if (!apiKey) throw new Error(`${provider} integration has no credential saved.`);
+
       const { renderPinImage } = await import("./pin-render.server");
       const rendered = await renderPinImage({
         provider,
         prompt: themedPrompt,
-        openaiApiKey: openaiCfg?.api_key,
-        replicateToken: replicateCfg?.api_token,
+        apiKey,
       });
       const imageBytes = rendered.imageBytes;
       const contentType = rendered.contentType;

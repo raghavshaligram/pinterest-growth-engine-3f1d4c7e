@@ -24,15 +24,16 @@ import {
   ImageIcon, Upload, Loader2, Sparkles,
 } from "lucide-react";
 import {
-  getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS,
+  getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS, COPY_PROVIDERS,
   WEBSITE_VERTICAL_OPTIONS, DEFAULT_WEBSITE_VERTICAL,
-  type SiteOverviewRow, type SiteType, type ImageProvider,
+  type SiteOverviewRow, type SiteType, type ImageProvider, type CopyProvider,
 } from "@/lib/sites.functions";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
+import { listIntegrations } from "@/lib/integrations.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 
@@ -129,6 +130,24 @@ export const TYPOGRAPHY_PRESETS = [
   { value: "Poppins + IBM Plex Mono", headingFont: "'Poppins', sans-serif", bodyFont: "'IBM Plex Mono', monospace" },
   { value: "Serif Display + Clean Sans", headingFont: "Georgia, serif", bodyFont: "system-ui, sans-serif" },
 ] as const;
+
+// Display labels for the two provider pickers -- kept here (not
+// inferred from IMAGE_PROVIDERS/COPY_PROVIDERS directly) since the raw
+// provider ids (e.g. "fal", "stability") aren't the names a user would
+// recognize on their own.
+export const IMAGE_PROVIDER_LABELS: Record<ImageProvider, string> = {
+  replicate: "Nano Banana 2 (Replicate)",
+  openai: "OpenAI",
+  fal: "fal.ai",
+  gemini: "Google Gemini",
+  ideogram: "Ideogram",
+  recraft: "Recraft",
+  stability: "Stability AI",
+};
+export const COPY_PROVIDER_LABELS: Record<CopyProvider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic (Claude)",
+};
 
 export function hostFromUrl(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
@@ -231,6 +250,8 @@ export function BrandEditorFields({
   typography, onTypography,
   notes, onNotes,
   imageProvider, onImageProvider,
+  copyProvider, onCopyProvider,
+  connectedImageProviders, connectedCopyProviders,
   siteType, vertical, onVertical,
   advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
@@ -243,6 +264,16 @@ export function BrandEditorFields({
   typography: string; onTypography: (v: string) => void;
   notes: string; onNotes: (v: string) => void;
   imageProvider: ImageProvider; onImageProvider: (v: ImageProvider) => void;
+  copyProvider: CopyProvider; onCopyProvider: (v: CopyProvider) => void;
+  // Which providers this account has actually connected (Settings ->
+  // Integrations) -- both pickers only offer connected providers, per
+  // spec, so a site can never be silently pointed at a provider with no
+  // credential behind it. The currently-selected value is always kept
+  // in the list too (see the filter below) so an already-saved choice
+  // never disappears from its own dropdown just because it was
+  // disconnected later.
+  connectedImageProviders: ReadonlySet<ImageProvider>;
+  connectedCopyProviders: ReadonlySet<CopyProvider>;
   // Vertical selector is website-only (see WEBSITE_VERTICAL_OPTIONS) --
   // Etsy/eComm sites auto-derive etsy_product/ecomm_product via a DB
   // trigger with no UI choice, so siteType decides whether this section
@@ -416,15 +447,32 @@ export function BrandEditorFields({
             <Select value={imageProvider} onValueChange={(v) => onImageProvider(v as ImageProvider)}>
               <SelectTrigger><SelectValue placeholder="Choose a provider" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="replicate">Replicate (Nano Banana)</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
+                {IMAGE_PROVIDERS.filter((p) => connectedImageProviders.has(p) || p === imageProvider).map((p) => (
+                  <SelectItem key={p} value={p}>{IMAGE_PROVIDER_LABELS[p]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              Requires the matching provider connected in{" "}
+              Only providers connected in{" "}
               <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">
                 Settings &rarr; Integrations
-              </Link>.
+              </Link>{" "}
+              are offered here.
+            </p>
+          </div>
+
+          <div>
+            <Label className="mb-2 block">Copy generation provider</Label>
+            <Select value={copyProvider} onValueChange={(v) => onCopyProvider(v as CopyProvider)}>
+              <SelectTrigger><SelectValue placeholder="Choose a provider" /></SelectTrigger>
+              <SelectContent>
+                {COPY_PROVIDERS.filter((p) => connectedCopyProviders.has(p) || p === copyProvider).map((p) => (
+                  <SelectItem key={p} value={p}>{COPY_PROVIDER_LABELS[p]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Writes this site's pin titles, taglines, and calls-to-action. Only connected providers are offered here.
             </p>
           </div>
 
@@ -436,6 +484,22 @@ export function BrandEditorFields({
       )}
     </div>
   );
+}
+
+// Which image/copy providers this account has actually connected
+// (Settings -> Integrations) -- both BrandEditorFields pickers filter
+// against this so a site can never be silently pointed at a provider
+// with no credential behind it. Shared here (rather than each of
+// AddSiteWizard/SiteCard querying independently) since it's the same
+// account-wide ["integrations"] query key settings.integrations.tsx
+// already uses -- React Query dedupes the actual network call.
+function useConnectedProviders() {
+  const list = useServerFn(listIntegrations);
+  const { data } = useQuery({ queryKey: ["integrations"], queryFn: () => list() });
+  const configured = new Set((data ?? []).filter((i) => i.has_value).map((i) => i.provider));
+  const connectedImageProviders = new Set(IMAGE_PROVIDERS.filter((p) => configured.has(p)));
+  const connectedCopyProviders = new Set(COPY_PROVIDERS.filter((p) => configured.has(p)));
+  return { connectedImageProviders, connectedCopyProviders };
 }
 
 // ---------- Add-site wizard ----------
@@ -475,9 +539,11 @@ export function AddSiteWizard({
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
   const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
+  const [copyProvider, setCopyProvider] = useState<CopyProvider>("openai");
   const [vertical, setVertical] = useState<SiteVertical>(DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createdSite, setCreatedSite] = useState<{ id: string; url: string; brand_name: string | null; accent_color: string | null } | null>(null);
+  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
 
   const createMut = useMutation({
     mutationFn: () => upsert({
@@ -498,6 +564,7 @@ export function AddSiteWizard({
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
         image_provider: imageProvider,
+        copy_provider: copyProvider,
         // Only sent for website sites -- omitting it entirely for etsy/
         // ecomm lets the DB trigger (tg_sites_default_vertical) assign
         // etsy_product/ecomm_product itself instead of this always-set
@@ -630,6 +697,8 @@ export function AddSiteWizard({
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
             imageProvider={imageProvider} onImageProvider={setImageProvider}
+            copyProvider={copyProvider} onCopyProvider={setCopyProvider}
+            connectedImageProviders={connectedImageProviders} connectedCopyProviders={connectedCopyProviders}
             siteType={siteType} vertical={vertical} onVertical={setVertical}
             advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
@@ -967,9 +1036,11 @@ function SiteCard({
   const [typography, setTypography] = useState(site.brand_font ?? "");
   const [notes, setNotes] = useState(site.brand_notes ?? "");
   const [imageProvider, setImageProvider] = useState<ImageProvider>((site.image_provider as ImageProvider) ?? "openai");
+  const [copyProvider, setCopyProvider] = useState<CopyProvider>((site.copy_provider as CopyProvider) ?? "openai");
   const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [styleSetupOpen, setStyleSetupOpen] = useState(false);
+  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
 
   const saveMut = useMutation({
     mutationFn: () => upsert({
@@ -983,6 +1054,7 @@ function SiteCard({
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
         image_provider: imageProvider,
+        copy_provider: copyProvider,
         // Website-only, same reasoning as AddSiteWizard above -- never
         // send this for etsy/ecomm sites so nothing can ever override
         // their trigger-assigned vertical through this form.
@@ -1099,6 +1171,8 @@ function SiteCard({
               typography={typography} onTypography={setTypography}
               notes={notes} onNotes={setNotes}
               imageProvider={imageProvider} onImageProvider={setImageProvider}
+              copyProvider={copyProvider} onCopyProvider={setCopyProvider}
+              connectedImageProviders={connectedImageProviders} connectedCopyProviders={connectedCopyProviders}
               siteType={site.site_type as SiteType} vertical={vertical} onVertical={setVertical}
               advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               previewLabel={host}

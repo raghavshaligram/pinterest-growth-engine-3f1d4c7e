@@ -42,15 +42,14 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
     if (error || !site) throw error ?? new Error("Site not found");
 
     const provider: ImageProvider = (site.image_provider as ImageProvider) ?? "openai";
-    const [openaiCfg, replicateCfg] = await Promise.all([
-      getIntegration(context.userId, "openai"),
-      getIntegration(context.userId, "replicate"),
-    ]);
-    const configured = provider === "openai" ? Boolean(openaiCfg) : Boolean(replicateCfg);
-    if (!configured) {
-      throw new Error(
-        `${provider === "openai" ? "OpenAI" : "Replicate"} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`,
-      );
+    const providerCfg = await getIntegration(context.userId, provider);
+    if (!providerCfg) {
+      throw new Error(`${provider} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`);
+    }
+    const apiKey = (providerCfg as { api_key?: string; api_token?: string }).api_key
+      ?? (providerCfg as { api_key?: string; api_token?: string }).api_token;
+    if (!apiKey) {
+      throw new Error(`${provider} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`);
     }
 
     const brandHost = new URL(site.url).hostname.replace(/^www\./, "");
@@ -73,8 +72,7 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
       const rendered = await renderPinImage({
         provider,
         prompt,
-        openaiApiKey: openaiCfg?.api_key,
-        replicateToken: replicateCfg?.api_token,
+        apiKey,
       });
 
       const ext = rendered.contentType.includes("png") ? "png" : rendered.contentType.includes("jpeg") ? "jpg" : "webp";

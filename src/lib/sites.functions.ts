@@ -25,9 +25,17 @@ export const DEFAULT_WEBSITE_VERTICAL: SiteVertical = "general_content";
 // Which image-generation backend a site uses. Per-site (not account-wide
 // like Integrations) since it needs to sit alongside the other
 // generation-influencing brand settings (brand_colors/brand_font/vertical)
-// and different sites plausibly want different providers.
-export const IMAGE_PROVIDERS = ["replicate", "openai"] as const;
+// and different sites plausibly want different providers. Grew from 2 to
+// 7 providers with the consolidated Image Generation card
+// (settings.integrations.tsx) -- "replicate" is Nano Banana 2, unchanged.
+export const IMAGE_PROVIDERS = ["replicate", "openai", "fal", "gemini", "ideogram", "recraft", "stability"] as const;
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
+
+// Which copy-generation backend a site uses (titles/taglines/CTAs) --
+// same per-site reasoning as IMAGE_PROVIDERS above. New alongside the
+// consolidated Copy Generation card.
+export const COPY_PROVIDERS = ["openai", "anthropic"] as const;
+export type CopyProvider = (typeof COPY_PROVIDERS)[number];
 
 // Supabase/PostgREST errors cross the server->client RPC boundary through
 // TanStack Start's ShallowErrorPlugin, which only preserves `.message` --
@@ -72,6 +80,8 @@ export type SiteOverviewRow = {
   // openai_default_provider migration, which also backfilled existing
   // sites (originally defaulted to 'replicate' before that migration).
   image_provider: ImageProvider;
+  // Defaults to 'openai' at the DB level, same reasoning as image_provider.
+  copy_provider: CopyProvider;
   // DB-level NOT NULL (auto-derived by tg_sites_default_vertical when
   // not explicitly set at insert) -- see the vertical selector in
   // BrandEditorFields, which is website-only; etsy/ecomm sites carry
@@ -194,7 +204,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     id?: string; url: string; sitemap_url?: string; timezone?: string;
     site_type?: SiteType; brand_name?: string; tagline?: string;
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
-    image_provider?: ImageProvider; vertical?: SiteVertical;
+    image_provider?: ImageProvider; copy_provider?: CopyProvider; vertical?: SiteVertical;
     google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
     pinterest_connection_id?: string | null;
   }) =>
@@ -211,6 +221,7 @@ export const upsertSite = createServerFn({ method: "POST" })
       brand_font: z.string().optional(),
       brand_notes: z.string().optional(),
       image_provider: z.enum(IMAGE_PROVIDERS).optional(),
+      copy_provider: z.enum(COPY_PROVIDERS).optional(),
       // sites.vertical is a plain `text` column at the DB level (no
       // CHECK constraint/enum -- see the pin_gen_vertical_followup
       // migration's own comment), so this zod enum is the only real

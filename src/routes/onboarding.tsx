@@ -32,7 +32,7 @@ import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
 } from "@/routes/sites";
 import {
-  listSites, upsertSite, IMAGE_PROVIDERS, type SiteType, type ImageProvider,
+  listSites, upsertSite, type SiteType, type ImageProvider,
 } from "@/lib/sites.functions";
 import { crawlSite } from "@/lib/sites.functions";
 import { listPages } from "@/lib/pages.functions";
@@ -603,7 +603,18 @@ function StepIntegrations({
             Choose which model renders your pin images. You can switch this later per-site in Sites → brand settings.
           </p>
           <div className="flex gap-2">
-            {IMAGE_PROVIDERS.map((p) => (
+            {/* Deliberately its own fixed 2-item list, NOT a map over the
+                full IMAGE_PROVIDERS union (which grew to 7 with the
+                consolidated Image Generation card) -- this onboarding
+                step's whole flow (the "openai" sub-tab above being a
+                required first step, this sub-tab's two-way
+                openai/replicate branching just below) is built
+                specifically around those two providers. The other 5 are
+                connectable in Settings -> Integrations immediately after
+                onboarding and selectable per-site in Sites -> Brand
+                settings -> Advanced, which is where BrandEditorFields
+                offers the real, un-truncated 7-provider picker. */}
+            {(["openai", "replicate"] as const).map((p) => (
               <button
                 key={p} type="button" onClick={() => setImageProvider(p)}
                 className="rounded-full border px-4 py-1.5 text-sm font-medium"
