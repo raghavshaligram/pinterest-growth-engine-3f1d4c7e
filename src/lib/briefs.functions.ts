@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
 import { describeColors } from "@/lib/color-naming";
-import type { CopyProvider } from "@/lib/sites.functions";
+import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
 
 export const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
@@ -486,7 +486,7 @@ export const generateBriefs = createServerFn({ method: "POST" })
     z.object({ pageId: z.string().uuid(), count: z.number().int().min(1).max(30).default(10) }).parse(i),
   )
   .handler(async ({ data, context }) => {
-    const { requireIntegration, markIntegration } = await import("./integrations.server");
+    const { markApiKeyConnection } = await import("./api-key-connections.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: page, error } = await context.supabase.from("pages").select("*").eq("id", data.pageId).single();
@@ -509,16 +509,18 @@ export const generateBriefs = createServerFn({ method: "POST" })
       throw new Error("Complete Pin Style Setup for this site before generating pins.");
     }
 
-    // Copy generation provider: this site's own override
-    // (copy_provider_override) if it has one, else the account-level
-    // default, else "openai" -- see provider-resolution.server.ts.
-    // Resolved here, after site is fetched, since it depends on site
-    // data. Declared outside the try block below so the catch block's
-    // markIntegration call reports against whichever provider was
-    // actually in play.
-    const { resolveCopyProvider } = await import("./provider-resolution.server");
-    const copyProvider: CopyProvider = await resolveCopyProvider(context.userId, site?.copy_provider_override as CopyProvider | null);
-    const cfg = await requireIntegration(context.userId, copyProvider);
+    // Copy generation connection: this site's own override connection
+    // if it has one, else the account-level default connection, else
+    // this account's earliest OpenAI connection -- see
+    // provider-resolution.server.ts. Resolved here, after site is
+    // fetched, since it depends on site data. Declared outside the try
+    // block below so the catch block's markApiKeyConnection call
+    // reports against whichever connection was actually in play.
+    const { resolveCopyConnection } = await import("./provider-resolution.server");
+    const resolvedCopy = await resolveCopyConnection(context.userId, site?.copy_connection_override_id as string | null);
+    const copyProvider: ApiKeyProvider = resolvedCopy.provider;
+    const copyConnectionId = resolvedCopy.connectionId;
+    const cfg = { api_key: resolvedCopy.apiKey };
     const generateJSON = copyProvider === "anthropic"
       ? (await import("./anthropic.server")).anthropicJSON
       : (await import("./openai.server")).openaiJSON;
@@ -770,7 +772,7 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           .eq("id", site.id);
       }
 
-      await markIntegration(context.userId, copyProvider, "ok");
+      await markApiKeyConnection(copyConnectionId, "ok");
       // Report both numbers -- created can legitimately be less than
       // requested even after the retry above (rare, but the retry is a
       // best-effort, not a guarantee). Callers/UI must not assume
@@ -779,7 +781,7 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
       return { requested: data.count, created: inserted!.length };
     } catch (e) {
       const msg = getErrorMessage(e);
-      await markIntegration(context.userId, copyProvider, "error", msg);
+      await markApiKeyConnection(copyConnectionId, "error", msg);
       throw e;
     }
   });

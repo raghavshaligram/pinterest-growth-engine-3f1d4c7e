@@ -1,20 +1,13 @@
-// Server-only helpers to read integration configs.
+// Server-only helpers to read integration configs. As of the
+// multi-connection pass, this only covers Apify and Pinterest's legacy
+// single-account row -- the other 8 providers (openai, replicate, fal,
+// gemini, ideogram, recraft, stability, anthropic) moved to
+// api_key_connections (see api-key-connections.server.ts), which is a
+// genuine multi-row-per-provider table, unlike this one's
+// UNIQUE(user_id, provider).
 import { decrypt } from "./crypto.server";
 
-export type OpenAIConfig = { api_key: string };
-export type ReplicateConfig = { api_token: string };
 export type ApifyConfig = { api_token: string; actor_id?: string };
-// New image-generation providers (consolidated Image Generation card,
-// settings.integrations.tsx) -- all uniformly keyed on api_key, unlike
-// Replicate/Apify's api_token, matching how each provider's own docs
-// refer to the credential.
-export type FalConfig = { api_key: string };
-export type GeminiConfig = { api_key: string };
-export type IdeogramConfig = { api_key: string };
-export type RecraftConfig = { api_key: string };
-export type StabilityConfig = { api_key: string };
-// New copy-generation provider (consolidated Copy Generation card).
-export type AnthropicConfig = { api_key: string };
 // Legacy single-account shape -- still written by the original OAuth
 // flow (PinterestConnectButton/startPinterestOAuth, mode: "legacy" in
 // pinterest-oauth.server.ts's signState) that the onboarding wizard's
@@ -42,16 +35,8 @@ export type PinterestConfig = {
   webhook_url?: string;
 };
 export type ProviderConfig = {
-  openai: OpenAIConfig;
-  replicate: ReplicateConfig;
   apify: ApifyConfig;
   pinterest: PinterestConfig;
-  fal: FalConfig;
-  gemini: GeminiConfig;
-  ideogram: IdeogramConfig;
-  recraft: RecraftConfig;
-  stability: StabilityConfig;
-  anthropic: AnthropicConfig;
 };
 export type Provider = keyof ProviderConfig;
 

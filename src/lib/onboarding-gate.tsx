@@ -36,8 +36,9 @@ export function useSetupGate() {
     // Status hasn't loaded yet -- err toward letting the action attempt
     // to run rather than blocking on an unresolved query forever; the
     // server-side checks each of these functions already has (e.g.
-    // generateBriefs' requireIntegration("openai")) still apply as a
-    // backstop if this somehow lets an unready account through.
+    // generateBriefs' resolveCopyConnection, which throws if nothing
+    // resolves) still apply as a backstop if this somehow lets an
+    // unready account through.
     if (isLoading || !data) return true;
     if (data.readyToGenerate) return true;
     navigate({ to: "/onboarding", search: { step: data.firstMissingWizardStep ?? 1 } });

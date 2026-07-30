@@ -32,15 +32,16 @@ import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
 } from "@/routes/sites";
 import {
-  listSites, upsertSite, type SiteType, type ImageProvider,
+  listSites, upsertSite, type SiteType,
 } from "@/lib/sites.functions";
 import { crawlSite } from "@/lib/sites.functions";
 import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
 import { listPages } from "@/lib/pages.functions";
 import { listIntegrations } from "@/lib/integrations.functions";
+import { listApiKeyConnections } from "@/lib/api-key-connections.functions";
 import { getPublishingProfile } from "@/lib/publishing-profile.functions";
 import {
-  IntegrationCard, PinterestConnectButton, PublishingAgePrompt,
+  PinterestConnectButton, PublishingAgePrompt, FirstApiKeySetup, IMAGE_GEN_PROVIDERS,
 } from "@/routes/settings.integrations";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 
@@ -491,23 +492,36 @@ function StepIntegrations({
     if (!setupStatus.readyToGenerate) return "imagegen";
     return "pinterest";
   });
+  // Pinterest still lives in the legacy `integrations` table (its own
+  // OAuth flow, untouched by the multi-connection restructure) --
+  // openai/replicate now live in api_key_connections instead, a real
+  // multi-row table, so this step reads both.
   const listIntFn = useServerFn(listIntegrations);
   const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listIntFn() });
+  const listConns = useServerFn(listApiKeyConnections);
+  const { data: connections } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => listConns() });
   const { data: sites } = useSitesList();
   const site = (sites ?? []).find((s) => (s as SiteRow).id === siteId) as SiteRow | undefined;
   const setAccountDefault = useServerFn(setAccountProviderDefault);
   const getProfile = useServerFn(getPublishingProfile);
 
-  const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
+  const [imageProvider, setImageProvider] = useState<"openai" | "replicate">("openai");
   const [showAgePrompt, setShowAgePrompt] = useState(false);
-  // Seeds from the account-level default (not a per-site value -- this
-  // step sets the ACCOUNT default now, see saveProviderMut below) so
-  // revisiting this step shows whatever was already chosen.
+  // Seeds from the account-level default CONNECTION's provider (not a
+  // per-site value -- this step sets the account default now, see
+  // saveProviderMut below) so revisiting this step shows whatever was
+  // already chosen. Only openai/replicate are offered on this sub-tab
+  // (see the fixed 2-item list below) -- a default connection for one
+  // of the other 5 providers (set later via Settings) just leaves this
+  // toggle on openai rather than forcing a mismatched selection here.
   const getDefaults = useServerFn(getAccountProviderDefaults);
   const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
   useEffect(() => {
-    if (providerDefaults?.default_image_provider) setImageProvider(providerDefaults.default_image_provider);
-  }, [providerDefaults?.default_image_provider]);
+    const defaultConn = (connections ?? []).find((c) => c.id === providerDefaults?.default_image_connection_id);
+    if (defaultConn?.provider === "openai" || defaultConn?.provider === "replicate") {
+      setImageProvider(defaultConn.provider);
+    }
+  }, [providerDefaults?.default_image_connection_id, connections]);
 
   // Pinterest OAuth is a real cross-site redirect (Pinterest ->
   // pinterest.callback.ts -> back here), so this reads the real browser
@@ -530,8 +544,8 @@ function StepIntegrations({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openaiStatus = (integrations ?? []).find((i) => i.provider === "openai");
-  const replicateStatus = (integrations ?? []).find((i) => i.provider === "replicate");
+  const openaiConnections = (connections ?? []).filter((c) => c.provider === "openai");
+  const replicateConnections = (connections ?? []).filter((c) => c.provider === "replicate");
   const pinterestStatus = (integrations ?? []).find((i) => i.provider === "pinterest");
   const pinterestOk = pinterestStatus?.status === "ok";
 
@@ -551,11 +565,19 @@ function StepIntegrations({
   }, [pinterestOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveProviderMut = useMutation({
-    // Sets the ACCOUNT-level default image provider (not this specific
-    // site) -- image_provider is no longer a per-site column at all;
-    // every site now inherits this account default unless it sets its
-    // own override later (Sites -> that site's Connections section).
-    mutationFn: () => setAccountDefault({ data: { kind: "image", provider: imageProvider } }),
+    // Sets the ACCOUNT-level default image CONNECTION (not this
+    // specific site) -- image_provider is no longer a per-site column
+    // at all, and the account default is now a specific connection id,
+    // not a provider name. Onboarding always operates on this
+    // account's first/only connection for whichever of the two
+    // providers is selected here (a brand-new account can't have a
+    // second key for the same provider yet).
+    mutationFn: () => {
+      const conns = imageProvider === "openai" ? openaiConnections : replicateConnections;
+      const conn = conns[0];
+      if (!conn) throw new Error(`Add ${imageProvider === "openai" ? "an OpenAI" : "a Replicate"} key above first.`);
+      return setAccountDefault({ data: { kind: "image", connectionId: conn.id } });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sites-switcher"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
@@ -565,7 +587,14 @@ function StepIntegrations({
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  const invalidateIntegrations = () => { qc.invalidateQueries({ queryKey: ["integrations"] }); qc.invalidateQueries({ queryKey: ["setup-status"] }); };
+  const invalidateIntegrations = () => {
+    qc.invalidateQueries({ queryKey: ["integrations"] });
+    qc.invalidateQueries({ queryKey: ["api-key-connections"] });
+    qc.invalidateQueries({ queryKey: ["setup-status"] });
+  };
+
+  const openaiMeta = IMAGE_GEN_PROVIDERS.find((p) => p.provider === "openai")!;
+  const replicateMeta = IMAGE_GEN_PROVIDERS.find((p) => p.provider === "replicate")!;
 
   return (
     <div className="space-y-6">
@@ -573,8 +602,8 @@ function StepIntegrations({
         sub={sub}
         onChange={setSub}
         items={[
-          { key: "openai", label: "OpenAI", done: Boolean(openaiStatus?.has_value) },
-          { key: "imagegen", label: "Image generation", done: Boolean(openaiStatus?.has_value || replicateStatus?.has_value) },
+          { key: "openai", label: "OpenAI", done: openaiConnections.length > 0 },
+          { key: "imagegen", label: "Image generation", done: openaiConnections.length > 0 || replicateConnections.length > 0 },
           { key: "pinterest", label: "Pinterest", done: pinterestOk, optional: true },
         ]}
       />
@@ -584,22 +613,15 @@ function StepIntegrations({
           <p className="text-sm text-muted-foreground">
             Powers page analysis and pin copy — every brief starts here, regardless of which image generator you pick next.
           </p>
-          <IntegrationCard
-            provider="openai"
-            title="OpenAI"
-            description="Powers page analysis, pin copy, and competitive pattern summaries."
-            fields={[{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }]}
-            status={openaiStatus}
-            onChanged={invalidateIntegrations}
-          />
+          <FirstApiKeySetup meta={openaiMeta} connections={openaiConnections} onChanged={invalidateIntegrations} />
           <div className="flex justify-between pt-2">
             <Button type="button" variant="outline" onClick={onBack}>Back</Button>
             <Button
               type="button"
               className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
               onClick={() => setSub("imagegen")}
-              disabled={!openaiStatus?.has_value}
-              title={!openaiStatus?.has_value ? "Add and save an OpenAI key to continue -- it's required for page analysis and pin copy regardless of which image provider you pick next." : undefined}
+              disabled={openaiConnections.length === 0}
+              title={openaiConnections.length === 0 ? "Add and save an OpenAI key to continue -- it's required for page analysis and pin copy regardless of which image provider you pick next." : undefined}
             >
               Next →
             </Button>
@@ -614,16 +636,17 @@ function StepIntegrations({
           </p>
           <div className="flex gap-2">
             {/* Deliberately its own fixed 2-item list, NOT a map over the
-                full IMAGE_PROVIDERS union (which grew to 7 with the
-                consolidated Image Generation card) -- this onboarding
+                full IMAGE_GEN_PROVIDERS array (which has 7 entries for
+                the consolidated Image Generation card) -- this onboarding
                 step's whole flow (the "openai" sub-tab above being a
                 required first step, this sub-tab's two-way
                 openai/replicate branching just below) is built
                 specifically around those two providers. The other 5 are
                 connectable in Settings -> Integrations immediately after
-                onboarding and selectable per-site in Sites -> Brand
-                settings -> Advanced, which is where BrandEditorFields
-                offers the real, un-truncated 7-provider picker. */}
+                onboarding and selectable per-site in Sites -> that
+                site's Connections section, which is where
+                ProviderOverrideCard offers the real, un-truncated
+                picker across every connected provider/key. */}
             {(["openai", "replicate"] as const).map((p) => (
               <button
                 key={p} type="button" onClick={() => setImageProvider(p)}
@@ -639,18 +662,11 @@ function StepIntegrations({
             ))}
           </div>
           {imageProvider === "openai" ? (
-            openaiStatus?.has_value
+            openaiConnections.length > 0
               ? <p className="text-xs text-emerald-600">Using the OpenAI key you connected in the previous step.</p>
               : <p className="text-xs text-amber-700">Add your OpenAI key in the previous step first.</p>
           ) : (
-            <IntegrationCard
-              provider="replicate"
-              title="Replicate"
-              description="Runs Nano Banana 2 (google/nano-banana-2) to render every pin image."
-              fields={[{ name: "api_token", label: "API token", placeholder: "r8_…", type: "password" }]}
-              status={replicateStatus}
-              onChanged={invalidateIntegrations}
-            />
+            <FirstApiKeySetup meta={replicateMeta} connections={replicateConnections} onChanged={invalidateIntegrations} />
           )}
           <div className="flex justify-between pt-2">
             <Button type="button" variant="outline" onClick={() => setSub("openai")}>Back</Button>
@@ -658,7 +674,7 @@ function StepIntegrations({
               type="button"
               className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
               onClick={() => saveProviderMut.mutate()}
-              disabled={saveProviderMut.isPending || (imageProvider === "openai" ? !openaiStatus?.has_value : !replicateStatus?.has_value)}
+              disabled={saveProviderMut.isPending || (imageProvider === "openai" ? openaiConnections.length === 0 : replicateConnections.length === 0)}
             >
               {saveProviderMut.isPending ? "Saving…" : "Next →"}
             </Button>

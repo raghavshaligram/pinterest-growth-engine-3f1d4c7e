@@ -2,11 +2,11 @@
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
 import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
-import type { ImageProvider } from "@/lib/sites.functions";
+import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { getIntegration, markIntegration } = await import("./integrations.server");
+  const { markApiKeyConnection } = await import("./api-key-connections.server");
   const { buildThemedPinPrompt } = await import("./briefs.functions");
 
   let briefIdFilter: string[] | null = null;
@@ -41,14 +41,15 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     const briefId = payload.brief_id;
     if (!briefId) return;
     // Declared here (not inside the try block) so the catch block below
-    // can report a failure against whichever provider was actually in
-    // play, even if the failure happened after provider resolution.
-    let provider: ImageProvider = "openai";
+    // can report a failure against whichever connection was actually
+    // in play, even if the failure happened after resolution.
+    let provider: ApiKeyProvider = "openai";
+    let connectionId: string | null = null;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider_override))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_connection_override_id))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -64,7 +65,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
           url?: string; title?: string | null; analysis?: unknown; excluded?: boolean;
           sites?: {
             url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
-            vertical?: SiteVertical | null; image_provider_override?: ImageProvider | null;
+            vertical?: SiteVertical | null; image_connection_override_id?: string | null;
           };
         };
       }).pages;
@@ -123,26 +124,16 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         }
       }
 
-      const { resolveImageProvider } = await import("./provider-resolution.server");
-      provider = await resolveImageProvider(userId, page?.sites?.image_provider_override);
-
-      // One image-generation provider is configured/credentialed at a
-      // time per job now that there are 7 possible choices -- fetching
-      // all 7 integrations eagerly
-      // for every batch (the way this used to fetch openai+replicate
-      // unconditionally) would be wasteful, so this resolves just the
-      // one credential this specific job actually needs.
-      const providerCfg = await getIntegration(userId, provider);
-      if (!providerCfg) throw new Error(`Missing ${provider} integration -- add it in Settings.`);
-      const apiKey = (providerCfg as { api_key?: string; api_token?: string }).api_key
-        ?? (providerCfg as { api_key?: string; api_token?: string }).api_token;
-      if (!apiKey) throw new Error(`${provider} integration has no credential saved.`);
+      const { resolveImageConnection } = await import("./provider-resolution.server");
+      const resolved = await resolveImageConnection(userId, page?.sites?.image_connection_override_id);
+      provider = resolved.provider;
+      connectionId = resolved.connectionId;
 
       const { renderPinImage } = await import("./pin-render.server");
       const rendered = await renderPinImage({
         provider,
         prompt: themedPrompt,
-        apiKey,
+        apiKey: resolved.apiKey,
       });
       const imageBytes = rendered.imageBytes;
       const contentType = rendered.contentType;
@@ -168,7 +159,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       });
       await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
       await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);
-      await markIntegration(userId, provider, "ok");
+      if (connectionId) await markApiKeyConnection(connectionId, "ok");
       ok++;
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -177,7 +168,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       // status="image_pending" forever -- indistinguishable in the UI
       // from one that's still queued/rendering ("Waiting to render...").
       await supabaseAdmin.from("pin_briefs").update({ status: "failed" }).eq("id", briefId);
-      await markIntegration(userId, provider, "error", msg);
+      if (connectionId) await markApiKeyConnection(connectionId, "error", msg);
       fail++;
     }
   };

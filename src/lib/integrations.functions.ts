@@ -22,10 +22,16 @@ export const startPinterestOAuth = createServerFn({ method: "POST" })
     };
   });
 
-const providerSchema = z.enum([
-  "openai", "replicate", "apify", "pinterest",
-  "fal", "gemini", "ideogram", "recraft", "stability", "anthropic",
-]);
+// Only Apify and Pinterest's legacy single-account row still live here
+// -- the other 8 providers (openai, replicate, fal, gemini, ideogram,
+// recraft, stability, anthropic) moved to api_key_connections (see
+// api-key-connections.functions.ts), a real multi-row-per-provider
+// table, since a user can hold several keys for the same provider
+// (e.g. two OpenAI keys for two different clients). Apify has no
+// per-client-key use case and Pinterest already has its own dedicated
+// multi-connection table (pinterest_connections.functions.ts) for the
+// per-site case; both stay on this single-row-per-provider model.
+const providerSchema = z.enum(["apify", "pinterest"]);
 type ProviderName = z.infer<typeof providerSchema>;
 
 // Credential fields are optional at the schema level for every provider —
@@ -35,8 +41,6 @@ type ProviderName = z.infer<typeof providerSchema>;
 // have SOME value, from this request or the existing config" itself, at
 // the merge step below, using CREDENTIAL_FIELD.
 const configShapes = {
-  openai: z.object({ api_key: z.string().min(10).optional() }),
-  replicate: z.object({ api_token: z.string().min(10).optional() }),
   apify: z.object({ api_token: z.string().min(10).optional(), actor_id: z.string().optional() }),
   pinterest: z.object({
     access_token: z.string().optional(),
@@ -44,17 +48,6 @@ const configShapes = {
     publish_mode: z.enum(["api", "webhook"]).optional(),
     webhook_url: z.string().url().optional(),
   }),
-  // New image-generation providers, all uniformly keyed on api_key
-  // (matching how each one's own docs refer to the credential) so the
-  // shared IntegrationRow UI (settings.integrations.tsx) can treat every
-  // row in the consolidated Image Generation / Copy Generation cards
-  // identically.
-  fal: z.object({ api_key: z.string().min(10).optional() }),
-  gemini: z.object({ api_key: z.string().min(10).optional() }),
-  ideogram: z.object({ api_key: z.string().min(10).optional() }),
-  recraft: z.object({ api_key: z.string().min(10).optional() }),
-  stability: z.object({ api_key: z.string().min(10).optional() }),
-  anthropic: z.object({ api_key: z.string().min(10).optional() }),
 } as const;
 
 // The one field per provider that represents "a credential is actually
@@ -64,16 +57,8 @@ const configShapes = {
 // is null here because its access_token is never submitted through this
 // form — it's written by the OAuth callback route directly.
 const CREDENTIAL_FIELD: Record<ProviderName, string | null> = {
-  openai: "api_key",
-  replicate: "api_token",
   apify: "api_token",
   pinterest: null,
-  fal: "api_key",
-  gemini: "api_key",
-  ideogram: "api_key",
-  recraft: "api_key",
-  stability: "api_key",
-  anthropic: "api_key",
 };
 
 // Returns has_value alongside the usual status metadata — never the
@@ -192,17 +177,7 @@ export const testIntegration = createServerFn({ method: "POST" })
     if (!cfg) return { ok: false, message: "Not configured" };
 
     try {
-      if (data.provider === "openai") {
-        const r = await fetch("https://api.openai.com/v1/models", {
-          headers: { Authorization: `Bearer ${(cfg as { api_key: string }).api_key}` },
-        });
-        if (!r.ok) throw new Error(`OpenAI: HTTP ${r.status}`);
-      } else if (data.provider === "replicate") {
-        const r = await fetch("https://api.replicate.com/v1/account", {
-          headers: { Authorization: `Bearer ${(cfg as { api_token: string }).api_token}` },
-        });
-        if (!r.ok) throw new Error(`Replicate: HTTP ${r.status}`);
-      } else if (data.provider === "apify") {
+      if (data.provider === "apify") {
         const r = await fetch(`https://api.apify.com/v2/users/me?token=${encodeURIComponent((cfg as { api_token: string }).api_token)}`);
         if (!r.ok) throw new Error(`Apify: HTTP ${r.status}`);
       } else if (data.provider === "pinterest") {
@@ -212,39 +187,6 @@ export const testIntegration = createServerFn({ method: "POST" })
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!r.ok) throw new Error(`Pinterest: HTTP ${r.status}`);
-      } else if (data.provider === "gemini") {
-        // Free, real validation -- lists available models for this key.
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent((cfg as { api_key: string }).api_key)}`,
-        );
-        if (!r.ok) throw new Error(`Gemini: HTTP ${r.status}`);
-      } else if (data.provider === "anthropic") {
-        // Free, real validation -- lists available models for this key.
-        const r = await fetch("https://api.anthropic.com/v1/models", {
-          headers: {
-            "x-api-key": (cfg as { api_key: string }).api_key,
-            "anthropic-version": "2023-06-01",
-          },
-        });
-        if (!r.ok) throw new Error(`Anthropic: HTTP ${r.status}`);
-      } else if (data.provider === "stability") {
-        // Free, real validation -- account/balance endpoint.
-        const r = await fetch("https://api.stability.ai/v1/user/account", {
-          headers: { Authorization: `Bearer ${(cfg as { api_key: string }).api_key}` },
-        });
-        if (!r.ok) throw new Error(`Stability AI: HTTP ${r.status}`);
-      } else if (data.provider === "fal" || data.provider === "ideogram" || data.provider === "recraft") {
-        // No confirmed zero-cost account/whoami endpoint was found for
-        // these three during integration research -- rather than guess
-        // an endpoint that might not exist (and wrongly fail a real,
-        // working key) or accidentally trigger a paid generation call,
-        // this only checks that a key is actually saved. Real
-        // connectivity is confirmed the first time a pin actually
-        // generates through this provider.
-        const key = (cfg as { api_key?: string }).api_key;
-        if (!key || key.length < 10) throw new Error("No API key saved");
-        await markIntegration(context.userId, data.provider, "ok");
-        return { ok: true, message: "Key saved -- full connectivity confirmed on first use" };
       }
       await markIntegration(context.userId, data.provider, "ok");
       return { ok: true, message: "Connected" };

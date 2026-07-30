@@ -129,21 +129,15 @@ export type SetupStatus = {
 // hard-fail the very first pipeline step, so gating this step on
 // "either provider" would let a genuinely broken setup read as "ready."
 async function hasOpenAiCredential(userId: string): Promise<boolean> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { decrypt } = await import("./crypto.server");
-  const { data } = await supabaseAdmin
-    .from("integrations")
-    .select("config_ciphertext")
-    .eq("user_id", userId)
-    .eq("provider", "openai")
-    .maybeSingle();
-  if (!data) return false;
-  try {
-    const cfg = JSON.parse(decrypt(data.config_ciphertext)) as Record<string, unknown>;
-    return Boolean(cfg.api_key);
-  } catch {
-    return false;
-  }
+  // OpenAI moved from the old single-row `integrations` table to the
+  // multi-connection api_key_connections table (a user can now hold
+  // several OpenAI keys) -- this just needs "at least one exists,"
+  // same yes/no this always returned, so earliestConnectionForProvider
+  // (any real connection would do) is the right check here, not a
+  // direct table query duplicated a second way.
+  const { earliestConnectionForProvider } = await import("./api-key-connections.server");
+  const conn = await earliestConnectionForProvider(userId, "openai");
+  return Boolean(conn);
 }
 
 function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | null {

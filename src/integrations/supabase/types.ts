@@ -119,6 +119,66 @@ export type Database = {
         }
         Relationships: []
       }
+      account_provider_defaults: {
+        Row: {
+          default_copy_connection_id: string | null
+          default_image_connection_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          default_copy_connection_id?: string | null
+          default_image_connection_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          default_copy_connection_id?: string | null
+          default_image_connection_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      api_key_connections: {
+        Row: {
+          config_ciphertext: string
+          connected_at: string
+          id: string
+          label: string
+          last_error: string | null
+          last_used_at: string | null
+          provider: Database["public"]["Enums"]["integration_provider"]
+          status: Database["public"]["Enums"]["integration_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config_ciphertext: string
+          connected_at?: string
+          id?: string
+          label?: string
+          last_error?: string | null
+          last_used_at?: string | null
+          provider: Database["public"]["Enums"]["integration_provider"]
+          status?: Database["public"]["Enums"]["integration_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config_ciphertext?: string
+          connected_at?: string
+          id?: string
+          label?: string
+          last_error?: string | null
+          last_used_at?: string | null
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          status?: Database["public"]["Enums"]["integration_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       boards: {
         Row: {
           category: string | null
@@ -748,8 +808,8 @@ export type Database = {
           created_at: string
           ga4_property_id: string | null
           ga4_property_label: string | null
-          image_provider_override: string | null
-          copy_provider_override: string | null
+          image_connection_override_id: string | null
+          copy_connection_override_id: string | null
           google_connection_id: string | null
           id: string
           pinterest_connection_id: string | null
@@ -774,8 +834,8 @@ export type Database = {
           created_at?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
-          image_provider_override?: string | null
-          copy_provider_override?: string | null
+          image_connection_override_id?: string | null
+          copy_connection_override_id?: string | null
           google_connection_id?: string | null
           id?: string
           pinterest_connection_id?: string | null
@@ -800,8 +860,8 @@ export type Database = {
           created_at?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
-          image_provider_override?: string | null
-          copy_provider_override?: string | null
+          image_connection_override_id?: string | null
+          copy_connection_override_id?: string | null
           google_connection_id?: string | null
           id?: string
           pinterest_connection_id?: string | null

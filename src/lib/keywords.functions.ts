@@ -20,12 +20,17 @@ export type SerpPatterns = {
 // user hasn't configured OpenAI, or the summarization call fails, we log
 // via markIntegration and move on rather than failing the whole sweep.
 async function summarizeAndStorePatterns(userId: string, snapshotId: string, keyword: string, topPins: TopPin[]) {
-  const { getIntegration, markIntegration } = await import("./integrations.server");
+  // Uses this account's earliest-connected OpenAI key (api_key_connections)
+  // -- this is an account-level enrichment, not tied to any one site,
+  // so it isn't part of the per-site image/copy override resolution
+  // chain at all; it just needs "a working OpenAI key for this
+  // account," same as before the multi-connection restructure.
+  const { earliestConnectionForProvider, markApiKeyConnection } = await import("./api-key-connections.server");
   const { openaiJSON } = await import("./openai.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-  const cfg = await getIntegration(userId, "openai");
-  if (!cfg?.api_key) return; // optional enrichment -- no key configured, skip quietly
+  const conn = await earliestConnectionForProvider(userId, "openai");
+  if (!conn) return; // optional enrichment -- no key configured, skip quietly
 
   const pinsForPrompt = topPins
     .filter((p) => p.title)
@@ -40,7 +45,7 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
       summary: string;
     };
     const resp = await openaiJSON<PatternsResp>({
-      apiKey: cfg.api_key,
+      apiKey: conn.apiKey,
       model: "gpt-4o-mini",
       system: `You are a Pinterest competitive-research analyst. You'll be given the top-ranking pins currently showing for a Pinterest search. Return strict JSON summarizing PATTERNS ACROSS them, not a description of any single pin:
 - title_patterns: 3-6 short strings describing recurring TITLE FORMATS ("N ways to ___", "X vs Y comparisons", "question-format hooks", "before/after framing"). Describe the pattern, don't copy a title verbatim.
@@ -52,9 +57,9 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
 
     const patterns: SerpPatterns = { ...resp, generated_at: new Date().toISOString() };
     await supabaseAdmin.from("serp_snapshots").update({ patterns }).eq("id", snapshotId).eq("user_id", userId);
-    await markIntegration(userId, "openai", "ok");
+    await markApiKeyConnection(conn.connectionId, "ok");
   } catch (e) {
-    await markIntegration(userId, "openai", "error", getErrorMessage(e));
+    await markApiKeyConnection(conn.connectionId, "error", getErrorMessage(e));
   }
 }
 

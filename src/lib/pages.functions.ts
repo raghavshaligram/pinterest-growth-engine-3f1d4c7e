@@ -195,10 +195,15 @@ export const analyzePage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { pageId: string }) => z.object({ pageId: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    const { requireIntegration, markIntegration } = await import("./integrations.server");
+    // Account-level OpenAI usage, not part of the per-site image/copy
+    // override resolution chain -- page analysis just needs "this
+    // account's working OpenAI key," same as the SERP-pattern
+    // summarizer in keywords.functions.ts.
+    const { earliestConnectionForProvider, markApiKeyConnection } = await import("./api-key-connections.server");
     const { openaiJSON } = await import("./openai.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const cfg = await requireIntegration(context.userId, "openai");
+    const conn = await earliestConnectionForProvider(context.userId, "openai");
+    if (!conn) throw new Error("Missing openai integration — add it in Settings.");
     const { data: page, error } = await context.supabase.from("pages").select("*").eq("id", data.pageId).single();
     if (error || !page) throw error ?? new Error("Page not found");
 
@@ -216,7 +221,7 @@ export const analyzePage = createServerFn({ method: "POST" })
         pin_opportunities: number;
       };
       const analysis = await openaiJSON<Analysis>({
-        apiKey: cfg.api_key,
+        apiKey: conn.apiKey,
         model: "gpt-4o-mini",
         system: "You are a Pinterest SEO strategist. Return strict JSON.",
         user: `Analyze this page for Pinterest SEO. Return JSON with keys: topic, primary_keyword, secondary_keywords (5-10), lsi_keywords (5-10), questions (5-8), intent, category, audience, seasonality, pin_opportunities (integer 5-25).
@@ -243,11 +248,11 @@ Headings: ${JSON.stringify(((page.headings as unknown as unknown[]) ?? []).slice
       ].map((r) => ({ ...r, user_id: context.userId, page_id: page.id, tracked: r.kind === "primary" }));
       if (rows.length) await supabaseAdmin.from("keywords").insert(rows);
 
-      await markIntegration(context.userId, "openai", "ok");
+      await markApiKeyConnection(conn.connectionId, "ok");
       return analysis;
     } catch (e) {
       const msg = getErrorMessage(e);
-      await markIntegration(context.userId, "openai", "error", msg);
+      await markApiKeyConnection(conn.connectionId, "error", msg);
       throw e;
     }
   });

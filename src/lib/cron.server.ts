@@ -11,7 +11,20 @@ export function checkCronAuth(request: Request): Response | null {
 
 export async function forEachUser(cb: (userId: string) => Promise<unknown>) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.from("integrations").select("user_id");
+  // Previously iterated distinct user_ids from `integrations` -- used
+  // as a stand-in for "every real active account." That broke as a
+  // side effect of the multi-connection restructure: a user whose ONLY
+  // credential was one of the 8 providers that moved to
+  // api_key_connections (e.g. just an OpenAI key, no Apify/Pinterest)
+  // would no longer have any `integrations` row at all, so every cron
+  // job driven by this (image rendering, publishing, crawling, tier
+  // checks, SERP sweeps) would silently stop running for them. `sites`
+  // is a strictly more correct proxy for "a real account" anyway --
+  // nothing in this app is possible before adding a site, so this
+  // actually closes a narrower pre-existing gap too (an account mid-
+  // onboarding with a site but zero credentials yet was never iterated
+  // before either).
+  const { data, error } = await supabaseAdmin.from("sites").select("user_id");
   if (error) throw error;
   const users = Array.from(new Set((data ?? []).map((r) => r.user_id)));
   const results: Record<string, unknown> = {};

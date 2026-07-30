@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
-import type { ImageProvider } from "@/lib/sites.functions";
 
 // Exactly the two templates named in the Pin Style Setup spec -- one
 // discrete/card-based shape (quick_tip_grid) and one single-statement
@@ -34,24 +33,20 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
   .inputValidator((i: { siteId: string }) => z.object({ siteId: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }): Promise<{ samples: StyleSample[] }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getIntegration } = await import("@/lib/integrations.server");
     const { buildThemedPinPrompt } = await import("@/lib/briefs.functions");
     const { renderPinImage } = await import("@/lib/pin-render.server");
 
     const { data: site, error } = await context.supabase.from("sites").select("*").eq("id", data.siteId).single();
     if (error || !site) throw error ?? new Error("Site not found");
 
-    const { resolveImageProvider } = await import("@/lib/provider-resolution.server");
-    const provider: ImageProvider = await resolveImageProvider(context.userId, site.image_provider_override as ImageProvider | null);
-    const providerCfg = await getIntegration(context.userId, provider);
-    if (!providerCfg) {
-      throw new Error(`${provider} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`);
+    const { resolveImageConnection } = await import("@/lib/provider-resolution.server");
+    let resolved;
+    try {
+      resolved = await resolveImageConnection(context.userId, site.image_connection_override_id as string | null);
+    } catch {
+      throw new Error("No image generation provider is connected yet -- add one in Settings > Integrations before previewing pin style.");
     }
-    const apiKey = (providerCfg as { api_key?: string; api_token?: string }).api_key
-      ?? (providerCfg as { api_key?: string; api_token?: string }).api_token;
-    if (!apiKey) {
-      throw new Error(`${provider} isn't connected yet -- add it in Settings > Integrations before previewing pin style.`);
-    }
+    const { provider, apiKey } = resolved;
 
     const brandHost = new URL(site.url).hostname.replace(/^www\./, "");
     const brandDisplay = site.brand_name || brandHost;

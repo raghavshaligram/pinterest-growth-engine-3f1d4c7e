@@ -9,6 +9,11 @@ import { PinShell } from "@/components/PinShell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listIntegrations, saveIntegration, testIntegration, deleteIntegration, startPinterestOAuth } from "@/lib/integrations.functions";
+import {
+  listApiKeyConnections, addApiKeyConnection, updateApiKeyConnection,
+  renameApiKeyConnection, testApiKeyConnection, deleteApiKeyConnection,
+} from "@/lib/api-key-connections.functions";
+import type { ApiKeyConnectionSummary } from "@/lib/api-key-connections.server";
 import { listGoogleConnections, startGoogleOAuth, disconnectGoogleConnection } from "@/lib/google.functions";
 import { listPinterestConnections, startPinterestConnectionOAuth, disconnectPinterestConnection, setPinterestConnectionPublishMode } from "@/lib/pinterest-connections.functions";
 import { getPublishingProfile, savePublishingProfile, getAccountHealth, setCapMode } from "@/lib/publishing-profile.functions";
@@ -74,13 +79,24 @@ function IntegrationsPage() {
   const setDefault = useServerFn(setAccountProviderDefault);
   const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
   const setDefaultMut = useMutation({
-    mutationFn: (vars: { kind: "image" | "copy"; provider: string }) => setDefault({ data: vars }),
+    mutationFn: (vars: { kind: "image" | "copy"; connectionId: string }) => setDefault({ data: vars }),
     onSuccess: (_r, vars) => {
-      toast.success(`Default ${vars.kind === "image" ? "image" : "copy"} generation provider updated`);
+      toast.success(`Default ${vars.kind === "image" ? "image" : "copy"} generation key updated`);
       qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
+
+  // Multi-connection API-key providers (Image/Copy Generation cards
+  // below) -- a separate query from ["integrations"] (which now only
+  // covers Apify + Pinterest's legacy row) since these 8 providers
+  // moved to their own real multi-row table.
+  const listConns = useServerFn(listApiKeyConnections);
+  const { data: apiKeyConnections } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => listConns() });
+  const invalidateConnections = () => {
+    qc.invalidateQueries({ queryKey: ["api-key-connections"] });
+    qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
+  };
 
   // The default-provider description below links to "that site's
   // Connections section" -- but this description is account-wide, not
@@ -169,10 +185,10 @@ function IntegrationsPage() {
             </>
           }
           providers={IMAGE_GEN_PROVIDERS}
-          integrationsData={data}
-          onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
-          currentDefault={providerDefaults?.default_image_provider}
-          onSetDefault={(provider) => setDefaultMut.mutate({ kind: "image", provider })}
+          connections={apiKeyConnections ?? []}
+          onChanged={invalidateConnections}
+          currentDefaultConnectionId={providerDefaults?.default_image_connection_id}
+          onSetDefault={(connectionId) => setDefaultMut.mutate({ kind: "image", connectionId })}
         />
         <GenerationProvidersCard
           title="Copy Generation"
@@ -182,10 +198,10 @@ function IntegrationsPage() {
             </>
           }
           providers={COPY_GEN_PROVIDERS}
-          integrationsData={data}
-          onChanged={() => qc.invalidateQueries({ queryKey: ["integrations"] })}
-          currentDefault={providerDefaults?.default_copy_provider}
-          onSetDefault={(provider) => setDefaultMut.mutate({ kind: "copy", provider })}
+          connections={apiKeyConnections ?? []}
+          onChanged={invalidateConnections}
+          currentDefaultConnectionId={providerDefaults?.default_copy_connection_id}
+          onSetDefault={(connectionId) => setDefaultMut.mutate({ kind: "copy", connectionId })}
         />
         <IntegrationCard
           provider="apify"
@@ -327,7 +343,7 @@ function CollapsibleSection(props: { open: boolean; children: React.ReactNode })
 
 
 type GenProviderField = { name: string; label: string; placeholder?: string; type: "text" | "password" };
-type GenProviderMeta = {
+export type GenProviderMeta = {
   provider: Provider;
   title: string;
   fields: GenProviderField[];
@@ -347,7 +363,7 @@ type GenProviderMeta = {
 // Banana 2 (google/nano-banana-2) -- unchanged from before this card
 // existed. Adding a future provider is one entry in this array plus a
 // branch in pin-render.server.ts, never a new top-level card.
-const IMAGE_GEN_PROVIDERS: GenProviderMeta[] = [
+export const IMAGE_GEN_PROVIDERS: GenProviderMeta[] = [
   {
     provider: "replicate", title: "Nano Banana 2 (Replicate)",
     fields: [{ name: "api_token", label: "API token", placeholder: "r8_…", type: "password" }],
@@ -394,56 +410,54 @@ const IMAGE_GEN_PROVIDERS: GenProviderMeta[] = [
 
 // Copy Generation providers -- write pin titles/taglines/CTAs. OpenAI
 // appears in both this card and Image Generation above -- it's the same
-// underlying credential/row either way (one OpenAI API key covers both
-// uses in this app), so expanding either row edits the same integration.
-const COPY_GEN_PROVIDERS: GenProviderMeta[] = [
+// PROVIDER either way, but as of the multi-connection pass, each card
+// only ever offers/lists that provider's connections relevant to the
+// generation kind it's showing -- a single OpenAI connection can be
+// picked as the default (or a site's override) for image OR copy
+// independently, expanding either row lists the same underlying
+// connections.
+export const COPY_GEN_PROVIDERS: GenProviderMeta[] = [
   { provider: "openai", title: "OpenAI", fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }] },
   { provider: "anthropic", title: "Anthropic (Claude)", fields: [{ name: "api_key", label: "API key", placeholder: "sk-ant-…", type: "password" }] },
 ];
 
-// One row per provider -- collapsed by default (icon, name,
-// Connected/Not configured status, quiet expand link), expandable to
-// that provider's own API-key field + Save/Test/Clear, matching the
-// exact CollapsibleSection + status-badge pattern PinterestConnectionRow
-// already established for the Pinterest-accounts list, just scoped to a
-// single API-key credential instead of publish_mode/webhook_url.
-function GenerationProviderRow({
-  meta, status, onChanged,
+// One row per CONNECTION (a specific labeled key) -- collapsed by
+// default (label, status, quiet expand link), expandable to rotate
+// that connection's own credential + Test/Delete. A provider can now
+// have several of these (ProviderKeyGroup below renders one per
+// connection, e.g. two separate OpenAI keys for two different
+// clients), unlike the old one-row-per-provider model this replaces.
+// Reuses the exact CollapsibleSection + status-badge pattern
+// PinterestConnectionRow already established, just scoped to one
+// API-key credential instead of publish_mode/webhook_url.
+function ApiKeyConnectionRow({
+  connection, meta, onChanged,
 }: {
+  connection: ApiKeyConnectionSummary;
   meta: GenProviderMeta;
-  status?: { status: string; last_error?: string | null; has_value?: boolean };
   onChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [label, setLabel] = useState(connection.label);
   const [vals, setVals] = useState<Record<string, string>>({});
-  const save = useServerFn(saveIntegration);
-  const test = useServerFn(testIntegration);
-  const del = useServerFn(deleteIntegration);
-
-  // Editable per-provider notes -- kept in localStorage (same lightweight
-  // per-user preference pattern PinShell's sidebar-collapse state and
-  // site-context.tsx's selected-site already use in this app), not the
-  // encrypted `integrations` row: notes aren't secret, and that row can
-  // be deleted entirely by "Clear" -- persisting a note there would lose
-  // it the moment a key is cleared, which isn't what an editable
-  // reference note should do.
-  const notesKey = `pinspider_provider_note_${meta.provider}`;
-  const [note, setNote] = useState(() => {
-    if (typeof window === "undefined") return meta.defaultNote ?? "";
-    return window.localStorage.getItem(notesKey) ?? meta.defaultNote ?? "";
-  });
-  function saveNote(v: string) {
-    setNote(v);
-    if (typeof window !== "undefined") window.localStorage.setItem(notesKey, v);
-  }
+  const update = useServerFn(updateApiKeyConnection);
+  const rename = useServerFn(renameApiKeyConnection);
+  const test = useServerFn(testApiKeyConnection);
+  const del = useServerFn(deleteApiKeyConnection);
 
   const saveMut = useMutation({
-    mutationFn: () => save({ data: { provider: meta.provider, config: Object.fromEntries(Object.entries(vals).filter(([, v]) => v)) } }),
+    mutationFn: () => update({ data: { id: connection.id, config: Object.fromEntries(Object.entries(vals).filter(([, v]) => v)) } }),
     onSuccess: () => { toast.success("Saved"); setVals({}); onChanged(); },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
+  const renameMut = useMutation({
+    mutationFn: () => rename({ data: { id: connection.id, label: label.trim() || connection.label } }),
+    onSuccess: () => { toast.success("Renamed"); setRenaming(false); onChanged(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
   const testMut = useMutation({
-    mutationFn: () => test({ data: { provider: meta.provider } }),
+    mutationFn: () => test({ data: { id: connection.id } }),
     onSuccess: (r) => {
       const prefix = "Testing saved credential — ";
       r.ok ? toast.success(prefix + r.message) : toast.error(prefix + r.message);
@@ -452,26 +466,44 @@ function GenerationProviderRow({
     onError: (e) => toast.error(getErrorMessage(e)),
   });
   const delMut = useMutation({
-    mutationFn: () => del({ data: { provider: meta.provider } }),
-    onSuccess: () => { toast.success("Cleared"); onChanged(); },
+    mutationFn: () => del({ data: { id: connection.id } }),
+    onSuccess: () => { toast.success("Deleted"); onChanged(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
   });
-
-  const statusVal = status?.status ?? "unconfigured";
-  const hasValue = status?.has_value ?? false;
 
   return (
     <div className="rounded-md border px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white" style={{ background: "#6B7280" }} aria-hidden>
-            <KeyRound className="h-3.5 w-3.5" />
-          </span>
-          <div className="min-w-0 truncate text-sm font-medium">{meta.title}</div>
+        <div className="min-w-0 flex-1">
+          {renaming ? (
+            <form
+              onSubmit={(e) => { e.preventDefault(); renameMut.mutate(); }}
+              className="flex items-center gap-1.5"
+            >
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-7 max-w-[12rem] text-xs" autoFocus />
+              <Button type="submit" size="sm" className="h-7 px-2 text-xs" disabled={renameMut.isPending}>Save</Button>
+              <Button
+                type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                onClick={() => { setRenaming(false); setLabel(connection.label); }}
+              >
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="truncate text-left text-sm font-medium underline-offset-2 hover:underline"
+              onClick={() => setRenaming(true)}
+              title="Click to rename this key"
+            >
+              {connection.label}
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {statusVal === "ok" ? (
+          {connection.status === "ok" ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3 w-3" />Connected</span>
-          ) : statusVal === "error" ? (
+          ) : connection.status === "error" ? (
             <span className="flex items-center gap-1 text-xs text-destructive"><AlertCircle className="h-3 w-3" />Error</span>
           ) : (
             <span className="text-xs text-muted-foreground">Not configured</span>
@@ -485,78 +517,227 @@ function GenerationProviderRow({
       <CollapsibleSection open={expanded}>
         <div className="mt-3 space-y-3 border-t pt-3">
           <form onSubmit={(e) => { e.preventDefault(); saveMut.mutate(); }} className="space-y-3">
-            {meta.fields.map((f) => {
-              const placeholder = f.type === "password" && hasValue && !vals[f.name]
-                ? "•••••••• (saved — leave blank to keep)"
-                : f.placeholder;
-              return (
-                <div key={f.name}>
-                  <Label>{f.label}</Label>
-                  <Input
-                    type={f.type}
-                    placeholder={placeholder}
-                    value={vals[f.name] ?? ""}
-                    onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
-                    autoComplete="new-password"
-                  />
-                </div>
-              );
-            })}
+            {meta.fields.map((f) => (
+              <div key={f.name}>
+                <Label>{f.label}</Label>
+                <Input
+                  type={f.type}
+                  placeholder="•••••••• (saved — leave blank to keep)"
+                  value={vals[f.name] ?? ""}
+                  onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
+                  autoComplete="new-password"
+                />
+              </div>
+            ))}
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" size="sm" disabled={saveMut.isPending}>Save</Button>
+              <Button type="submit" size="sm" disabled={saveMut.isPending}>Save new key</Button>
               <Button type="button" size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
                 <Beaker className="mr-1 h-4 w-4" />Test
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => delMut.mutate()}>
-                <Trash2 className="mr-1 h-4 w-4" />Clear
+              <Button type="button" size="sm" variant="ghost" onClick={() => delMut.mutate()} disabled={delMut.isPending}>
+                <Trash2 className="mr-1 h-4 w-4" />Delete
               </Button>
             </div>
-            {status?.last_error && <p className="text-xs text-destructive">{status.last_error}</p>}
+            {connection.last_error && <p className="text-xs text-destructive">{connection.last_error}</p>}
           </form>
-
-          {meta.compositingNote && <p className="text-xs text-muted-foreground">{meta.compositingNote}</p>}
-
-          <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <Label className="text-xs">Notes</Label>
-              <InfoTooltip text="Your own reference notes on this provider -- e.g. which templates it renders best. Saved locally to this browser, not shared across devices." />
-            </div>
-            <Textarea
-              value={note}
-              onChange={(e) => saveNote(e.target.value)}
-              rows={2}
-              className="text-xs"
-              placeholder="Notes on this provider…"
-            />
-          </div>
         </div>
       </CollapsibleSection>
     </div>
   );
 }
 
+// Inline "+ Add another key" form -- creates a brand NEW connection for
+// this provider, distinct from ApiKeyConnectionRow's own Save (which
+// rotates an EXISTING connection's credential in place).
+function AddKeyForm({
+  meta, onDone, onCancel,
+}: {
+  meta: GenProviderMeta;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const add = useServerFn(addApiKeyConnection);
+
+  const addMut = useMutation({
+    mutationFn: () => add({ data: { provider: meta.provider, label: label.trim() || "My key", config: vals } }),
+    onSuccess: () => { toast.success("Key added"); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); addMut.mutate(); }} className="space-y-3 rounded-md border border-dashed px-3 py-3">
+      <div>
+        <Label className="text-xs">Label</Label>
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={`e.g. "Client A's key"`}
+          className="h-8 text-xs"
+        />
+      </div>
+      {meta.fields.map((f) => (
+        <div key={f.name}>
+          <Label className="text-xs">{f.label}</Label>
+          <Input
+            type={f.type}
+            placeholder={f.placeholder}
+            value={vals[f.name] ?? ""}
+            onChange={(e) => setVals((v) => ({ ...v, [f.name]: e.target.value }))}
+            autoComplete="new-password"
+            className="h-8 text-xs"
+          />
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={addMut.isPending}>Save key</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+      </div>
+    </form>
+  );
+}
+
+// Minimal single-provider connection manager for onboarding's
+// first-run setup (StepIntegrations, routes/onboarding.tsx) -- reuses
+// the exact same ApiKeyConnectionRow/AddKeyForm the consolidated cards
+// below use, scoped to one provider at a time, so the very first key
+// a brand-new account saves (or adds later, revisiting the step) is a
+// real api_key_connections row, not a parallel one-off form. Starts
+// with the add form already open when there's no existing connection
+// yet, since that's the only thing to do on a fresh account.
+export function FirstApiKeySetup({
+  meta, connections, onChanged,
+}: {
+  meta: GenProviderMeta;
+  connections: ApiKeyConnectionSummary[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(connections.length === 0);
+  return (
+    <div className="space-y-2">
+      {connections.map((c) => (
+        <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} onChanged={onChanged} />
+      ))}
+      {adding ? (
+        <AddKeyForm
+          meta={meta}
+          onDone={() => { setAdding(false); onChanged(); }}
+          onCancel={() => setAdding(false)}
+        />
+      ) : (
+        <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+          <Plus className="mr-1 h-4 w-4" />Add another key
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// One provider group -- icon/title/compositing-note header, the list
+// of THIS provider's connections (0, 1, or several), "+ Add another
+// key," and the provider-level Notes field (unchanged from the old
+// GenerationProviderRow -- notes describe the model's characteristics,
+// not any one key, so they stay keyed by provider, not by connection).
+function ProviderKeyGroup({
+  meta, connections, onChanged,
+}: {
+  meta: GenProviderMeta;
+  connections: ApiKeyConnectionSummary[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+
+  // Same lightweight per-user preference pattern PinShell's sidebar-
+  // collapse state and site-context.tsx's selected-site already use --
+  // not the encrypted table, since notes aren't secret and shouldn't
+  // vanish just because a specific key gets deleted.
+  const notesKey = `pinspider_provider_note_${meta.provider}`;
+  const [note, setNote] = useState(() => {
+    if (typeof window === "undefined") return meta.defaultNote ?? "";
+    return window.localStorage.getItem(notesKey) ?? meta.defaultNote ?? "";
+  });
+  function saveNote(v: string) {
+    setNote(v);
+    if (typeof window !== "undefined") window.localStorage.setItem(notesKey, v);
+  }
+
+  return (
+    <div className="rounded-md border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white" style={{ background: "#6B7280" }} aria-hidden>
+            <KeyRound className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 truncate text-sm font-medium">{meta.title}</div>
+        </div>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {connections.length > 0 ? `${connections.length} key${connections.length > 1 ? "s" : ""}` : "Not configured"}
+        </span>
+      </div>
+
+      {meta.compositingNote && <p className="mt-1.5 text-xs text-muted-foreground">{meta.compositingNote}</p>}
+
+      {connections.length > 0 && (
+        <div className="mt-2.5 space-y-2">
+          {connections.map((c) => (
+            <ApiKeyConnectionRow key={c.id} connection={c} meta={meta} onChanged={onChanged} />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2.5">
+        {adding ? (
+          <AddKeyForm meta={meta} onDone={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
+        ) : (
+          <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            {connections.length > 0 ? "Add another key" : "Add key"}
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-2.5">
+        <div className="mb-1 flex items-center gap-1.5">
+          <Label className="text-xs">Notes</Label>
+          <InfoTooltip text="Your own reference notes on this provider -- e.g. which templates it renders best. Saved locally to this browser, not shared across devices." />
+        </div>
+        <Textarea
+          value={note}
+          onChange={(e) => saveNote(e.target.value)}
+          rows={2}
+          className="text-xs"
+          placeholder="Notes on this provider…"
+        />
+      </div>
+    </div>
+  );
+}
+
 // Card shell shared by Image Generation and Copy Generation -- same
 // Card/header/status-badge/description shape as PinterestConnectionsCard
-// below, just listing GenerationProviderRow instead of
-// PinterestConnectionRow.
+// below, just listing ProviderKeyGroup instead of PinterestConnectionRow.
 function GenerationProvidersCard({
-  title, description, providers, integrationsData, onChanged, currentDefault, onSetDefault,
+  title, description, providers, connections, onChanged, currentDefaultConnectionId, onSetDefault,
 }: {
   title: string;
   description: ReactNode;
   providers: GenProviderMeta[];
-  integrationsData?: { provider: string; status: string; last_error?: string | null; has_value?: boolean }[];
+  connections: ApiKeyConnectionSummary[];
   onChanged: () => void;
-  // Account-level default for this card's provider kind (image or
-  // copy) -- per-site overrides (ProviderOverrideCard, sites.tsx) fall
-  // back to whatever this is set to. Only connected providers are
-  // offered as a default (can't default an account to a provider with
-  // no credential behind it).
-  currentDefault?: string;
-  onSetDefault: (provider: string) => void;
+  // Account-level default CONNECTION for this card's generation kind
+  // (image or copy) -- per-site overrides (ProviderOverrideCard,
+  // sites.tsx) fall back to whatever this is set to. Flattened across
+  // every provider in this card, so "OpenAI (My key)" and "OpenAI
+  // (Client A's key)" are both selectable independently even though
+  // they're the same provider.
+  currentDefaultConnectionId?: string | null;
+  onSetDefault: (connectionId: string) => void;
 }) {
-  const connectedProviders = providers.filter((p) => integrationsData?.find((i) => i.provider === p.provider)?.has_value);
-  const connectedCount = connectedProviders.length;
+  const providerTitle: Record<string, string> = Object.fromEntries(providers.map((p) => [p.provider, p.title]));
+  const relevantConnections = connections.filter((c) => providers.some((p) => p.provider === c.provider));
+  const connectedCount = relevantConnections.length;
+
   return (
     <Card className="p-6">
       <div className="mb-2 flex items-center justify-between">
@@ -565,19 +746,19 @@ function GenerationProvidersCard({
           <h3 className="text-lg font-semibold">{title}</h3>
         </div>
         <Badge variant={connectedCount > 0 ? "default" : "secondary"}>
-          {connectedCount > 0 ? <><CheckCircle2 className="mr-1 h-3 w-3" />{connectedCount} connected</> : "Not configured"}
+          {connectedCount > 0 ? <><CheckCircle2 className="mr-1 h-3 w-3" />{connectedCount} key{connectedCount > 1 ? "s" : ""}</> : "Not configured"}
         </Badge>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">{description}</p>
 
       {connectedCount > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <Label className="shrink-0 text-xs font-medium text-muted-foreground">Default provider</Label>
-          <Select value={currentDefault} onValueChange={onSetDefault}>
-            <SelectTrigger className="h-8 flex-1 text-xs"><SelectValue /></SelectTrigger>
+          <Label className="shrink-0 text-xs font-medium text-muted-foreground">Default key</Label>
+          <Select value={currentDefaultConnectionId ?? undefined} onValueChange={onSetDefault}>
+            <SelectTrigger className="h-8 flex-1 text-xs"><SelectValue placeholder="Choose a default…" /></SelectTrigger>
             <SelectContent>
-              {connectedProviders.map((p) => (
-                <SelectItem key={p.provider} value={p.provider}>{p.title}</SelectItem>
+              {relevantConnections.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{providerTitle[c.provider]} ({c.label})</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -587,10 +768,10 @@ function GenerationProvidersCard({
 
       <div className="space-y-2">
         {providers.map((p) => (
-          <GenerationProviderRow
+          <ProviderKeyGroup
             key={p.provider}
             meta={p}
-            status={integrationsData?.find((i) => i.provider === p.provider)}
+            connections={connections.filter((c) => c.provider === p.provider)}
             onChanged={onChanged}
           />
         ))}

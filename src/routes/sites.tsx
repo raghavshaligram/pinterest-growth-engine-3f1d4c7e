@@ -33,7 +33,8 @@ import { InfoTooltip } from "@/components/InfoTooltip";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
-import { listIntegrations } from "@/lib/integrations.functions";
+import { listApiKeyConnections } from "@/lib/api-key-connections.functions";
+import type { ApiKeyConnectionSummary } from "@/lib/api-key-connections.server";
 import { getAccountProviderDefaults } from "@/lib/account-provider-defaults.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
@@ -445,20 +446,21 @@ export function BrandEditorFields({
   );
 }
 
-// Which image/copy providers this account has actually connected
-// (Settings -> Integrations) -- both BrandEditorFields pickers filter
-// against this so a site can never be silently pointed at a provider
-// with no credential behind it. Shared here (rather than each of
-// AddSiteWizard/SiteCard querying independently) since it's the same
-// account-wide ["integrations"] query key settings.integrations.tsx
-// already uses -- React Query dedupes the actual network call.
-function useConnectedProviders() {
-  const list = useServerFn(listIntegrations);
-  const { data } = useQuery({ queryKey: ["integrations"], queryFn: () => list() });
-  const configured = new Set((data ?? []).filter((i) => i.has_value).map((i) => i.provider));
-  const connectedImageProviders = new Set(IMAGE_PROVIDERS.filter((p) => configured.has(p)));
-  const connectedCopyProviders = new Set(COPY_PROVIDERS.filter((p) => configured.has(p)));
-  return { connectedImageProviders, connectedCopyProviders };
+// This account's actual API-key connections (Settings -> Integrations)
+// -- the per-site override picker (ProviderOverrideCard) filters
+// against this so a site can never be silently pointed at a
+// connection it doesn't own (or that's since been deleted). Shared
+// here (rather than each of AddSiteWizard/SiteCard querying
+// independently) since it's the same account-wide
+// ["api-key-connections"] query key settings.integrations.tsx already
+// uses -- React Query dedupes the actual network call.
+function useApiKeyConnections() {
+  const list = useServerFn(listApiKeyConnections);
+  const { data } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => list() });
+  const connections = data ?? [];
+  const imageConnections = connections.filter((c) => (IMAGE_PROVIDERS as readonly string[]).includes(c.provider));
+  const copyConnections = connections.filter((c) => (COPY_PROVIDERS as readonly string[]).includes(c.provider));
+  return { imageConnections, copyConnections };
 }
 
 // ---------- Add-site wizard ----------
@@ -725,7 +727,7 @@ function SiteConnectionsSection({
   site: SiteOverviewRow;
   onSaved: () => void;
 }) {
-  const { connectedImageProviders, connectedCopyProviders } = useConnectedProviders();
+  const { imageConnections, copyConnections } = useApiKeyConnections();
   const getDefaults = useServerFn(getAccountProviderDefaults);
   const { data: defaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
 
@@ -737,53 +739,56 @@ function SiteConnectionsSection({
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
         <ProviderOverrideCard
           site={site} onSaved={onSaved} kind="image"
-          accountDefault={defaults?.default_image_provider ?? null}
-          connected={connectedImageProviders}
-          currentOverride={site.image_provider_override}
+          accountDefaultConnectionId={defaults?.default_image_connection_id ?? null}
+          connections={imageConnections}
+          currentOverrideConnectionId={site.image_connection_override_id}
         />
         <ProviderOverrideCard
           site={site} onSaved={onSaved} kind="copy"
-          accountDefault={defaults?.default_copy_provider ?? null}
-          connected={connectedCopyProviders}
-          currentOverride={site.copy_provider_override}
+          accountDefaultConnectionId={defaults?.default_copy_connection_id ?? null}
+          connections={copyConnections}
+          currentOverrideConnectionId={site.copy_connection_override_id}
         />
       </div>
     </div>
   );
 }
 
-// Per-site override for image/copy generation provider -- defaults to
-// "Use account default," an explicit choice pins this specific site
-// regardless of the account default (set in Settings -> Integrations'
-// "Default provider" selector, GenerationProvidersCard). Styled exactly
-// like PinterestSiteConnectionCard/GoogleAnalyticsConnectionCard right
+// Per-site override for image/copy generation -- defaults to "Use
+// account default," an explicit choice pins this specific site to a
+// SPECIFIC connected key (not just a provider) regardless of the
+// account default -- "OpenAI (Client A's key)" on one site, "OpenAI
+// (My key)" on another, both distinct even though they're the same
+// provider. Set in Settings -> Integrations' "Default key" selector
+// (GenerationProvidersCard). Styled exactly like
+// PinterestSiteConnectionCard/GoogleAnalyticsConnectionCard right
 // above (same rounded-lg border card, same status-dot + label row,
 // same "editing" toggle showing a row of choice buttons) per spec --
 // this is a Connections-section control, not a Brand-settings form.
 function ProviderOverrideCard({
-  site, onSaved, kind, accountDefault, connected, currentOverride,
+  site, onSaved, kind, accountDefaultConnectionId, connections, currentOverrideConnectionId,
 }: {
   site: SiteOverviewRow;
   onSaved: () => void;
   kind: "image" | "copy";
-  accountDefault: string | null;
-  connected: ReadonlySet<string>;
-  currentOverride: string | null;
+  accountDefaultConnectionId: string | null;
+  connections: ApiKeyConnectionSummary[];
+  currentOverrideConnectionId: string | null;
 }) {
   const upsert = useServerFn(upsertSite);
   const [editing, setEditing] = useState(false);
-  const options: readonly string[] = kind === "image" ? IMAGE_PROVIDERS : COPY_PROVIDERS;
   const labels: Record<string, string> = kind === "image" ? IMAGE_PROVIDER_LABELS : COPY_PROVIDER_LABELS;
   const title = kind === "image" ? "Image generation" : "Copy generation";
+  const connectionLabel = (c: ApiKeyConnectionSummary) => `${labels[c.provider] ?? c.provider} (${c.label})`;
 
   const saveMut = useMutation({
-    mutationFn: (provider: string | null) =>
+    mutationFn: (connectionId: string | null) =>
       upsert({
         data: {
           id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined, site_type: site.site_type,
           ...(kind === "image"
-            ? { image_provider_override: provider as ImageProvider | null }
-            : { copy_provider_override: provider as CopyProvider | null }),
+            ? { image_connection_override_id: connectionId }
+            : { copy_connection_override_id: connectionId }),
         },
       }),
     onSuccess: () => {
@@ -794,9 +799,14 @@ function ProviderOverrideCard({
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  const overridden = Boolean(currentOverride);
-  const defaultLabel = accountDefault ? labels[accountDefault] : undefined;
-  const connectedOptions = options.filter((p) => connected.has(p));
+  const overridden = Boolean(currentOverrideConnectionId);
+  const accountDefaultConnection = accountDefaultConnectionId
+    ? connections.find((c) => c.id === accountDefaultConnectionId)
+    : undefined;
+  const currentOverrideConnection = currentOverrideConnectionId
+    ? connections.find((c) => c.id === currentOverrideConnectionId)
+    : undefined;
+  const defaultLabel = accountDefaultConnection ? connectionLabel(accountDefaultConnection) : undefined;
 
   return (
     <div className="rounded-lg border border-border p-3">
@@ -816,7 +826,9 @@ function ProviderOverrideCard({
       {!editing && (
         <>
           <p className="mb-2 text-xs text-muted-foreground">
-            Using {overridden ? labels[currentOverride as string] : (defaultLabel ?? "…")}
+            Using {overridden
+              ? (currentOverrideConnection ? connectionLabel(currentOverrideConnection) : "a key that's since been removed -- pick another")
+              : (defaultLabel ?? "…")}
             {!overridden && defaultLabel ? " (account default)" : ""}
           </p>
           <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setEditing(true)}>
@@ -831,28 +843,28 @@ function ProviderOverrideCard({
             <button
               type="button" onClick={() => saveMut.mutate(null)} disabled={saveMut.isPending}
               className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
-              style={{ borderColor: !currentOverride ? "#E60023" : "#E5E5E5", borderWidth: !currentOverride ? 2 : 1, background: !currentOverride ? "#FCE9EA" : "transparent" }}
+              style={{ borderColor: !currentOverrideConnectionId ? "#E60023" : "#E5E5E5", borderWidth: !currentOverrideConnectionId ? 2 : 1, background: !currentOverrideConnectionId ? "#FCE9EA" : "transparent" }}
             >
-              {!currentOverride && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
+              {!currentOverrideConnectionId && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
               Use account default{defaultLabel ? ` (${defaultLabel})` : ""}
             </button>
-            {connectedOptions.map((p) => {
-              const active = currentOverride === p;
+            {connections.map((c) => {
+              const active = currentOverrideConnectionId === c.id;
               return (
                 <button
-                  key={p} type="button" onClick={() => saveMut.mutate(p)} disabled={saveMut.isPending}
+                  key={c.id} type="button" onClick={() => saveMut.mutate(c.id)} disabled={saveMut.isPending}
                   className="rounded-md border px-2 py-1 text-left text-xs transition-colors hover:border-neutral-400"
                   style={{ borderColor: active ? "#E60023" : "#E5E5E5", borderWidth: active ? 2 : 1, background: active ? "#FCE9EA" : "transparent" }}
                 >
                   {active && <Check className="mr-1 inline h-3 w-3" style={{ color: "#E60023" }} />}
-                  {labels[p]}
+                  {connectionLabel(c)}
                 </button>
               );
             })}
           </div>
-          {connectedOptions.length === 0 && (
+          {connections.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No other providers connected yet --{" "}
+              No {kind === "image" ? "image generation" : "copy generation"} keys connected yet --{" "}
               <Link to="/settings/integrations" className="underline underline-offset-2 hover:text-foreground">connect one</Link>{" "}
               to override this site.
             </p>

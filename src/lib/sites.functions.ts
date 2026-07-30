@@ -76,15 +76,17 @@ export type SiteOverviewRow = {
   brand_colors: string[] | null;
   brand_font: string | null;
   brand_notes: string | null;
-  // Nullable -- null means "inherit the account-level default"
-  // (account_provider_defaults), a real value pins this site to that
-  // provider regardless of the account default. Resolved via
-  // resolveImageProvider/resolveCopyProvider (provider-resolution.server.ts)
-  // at actual generation time, never read directly. Set via the
-  // per-site override control in the Connections section
-  // (ProviderOverrideCard, sites.tsx), not Brand settings.
-  image_provider_override: ImageProvider | null;
-  copy_provider_override: CopyProvider | null;
+  // Nullable -- null means "inherit the account-level default
+  // connection" (account_provider_defaults), a real value pins this
+  // site to that SPECIFIC api_key_connections row regardless of the
+  // account default (or any other connection for that same provider).
+  // Resolved via resolveImageConnection/resolveCopyConnection
+  // (provider-resolution.server.ts) at actual generation time, never
+  // read directly. Set via the per-site override control in the
+  // Connections section (ProviderOverrideCard, sites.tsx), not Brand
+  // settings.
+  image_connection_override_id: string | null;
+  copy_connection_override_id: string | null;
   // DB-level NOT NULL (auto-derived by tg_sites_default_vertical when
   // not explicitly set at insert) -- see the vertical selector in
   // BrandEditorFields, which is website-only; etsy/ecomm sites carry
@@ -207,7 +209,7 @@ export const upsertSite = createServerFn({ method: "POST" })
     id?: string; url: string; sitemap_url?: string; timezone?: string;
     site_type?: SiteType; brand_name?: string; tagline?: string;
     accent_color?: string; brand_colors?: string[]; brand_font?: string; brand_notes?: string;
-    image_provider_override?: ImageProvider | null; copy_provider_override?: CopyProvider | null; vertical?: SiteVertical;
+    image_connection_override_id?: string | null; copy_connection_override_id?: string | null; vertical?: SiteVertical;
     google_connection_id?: string | null; ga4_property_id?: string | null; ga4_property_label?: string | null;
     pinterest_connection_id?: string | null;
   }) =>
@@ -223,8 +225,8 @@ export const upsertSite = createServerFn({ method: "POST" })
       brand_colors: z.array(z.string()).optional(),
       brand_font: z.string().optional(),
       brand_notes: z.string().optional(),
-      image_provider_override: z.enum(IMAGE_PROVIDERS).nullable().optional(),
-      copy_provider_override: z.enum(COPY_PROVIDERS).nullable().optional(),
+      image_connection_override_id: z.string().uuid().nullable().optional(),
+      copy_connection_override_id: z.string().uuid().nullable().optional(),
       // sites.vertical is a plain `text` column at the DB level (no
       // CHECK constraint/enum -- see the pin_gen_vertical_followup
       // migration's own comment), so this zod enum is the only real
@@ -249,6 +251,22 @@ export const upsertSite = createServerFn({ method: "POST" })
     }).parse(i),
   )
   .handler(async ({ data, context }) => {
+    // A site's provider override must be a connection this account
+    // actually owns, and must be a valid provider for that kind (e.g.
+    // an Anthropic-only key can't be an image override) -- this write
+    // goes through the user's own RLS-scoped session (not
+    // supabaseAdmin), but sites' own RLS policy only checks
+    // user_id = auth.uid() on the SITE, not on the referenced
+    // connection id, so a crafted request could otherwise name any
+    // connection id that exists in the table.
+    if (data.image_connection_override_id) {
+      const { verifyConnectionOwnership } = await import("@/lib/api-key-connections.server");
+      await verifyConnectionOwnership(data.image_connection_override_id, context.userId, IMAGE_PROVIDERS);
+    }
+    if (data.copy_connection_override_id) {
+      const { verifyConnectionOwnership } = await import("@/lib/api-key-connections.server");
+      await verifyConnectionOwnership(data.copy_connection_override_id, context.userId, COPY_PROVIDERS);
+    }
     const row = { ...data, user_id: context.userId };
     const { data: out, error } = await context.supabase.from("sites").upsert(row as never).select().single();
     if (error) throwPgError(error);
