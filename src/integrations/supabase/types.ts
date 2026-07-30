@@ -746,17 +746,21 @@ export type Database = {
           brand_name: string | null
           brand_notes: string | null
           created_at: string
+          display_mode: string
           ga4_property_id: string | null
           ga4_property_label: string | null
           google_connection_id: string | null
           id: string
           image_provider: string
           logo_placement: string
+          logo_url: string | null
+          name_mode: string
           pinterest_connection_id: string | null
           recent_styles: Json
           settings: Json
           site_type: Database["public"]["Enums"]["site_type"]
           sitemap_url: string | null
+          style_locked_at: string | null
           tagline: string | null
           timezone: string
           updated_at: string
@@ -771,17 +775,21 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
+          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
           google_connection_id?: string | null
           id?: string
           image_provider?: string
           logo_placement?: string
+          logo_url?: string | null
+          name_mode?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
+          style_locked_at?: string | null
           tagline?: string | null
           timezone?: string
           updated_at?: string
@@ -796,17 +804,21 @@ export type Database = {
           brand_name?: string | null
           brand_notes?: string | null
           created_at?: string
+          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
           google_connection_id?: string | null
           id?: string
           image_provider?: string
           logo_placement?: string
+          logo_url?: string | null
+          name_mode?: string
           pinterest_connection_id?: string | null
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
           sitemap_url?: string | null
+          style_locked_at?: string | null
           tagline?: string | null
           timezone?: string
           updated_at?: string

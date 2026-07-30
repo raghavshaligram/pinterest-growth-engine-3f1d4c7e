@@ -24,6 +24,7 @@ import { Route as SitesRouteImport } from './routes/sites'
 import { Route as PagesIndexRouteImport } from './routes/pages.index'
 import { Route as PagesIdRouteImport } from './routes/pages.$id'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as SitesStyleSetupRouteImport } from './routes/sites.style-setup'
 import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
 import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
 import { Route as ApiPublicCronMaterializeRouteImport } from './routes/api/public/cron/materialize'
@@ -109,6 +110,11 @@ const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
   path: '/settings/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SitesStyleSetupRoute = SitesStyleSetupRouteImport.update({
+  id: '/style-setup',
+  path: '/style-setup',
+  getParentRoute: () => SitesRoute,
+} as any)
 const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
   id: '/api/public/cron/crawl',
   path: '/api/public/cron/crawl',
@@ -170,9 +176,10 @@ export interface FileRoutesByFullPath {
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/sites': typeof SitesRoute
+  '/sites': typeof SitesRouteWithChildren
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/sites/style-setup': typeof SitesStyleSetupRoute
   '/pages/': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
@@ -196,9 +203,10 @@ export interface FileRoutesByTo {
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/sites': typeof SitesRoute
+  '/sites': typeof SitesRouteWithChildren
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/sites/style-setup': typeof SitesStyleSetupRoute
   '/pages': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
@@ -223,9 +231,10 @@ export interface FileRoutesById {
   '/pins': typeof PinsRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/sites': typeof SitesRoute
+  '/sites': typeof SitesRouteWithChildren
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/sites/style-setup': typeof SitesStyleSetupRoute
   '/pages/': typeof PagesIndexRoute
   '/api/public/cron/crawl': typeof ApiPublicCronCrawlRoute
   '/api/public/cron/images': typeof ApiPublicCronImagesRoute
@@ -254,6 +263,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
+    | '/sites/style-setup'
     | '/pages/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
@@ -280,6 +290,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
+    | '/sites/style-setup'
     | '/pages'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
@@ -306,6 +317,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/pages/$id'
     | '/settings/integrations'
+    | '/sites/style-setup'
     | '/pages/'
     | '/api/public/cron/crawl'
     | '/api/public/cron/images'
@@ -330,7 +342,7 @@ export interface RootRouteChildren {
   PinsRoute: typeof PinsRoute
   ScheduleRoute: typeof ScheduleRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  SitesRoute: typeof SitesRoute
+  SitesRoute: typeof SitesRouteWithChildren
   PagesIdRoute: typeof PagesIdRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   PagesIndexRoute: typeof PagesIndexRoute
@@ -452,6 +464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sites/style-setup': {
+      id: '/sites/style-setup'
+      path: '/style-setup'
+      fullPath: '/sites/style-setup'
+      preLoaderRoute: typeof SitesStyleSetupRouteImport
+      parentRoute: typeof SitesRoute
+    }
     '/api/public/cron/crawl': {
       id: '/api/public/cron/crawl'
       path: '/api/public/cron/crawl'
@@ -518,6 +537,16 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SitesRouteChildren {
+  SitesStyleSetupRoute: typeof SitesStyleSetupRoute
+}
+
+const SitesRouteChildren: SitesRouteChildren = {
+  SitesStyleSetupRoute: SitesStyleSetupRoute,
+}
+
+const SitesRouteWithChildren = SitesRoute._addFileChildren(SitesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
@@ -530,7 +559,7 @@ const rootRouteChildren: RootRouteChildren = {
   PinsRoute: PinsRoute,
   ScheduleRoute: ScheduleRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  SitesRoute: SitesRoute,
+  SitesRoute: SitesRouteWithChildren,
   PagesIdRoute: PagesIdRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   PagesIndexRoute: PagesIndexRoute,
@@ -548,3 +577,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
