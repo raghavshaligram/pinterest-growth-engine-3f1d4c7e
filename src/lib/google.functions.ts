@@ -10,10 +10,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 // several Google accounts under one Pinspider login.
 export const startGoogleOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i?: { returnTo?: "settings" | "onboarding" }) =>
+    z.object({ returnTo: z.enum(["settings", "onboarding"]).default("settings") }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { googleAppConfig, signState, buildAuthorizeUrl } = await import("./google-oauth.server");
     const { clientId, redirectUri } = googleAppConfig();
-    const state = signState(context.userId);
+    const state = signState(context.userId, data.returnTo);
     return { authorizeUrl: buildAuthorizeUrl({ clientId, redirectUri, state }) };
   });
 

@@ -199,7 +199,7 @@ export function PinShell({
 // is deliberately excluded: it's both "onboarding, accessible again
 // later" per the spec, and the Pinterest OAuth callback's landing page
 // when a connect was started from inside the wizard (see
-// StepIntegrations in routes/onboarding.tsx) -- redirecting away from it
+// StepPinterest in routes/onboarding.tsx) -- redirecting away from it
 // the instant it renders would yank a user off the very page confirming
 // their Pinterest connection before they see it.
 function OnboardingRedirectGuard() {

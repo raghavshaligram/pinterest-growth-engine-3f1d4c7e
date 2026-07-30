@@ -49,7 +49,7 @@ export function useSetupGate() {
 }
 
 // "Generate your first batch" -- the one action shared by the
-// onboarding wizard's step 4 and the empty-state Dashboard's CTA.
+// onboarding wizard's step 5 and the empty-state Dashboard's CTA.
 // Chains the same two calls Pages' "Generate All" button uses
 // (runFullPipeline to analyze/brief/queue images, then one pass of
 // runImageWorker to actually render a first handful of them) so a

@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
           if (!verified) {
             return Response.redirect(`${settingsUrl}?pinterest=error&reason=bad_state`, 302);
           }
-          successUrl = verified.returnTo === "onboarding" ? `${url.origin}/onboarding?step=3` : settingsUrl;
+          successUrl = verified.returnTo === "onboarding" ? `${url.origin}/onboarding?step=4` : settingsUrl;
 
           // Deployment-level app credentials — same ones startPinterestOAuth
           // used to build the authorize URL. Throws (caught below) if the

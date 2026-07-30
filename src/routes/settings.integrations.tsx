@@ -694,7 +694,7 @@ function AddKeyForm({
 }
 
 // Minimal single-provider connection manager for onboarding's
-// first-run setup (StepIntegrations, routes/onboarding.tsx) -- reuses
+// first-run setup (StepApiKeys, routes/onboarding.tsx) -- reuses
 // the exact same ApiKeyConnectionRow/AddKeyForm the consolidated cards
 // below use, scoped to one provider at a time, so the very first key
 // a brand-new account saves (or adds later, revisiting the step) is a
@@ -1082,7 +1082,12 @@ function ManualSandboxConnectionForm() {
 // match PinterestCard/IntegrationCard's existing look (same Card,
 // KeyRound-weight icon slot, status dot+text, quiet text actions)
 // rather than a data-table with columns/checkboxes.
-function GoogleConnectionsCard() {
+// returnTo defaults to "settings" so this page's own usage below
+// (<GoogleConnectionsCard /> with no props) is unchanged -- the
+// onboarding wizard's Complete step (routes/onboarding.tsx) is the only
+// caller that passes returnTo="onboarding", reusing this whole card
+// rather than building a second, simpler Google-connect form.
+export function GoogleConnectionsCard({ returnTo }: { returnTo?: "settings" | "onboarding" } = {}) {
   const qc = useQueryClient();
   const list = useServerFn(listGoogleConnections);
   const startOAuth = useServerFn(startGoogleOAuth);
@@ -1091,7 +1096,7 @@ function GoogleConnectionsCard() {
   const { data, isLoading } = useQuery({ queryKey: ["google-connections"], queryFn: () => list() });
 
   const connectMut = useMutation({
-    mutationFn: () => startOAuth(),
+    mutationFn: () => startOAuth({ data: { returnTo } }),
     onSuccess: (r) => { window.location.href = r.authorizeUrl; },
     onError: (e) => toast.error(getErrorMessage(e)),
   });

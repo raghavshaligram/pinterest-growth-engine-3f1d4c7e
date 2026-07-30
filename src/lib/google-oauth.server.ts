@@ -1,12 +1,12 @@
 // Server-only. Google OAuth helpers (state signing + token exchange +
 // refresh) -- mirrors pinterest-oauth.server.ts's shape closely
-// (signState/verifyState/buildAuthorizeUrl/exchangeCode) since it's the
-// same kind of flow, but Google connections are multi-account (see
-// google_connections in the 20260730100000 migration) so there's no
-// per-connection "returnTo" concept here the way Pinterest's onboarding
-// integration needed -- Google is only ever connected from Settings
-// (see routes/settings.integrations.tsx).
+// (signState/verifyState/buildAuthorizeUrl/exchangeCode), including the
+// same returnTo-in-state mechanism Pinterest's onboarding integration
+// uses, now that the onboarding wizard's Complete step also offers a
+// Google Analytics connect (see routes/onboarding.tsx).
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+
+export type OAuthReturnTo = "settings" | "onboarding";
 
 // analytics.readonly is the actual data-access scope (Data + Admin API
 // read access); userinfo.email is only used once, right after connect,
@@ -47,22 +47,33 @@ function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export function signState(userId: string): string {
+export function signState(userId: string, returnTo: OAuthReturnTo = "settings"): string {
   const nonce = b64url(randomBytes(12));
-  const payload = `${userId}.${nonce}`;
+  const payload = `${userId}.${nonce}.${returnTo}`;
   const sig = b64url(createHmac("sha256", stateSecret()).update(payload).digest());
   return `${payload}.${sig}`;
 }
 
-export function verifyState(state: string): { userId: string } | null {
+export function verifyState(state: string): { userId: string; returnTo: OAuthReturnTo } | null {
   const parts = state.split(".");
-  if (parts.length !== 3) return null;
-  const [userId, nonce, sig] = parts;
-  const expected = b64url(createHmac("sha256", stateSecret()).update(`${userId}.${nonce}`).digest());
+  // 3 parts = pre-existing state format (userId.nonce.sig, no returnTo)
+  // -- still accepted so an in-flight redirect issued right before this
+  // field was added doesn't fail on return; treated as "settings" since
+  // that was the only place Google could be connected from before this.
+  // 4 parts = current format with an explicit returnTo. Mirrors
+  // pinterest-oauth.server.ts's own backward-compatible parsing.
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const hasReturnTo = parts.length === 4;
+  const [userId, nonce, returnToRawOrSig, maybeSig] = parts;
+  const sig = hasReturnTo ? maybeSig : returnToRawOrSig;
+  const signedPayload = hasReturnTo ? `${userId}.${nonce}.${returnToRawOrSig}` : `${userId}.${nonce}`;
+  const expected = b64url(createHmac("sha256", stateSecret()).update(signedPayload).digest());
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return null;
-  return timingSafeEqual(a, b) ? { userId } : null;
+  if (!timingSafeEqual(a, b)) return null;
+  const returnTo: OAuthReturnTo = hasReturnTo && returnToRawOrSig === "onboarding" ? "onboarding" : "settings";
+  return { userId, returnTo };
 }
 
 export function buildAuthorizeUrl(params: { clientId: string; redirectUri: string; state: string }): string {

@@ -23,6 +23,7 @@ export const SETUP_STEP_IDS = [
   "image_generation",
   "pinterest_connected",
   "first_batch",
+  "google_connected",
 ] as const;
 export type SetupStepId = (typeof SETUP_STEP_IDS)[number];
 
@@ -31,9 +32,17 @@ export type SetupStepMeta = {
   title: string;
   description: string;
   optional: boolean;
-  wizardStep: 1 | 2 | 3 | 4;
+  wizardStep: 1 | 2 | 3 | 4 | 5 | 6;
 };
 
+// Wizard is now 6 steps (Site, Brand, API keys, Pinterest, Crawl,
+// Complete) -- API keys before Pinterest deliberately: nothing works
+// without a key, whereas Pinterest is only needed at publish time, so
+// asking for OAuth before the user has seen any generated output is
+// the wrong friction ordering. Google Analytics isn't its own step at
+// all -- it's a dismissible card on the Complete step (see
+// routes/onboarding.tsx:StepComplete), same visibility as a dedicated
+// step would give it, one less step, no "skip" click required.
 export const SETUP_STEPS: readonly SetupStepMeta[] = [
   {
     id: "site_connected",
@@ -59,16 +68,23 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
   {
     id: "pinterest_connected",
     title: "Connect Pinterest",
-    description: "Publish straight to your account. Optional -- you can generate and review pins without it.",
-    optional: true,
-    wizardStep: 3,
+    description: "Required to finish setup -- publishing needs a connected account. You can still generate and review pins before this step; only auto-publishing needs it.",
+    optional: false,
+    wizardStep: 4,
   },
   {
     id: "first_batch",
     title: "Generate your first batch",
     description: "Crawl a page and create your first set of pin images.",
     optional: false,
-    wizardStep: 4,
+    wizardStep: 5,
+  },
+  {
+    id: "google_connected",
+    title: "Connect Google Analytics",
+    description: "Optional -- only needed to see which pins are driving traffic back to your site on the Insights page.",
+    optional: true,
+    wizardStep: 6,
   },
 ] as const;
 
@@ -110,7 +126,7 @@ export type SetupStatus = {
   // (useSetupGate) only ever consults this when readyToGenerate is
   // false, so returning an optional step's wizardStep here can never
   // force-block a pipeline action on something optional -- see firstMissing().
-  firstMissingWizardStep: 1 | 2 | 3 | 4 | null;
+  firstMissingWizardStep: 1 | 2 | 3 | 4 | 5 | 6 | null;
 };
 
 // Same has_value computation integrations.functions.ts:listIntegrations
@@ -140,7 +156,7 @@ async function hasOpenAiCredential(userId: string): Promise<boolean> {
   return Boolean(conn);
 }
 
-function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | null {
+function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | 5 | 6 | null {
   // Every step, in wizard order, optional included -- see the
   // firstMissingWizardStep doc comment above for why optional steps
   // still need to participate here even though they never block
@@ -156,13 +172,18 @@ export const getSetupStatus = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SetupStatus> => {
     const s = context.supabase;
 
-    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, openaiConnected] = await Promise.all([
+    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, openaiConnected, googleConnectionsRes] = await Promise.all([
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
       s.from("account_onboarding").select("dismissed_onboarding_prompt").eq("user_id", context.userId).maybeSingle(),
       s.from("account_publishing_profiles").select("user_id").eq("user_id", context.userId).maybeSingle(),
       hasOpenAiCredential(context.userId),
+      // Existence check only -- same "at least one row" bar every other
+      // step here uses (site_connected, image_generation via
+      // hasOpenAiCredential). No per-property validation; that's what
+      // the Insights page's own GA4 property picker is for.
+      s.from("google_connections").select("id", { count: "exact", head: true }),
     ]);
 
     const sites = sitesRes.data ?? [];
@@ -186,6 +207,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     // Pinterest as fully done the moment the token exists.
     const pinterestConnected = pinterestOAuthOk && Boolean(publishingProfileRes.data);
     const firstBatch = (imagesRes.count ?? 0) > 0;
+    const googleConnected = (googleConnectionsRes.count ?? 0) > 0;
 
     const steps: Record<SetupStepId, boolean> = {
       site_connected: siteConnected,
@@ -193,8 +215,18 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       image_generation: openaiConnected,
       pinterest_connected: pinterestConnected,
       first_batch: firstBatch,
+      google_connected: googleConnected,
     };
 
+    // Deliberately unchanged by pinterest_connected's move from optional
+    // to required, and unaffected by google_connected existing at all --
+    // readyToGenerate/isFullyOnboarded answer "can this account generate
+    // and review pins," not "has every wizard screen been completed."
+    // Generating and reviewing pins without Pinterest connected is
+    // correct, intentional behavior (it's what lets someone evaluate
+    // output quality before granting account access) -- the wizard's own
+    // step-reachability chain (routes/onboarding.tsx) is what enforces
+    // "required to finish the wizard," entirely separate from this.
     const readyToGenerate = REQUIRED_FOR_GENERATION.every((id) => steps[id]);
     const isFullyOnboarded = readyToGenerate && firstBatch;
 

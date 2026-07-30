@@ -29,6 +29,10 @@ export const Route = createFileRoute("/api/public/google/callback")({
           if (!verified) {
             return Response.redirect(`${settingsUrl}?google=error&reason=bad_state`, 302);
           }
+          // Onboarding's Complete step (routes/onboarding.tsx) is where
+          // the Google Analytics card lives -- mirrors
+          // pinterest.callback.ts's own successUrl branch exactly.
+          const successUrl = verified.returnTo === "onboarding" ? `${url.origin}/onboarding?step=6` : settingsUrl;
 
           const { clientId, clientSecret, redirectUri } = googleAppConfig();
           const tokens = await exchangeCode({ clientId, clientSecret, code, redirectUri });
@@ -57,9 +61,12 @@ export const Route = createFileRoute("/api/public/google/callback")({
           });
           if (error) throw error;
 
-          return Response.redirect(`${settingsUrl}?google=connected`, 302);
+          return Response.redirect(`${successUrl}${successUrl.includes("?") ? "&" : "?"}google=connected`, 302);
         } catch (e) {
           const msg = getErrorMessage(e);
+          // Falls back to Settings even for a post-verifyState failure,
+          // same as pinterest.callback.ts's own catch block -- matching
+          // that existing convention rather than introducing a new one.
           return Response.redirect(`${settingsUrl}?google=error&reason=${encodeURIComponent(msg.slice(0, 200))}`, 302);
         }
       },

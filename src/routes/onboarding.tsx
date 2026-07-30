@@ -17,7 +17,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown,
+  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,13 +42,14 @@ import { listApiKeyConnections } from "@/lib/api-key-connections.functions";
 import { getPublishingProfile } from "@/lib/publishing-profile.functions";
 import {
   PinterestConnectButton, PublishingAgePrompt, FirstApiKeySetup, IMAGE_GEN_PROVIDERS,
+  GoogleConnectionsCard,
 } from "@/routes/settings.integrations";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 
 export const Route = createFileRoute("/onboarding")({
   ssr: false,
   validateSearch: (search: Record<string, unknown>) =>
-    z.object({ step: z.coerce.number().int().min(1).max(5).optional() }).parse(search),
+    z.object({ step: z.coerce.number().int().min(1).max(6).optional() }).parse(search),
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
@@ -90,29 +91,32 @@ function OnboardingWizard() {
   const dismissPrompt = useServerFn(dismissOnboardingPrompt);
   const { data: status } = useSetupStatus();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>((search.step as 1 | 2 | 3 | 4) ?? 1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>((search.step as 1 | 2 | 3 | 4 | 5 | 6) ?? 1);
   const [siteId, setSiteId] = useState<string | null>(null);
-  const [pinterestConnected, setPinterestConnected] = useState(false);
   const autoResumedRef = useRef(false);
 
   // A gated action (see onboarding-gate.tsx:useSetupGate) can navigate
   // here with a new ?step= while this route is already mounted -- sync
-  // local state to that instead of only reading it once at mount.
+  // local state to that instead of only reading it once at mount. Also
+  // how the Pinterest/Google OAuth round trips resume at the right step
+  // (pinterest.callback.ts / google.callback.ts redirect back with
+  // ?step=N on success) -- step lives in the URL, not client memory, so
+  // it survives the full page navigation away and back.
   useEffect(() => {
-    if (search.step && search.step !== step) { setStep(search.step as 1 | 2 | 3 | 4); autoResumedRef.current = true; }
+    if (search.step && search.step !== step) { setStep(search.step as 1 | 2 | 3 | 4 | 5 | 6); autoResumedRef.current = true; }
   }, [search.step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resume at the first genuinely-incomplete step, not always step 1 --
-  // e.g. an account that already has a site/brand/integrations set up
+  // e.g. an account that already has a site/brand/API keys set up
   // (HarvestMath) should land straight on whatever's actually still
-  // missing (could be just the Pinterest age-bucket question). Only
-  // does this once per mount, and only when the URL didn't already say
-  // where to go (an explicit ?step= -- from the gate hook, the Settings
-  // "Setup guide" link, or the step-dots below -- always wins).
+  // missing (could be just Pinterest, or just the age-bucket question).
+  // Only does this once per mount, and only when the URL didn't already
+  // say where to go (an explicit ?step= -- from the gate hook, the
+  // Settings "Setup guide" link, or the step-dots below -- always wins).
   useEffect(() => {
     if (autoResumedRef.current || search.step || !status) return;
     autoResumedRef.current = true;
-    if (status.isFullyOnboarded) { setStep(5); return; }
+    if (status.isFullyOnboarded) { setStep(6); return; }
     const target = status.firstMissingWizardStep;
     if (target && target !== 1) setStep(target);
   }, [status, search.step]);
@@ -167,26 +171,34 @@ function OnboardingWizard() {
   // review/edit any already-done step) or if it's the current/an
   // earlier step reached naturally this session. Never lets you jump
   // AHEAD of a step whose data dependency (siteId, an integration,
-  // etc.) genuinely isn't ready yet.
-  function isStepReachable(n: 1 | 2 | 3 | 4 | 5): boolean {
+  // etc.) genuinely isn't ready yet. Steps 3 (API keys) and 4
+  // (Pinterest) are both required to finish the wizard -- step 4 isn't
+  // reachable until step 3's real done-signal (readyToGenerate) is
+  // true, and step 5 isn't reachable until step 4's (pinterest_connected)
+  // is true. Google Analytics is a dismissible card ON step 6, not a
+  // gate -- step 6 only depends on step 5 being reachable, never on
+  // google_connected.
+  function isStepReachable(n: 1 | 2 | 3 | 4 | 5 | 6): boolean {
     if (n <= step) return true;
     if (!status) return false;
     if (n === 2) return status.steps.site_connected;
     if (n === 3) return status.steps.site_connected && status.steps.brand_identity;
-    if (n === 4) return status.readyToGenerate;
-    if (n === 5) return status.isFullyOnboarded;
+    if (n === 4) return status.steps.site_connected && status.steps.brand_identity && status.readyToGenerate;
+    if (n === 5) return isStepReachable(4) && status.steps.pinterest_connected;
+    if (n === 6) return isStepReachable(5);
     return true;
   }
   // A dot shows as done/checked based on the SAME per-step real-data
   // signal the checklist card and banner use, not just "is it behind
-  // the current step" -- landing straight on step 4 should still show
-  // 1-3 checked, not merely filled-in because they're numerically lower.
-  function isStepDone(n: 1 | 2 | 3 | 4 | 5): boolean {
+  // the current step" -- landing straight on step 5 should still show
+  // 1-4 checked, not merely filled-in because they're numerically lower.
+  function isStepDone(n: 1 | 2 | 3 | 4 | 5 | 6): boolean {
     if (!status) return n < step;
     if (n === 1) return status.steps.site_connected;
     if (n === 2) return status.steps.brand_identity;
-    if (n === 3) return status.readyToGenerate; // openai connected (pinterest is optional, not required for the dot)
-    if (n === 4) return status.hasFirstBatch;
+    if (n === 3) return status.readyToGenerate; // API keys connected
+    if (n === 4) return status.steps.pinterest_connected;
+    if (n === 5) return status.hasFirstBatch;
     return status.isFullyOnboarded;
   }
 
@@ -198,7 +210,7 @@ function OnboardingWizard() {
             <Logo size={28} />
             <span className="font-semibold">Pinspider setup</span>
           </div>
-          {step < 5 && (
+          {step < 6 && (
             <Button type="button" variant="ghost" size="sm" onClick={handleSkip}>
               Skip setup
             </Button>
@@ -206,7 +218,7 @@ function OnboardingWizard() {
         </div>
 
         <div className="mb-8 flex items-center justify-center gap-2">
-          {([1, 2, 3, 4, 5] as const).map((n) => {
+          {([1, 2, 3, 4, 5, 6] as const).map((n) => {
             const reachable = isStepReachable(n);
             const done = isStepDone(n);
             return (
@@ -238,23 +250,16 @@ function OnboardingWizard() {
             ? <StepBrandIdentity siteId={siteId} onNext={() => setStep(3)} onBack={() => setStep(1)} />
             : <CenteredSpinner />)}
           {step === 3 && (siteId
-            ? (
-              <StepIntegrations
-                siteId={siteId}
-                onNext={(connected) => { setPinterestConnected(connected); setStep(4); }}
-                onBack={() => setStep(2)}
-              />
-            )
+            ? <StepApiKeys siteId={siteId} onNext={() => setStep(4)} onBack={() => setStep(2)} />
             : <CenteredSpinner />)}
-          {step === 4 && (siteId
-            ? <StepCrawlPreview siteId={siteId} onNext={() => setStep(5)} onBack={() => setStep(3)} onAdjustBrand={() => setStep(2)} />
+          {step === 4 && (
+            <StepPinterest onNext={() => setStep(5)} onBack={() => setStep(3)} />
+          )}
+          {step === 5 && (siteId
+            ? <StepCrawlPreview siteId={siteId} onNext={() => setStep(6)} onBack={() => setStep(4)} onAdjustBrand={() => setStep(2)} />
             : <CenteredSpinner />)}
-          {step === 5 && (
-            <StepComplete
-              siteId={siteId}
-              pinterestConnected={pinterestConnected || Boolean(status?.steps.pinterest_connected)}
-              onFinish={handleFinish}
-            />
+          {step === 6 && (
+            <StepComplete siteId={siteId} onFinish={handleFinish} />
           )}
         </Card>
       </div>
@@ -467,46 +472,40 @@ function StepBrandIdentity({
   );
 }
 
-// ---------- Step 3: Integrations (OpenAI -> image provider -> Pinterest) ----------
+// ---------- Step 3: API keys (OpenAI -> image provider) ----------
+// Split out of what used to be a single combined "Integrations" step
+// (OpenAI -> image provider -> Pinterest, all as sub-tabs of one
+// screen) -- API keys now come before Pinterest (step 4): nothing
+// works without a key, whereas Pinterest is only needed at publish
+// time, so asking for OAuth before the user has seen any generated
+// output was the wrong friction ordering. The sub-tab structure inside
+// this one step is otherwise unchanged from before the split.
 
-function StepIntegrations({
+function StepApiKeys({
   siteId, onNext, onBack,
 }: {
   siteId: string;
-  onNext: (pinterestConnected: boolean) => void;
+  onNext: () => void;
   onBack: () => void;
 }) {
   const qc = useQueryClient();
   const { data: setupStatus } = useSetupStatus();
   // Land on whichever sub-tab is actually still relevant instead of
-  // always "openai" -- an account that already has OpenAI + an image
-  // provider connected (HarvestMath) and only needs the Pinterest
-  // age-bucket question should open straight there, not force a replay
-  // of two already-done sub-steps first. Computed once at mount from
+  // always "openai" -- an account that already has OpenAI connected
+  // should open straight on the image-provider choice, not force a
+  // replay of an already-done sub-step. Computed once at mount from
   // whatever's already cached (this component's parent already fetched
   // the same query, so it's normally available immediately, not a
   // loading flash).
-  const [sub, setSub] = useState<"openai" | "imagegen" | "pinterest">(() => {
+  const [sub, setSub] = useState<"openai" | "imagegen">(() => {
     if (!setupStatus) return "openai";
-    if (!setupStatus.steps.image_generation) return "openai";
-    if (!setupStatus.readyToGenerate) return "imagegen";
-    return "pinterest";
+    return setupStatus.steps.image_generation ? "imagegen" : "openai";
   });
-  // Pinterest still lives in the legacy `integrations` table (its own
-  // OAuth flow, untouched by the multi-connection restructure) --
-  // openai/replicate now live in api_key_connections instead, a real
-  // multi-row table, so this step reads both.
-  const listIntFn = useServerFn(listIntegrations);
-  const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listIntFn() });
   const listConns = useServerFn(listApiKeyConnections);
   const { data: connections } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => listConns() });
-  const { data: sites } = useSitesList();
-  const site = (sites ?? []).find((s) => (s as SiteRow).id === siteId) as SiteRow | undefined;
   const setAccountDefault = useServerFn(setAccountProviderDefault);
-  const getProfile = useServerFn(getPublishingProfile);
 
   const [imageProvider, setImageProvider] = useState<"openai" | "replicate">("openai");
-  const [showAgePrompt, setShowAgePrompt] = useState(false);
   // Seeds from the account-level default CONNECTION's provider (not a
   // per-site value -- this step sets the account default now, see
   // saveProviderMut below) so revisiting this step shows whatever was
@@ -523,46 +522,8 @@ function StepIntegrations({
     }
   }, [providerDefaults?.default_image_connection_id, connections]);
 
-  // Pinterest OAuth is a real cross-site redirect (Pinterest ->
-  // pinterest.callback.ts -> back here), so this reads the real browser
-  // URL on return rather than router state -- same pattern
-  // settings.integrations.tsx already uses for the non-onboarding case.
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const st = p.get("pinterest");
-    if (st === "connected") {
-      toast.success("Pinterest connected");
-      qc.invalidateQueries({ queryKey: ["integrations"] });
-      qc.invalidateQueries({ queryKey: ["setup-status"] });
-      window.history.replaceState({}, "", window.location.pathname + "?step=3");
-      setSub("pinterest");
-    } else if (st === "error") {
-      toast.error(`Pinterest connect failed: ${p.get("reason") ?? "unknown"}`);
-      window.history.replaceState({}, "", window.location.pathname + "?step=3");
-      setSub("pinterest");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const openaiConnections = (connections ?? []).filter((c) => c.provider === "openai");
   const replicateConnections = (connections ?? []).filter((c) => c.provider === "replicate");
-  const pinterestStatus = (integrations ?? []).find((i) => i.provider === "pinterest");
-  const pinterestOk = pinterestStatus?.status === "ok";
-
-  // Proactively surfaces the age-bucket question whenever Pinterest's
-  // OAuth token exists but the profile doesn't -- not just in the
-  // moment right after a fresh OAuth redirect above. An account can
-  // have connected Pinterest long before this prompt existed (or before
-  // this wizard existed at all) and never been asked -- landing on this
-  // sub-tab, by any route, should always check for that gap rather than
-  // only checking it on the one narrow path of a same-second OAuth
-  // return.
-  useEffect(() => {
-    if (!pinterestOk) return;
-    let cancelled = false;
-    getProfile().then((profile) => { if (!cancelled && !profile) setShowAgePrompt(true); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [pinterestOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveProviderMut = useMutation({
     // Sets the ACCOUNT-level default image CONNECTION (not this
@@ -582,7 +543,7 @@ function StepIntegrations({
       qc.invalidateQueries({ queryKey: ["sites-switcher"] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
       qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
-      setSub("pinterest");
+      onNext();
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
@@ -604,7 +565,6 @@ function StepIntegrations({
         items={[
           { key: "openai", label: "OpenAI", done: openaiConnections.length > 0 },
           { key: "imagegen", label: "Image generation", done: openaiConnections.length > 0 || replicateConnections.length > 0 },
-          { key: "pinterest", label: "Pinterest", done: pinterestOk, optional: true },
         ]}
       />
 
@@ -681,38 +641,103 @@ function StepIntegrations({
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {sub === "pinterest" && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Publish straight to your Pinterest account — optional, you can skip this and connect it later from Settings.
-          </p>
-          <Card className="p-6">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-primary" /><h3 className="text-lg font-semibold">Pinterest</h3></div>
-              {pinterestOk && <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />Connected</span>}
-            </div>
-            {!pinterestOk && <PinterestConnectButton returnTo="onboarding" />}
-          </Card>
-          <div className="flex justify-between pt-2">
-            <Button type="button" variant="outline" onClick={() => setSub("imagegen")}>Back</Button>
-            <div className="flex gap-2">
-              {!pinterestOk && (
-                <Button type="button" variant="ghost" onClick={() => onNext(false)}>Connect later →</Button>
-              )}
-              <Button
-                type="button"
-                className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-                onClick={() => onNext(pinterestOk)}
-                disabled={!pinterestOk}
-              >
-                Continue →
-              </Button>
-            </div>
-          </div>
-          <PublishingAgePrompt open={showAgePrompt} onOpenChange={setShowAgePrompt} />
+// ---------- Step 4: Connect Pinterest ----------
+// Required -- "Continue" stays disabled until status.steps.pinterest_connected
+// is genuinely true (real OAuth token AND the age-bucket question
+// answered, see onboarding.functions.ts:getSetupStatus), not just a
+// local "did OAuth redirect back ok" flag. There's deliberately no
+// "connect later"/skip control here, unlike the old combined step,
+// since this step's whole point is that publishing needs it.
+
+function StepPinterest({
+  onNext, onBack,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const qc = useQueryClient();
+  const { data: setupStatus } = useSetupStatus();
+  // Pinterest still lives in the legacy `integrations` table (its own
+  // OAuth flow, untouched by the multi-connection restructure) --
+  // openai/replicate live in api_key_connections instead.
+  const listIntFn = useServerFn(listIntegrations);
+  const { data: integrations } = useQuery({ queryKey: ["integrations"], queryFn: () => listIntFn() });
+  const getProfile = useServerFn(getPublishingProfile);
+  const [showAgePrompt, setShowAgePrompt] = useState(false);
+
+  // Pinterest OAuth is a real cross-site redirect (Pinterest ->
+  // pinterest.callback.ts -> back here), so this reads the real browser
+  // URL on return rather than router state -- same pattern
+  // settings.integrations.tsx already uses for the non-onboarding case.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const st = p.get("pinterest");
+    if (st === "connected") {
+      toast.success("Pinterest connected");
+      qc.invalidateQueries({ queryKey: ["integrations"] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      window.history.replaceState({}, "", window.location.pathname + "?step=4");
+    } else if (st === "error") {
+      toast.error(`Pinterest connect failed: ${p.get("reason") ?? "unknown"}`);
+      window.history.replaceState({}, "", window.location.pathname + "?step=4");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pinterestStatus = (integrations ?? []).find((i) => i.provider === "pinterest");
+  const pinterestOk = pinterestStatus?.status === "ok";
+
+  // Proactively surfaces the age-bucket question whenever Pinterest's
+  // OAuth token exists but the profile doesn't -- not just in the
+  // moment right after a fresh OAuth redirect above. An account can
+  // have connected Pinterest long before this prompt existed (or before
+  // this wizard existed at all) and never been asked -- landing on this
+  // step, by any route, should always check for that gap rather than
+  // only checking it on the one narrow path of a same-second OAuth
+  // return.
+  useEffect(() => {
+    if (!pinterestOk) return;
+    let cancelled = false;
+    getProfile().then((profile) => { if (!cancelled && !profile) setShowAgePrompt(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pinterestOk]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The real, canonical "is this step actually done" signal -- requires
+  // both the OAuth token AND the age-bucket answer (see
+  // onboarding.functions.ts's pinterest_connected computation), not just
+  // pinterestOk, so "Continue" can't be clicked in the gap between a
+  // successful OAuth return and the age prompt being answered.
+  const stepDone = Boolean(setupStatus?.steps.pinterest_connected);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Publish straight to your Pinterest account — required to finish setup, since auto-publishing needs a connected account. You can still review and adjust every generated pin before it goes out.
+      </p>
+      <Card className="p-6">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-primary" /><h3 className="text-lg font-semibold">Pinterest</h3></div>
+          {pinterestOk && <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />Connected</span>}
         </div>
-      )}
+        {!pinterestOk && <PinterestConnectButton returnTo="onboarding" />}
+      </Card>
+      <div className="flex justify-between pt-2">
+        <Button type="button" variant="outline" onClick={onBack}>Back</Button>
+        <Button
+          type="button"
+          className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
+          onClick={onNext}
+          disabled={!stepDone}
+          title={!stepDone ? "Connect Pinterest above to continue -- required for auto-publishing." : undefined}
+        >
+          Continue →
+        </Button>
+      </div>
+      <PublishingAgePrompt open={showAgePrompt} onOpenChange={setShowAgePrompt} />
     </div>
   );
 }
@@ -721,8 +746,8 @@ function SubStepTabs({
   sub, onChange, items,
 }: {
   sub: string;
-  onChange: (v: "openai" | "imagegen" | "pinterest") => void;
-  items: { key: "openai" | "imagegen" | "pinterest"; label: string; done: boolean; optional?: boolean }[];
+  onChange: (v: "openai" | "imagegen") => void;
+  items: { key: "openai" | "imagegen"; label: string; done: boolean }[];
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -735,7 +760,7 @@ function SubStepTabs({
             style={{ borderColor: active ? "#E60023" : "#E5E5E5", color: active ? "#E60023" : undefined, background: active ? "#FCE9EA" : "transparent" }}
           >
             {it.done && <Check className="h-3 w-3" />}
-            {it.label}{it.optional && <span className="text-muted-foreground">(optional)</span>}
+            {it.label}
           </button>
         );
       })}
@@ -862,14 +887,30 @@ function StepCrawlPreview({
 // ---------- Step 5: Completion ----------
 
 function StepComplete({
-  siteId, pinterestConnected, onFinish,
+  siteId, onFinish,
 }: {
   siteId: string | null;
-  pinterestConnected: boolean;
   onFinish: () => void;
 }) {
   const { data: sites } = useSitesList();
   const site = (sites ?? []).find((s) => (s as SiteRow).id === siteId) as SiteRow | undefined;
+  const { data: status } = useSetupStatus();
+
+  // Google Analytics is optional and never gates finishing the wizard --
+  // it's a dismissible card here, not a step. Dismissal is this-session
+  // only (component state, not persisted) per the "no progress
+  // persistence across sessions" constraint -- a user who dismisses and
+  // comes back later simply sees the card again, same as before they
+  // dismissed it, unless they've since actually connected Google.
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("google") === "connected") {
+      window.history.replaceState({}, "", window.location.pathname + "?step=6");
+    }
+  }, []);
+  const googleConnected = Boolean(status?.steps.google_connected);
+  const showGoogleCard = !googleConnected && !dismissed;
 
   return (
     <div className="space-y-6 text-center">
@@ -880,25 +921,41 @@ function StepComplete({
           Pinspider is generating pins for {site?.brand_name || (site ? hostFromUrl(site.url) : "your site")}. Here's where to go next.
         </p>
       </div>
-      <div className="grid gap-3 text-left sm:grid-cols-3">
+      <div className="grid gap-3 text-left sm:grid-cols-2">
         <Link to="/pages" className="rounded-lg border border-border p-4 transition-colors hover:border-neutral-400">
           <FileText className="h-5 w-5 text-muted-foreground" />
           <div className="mt-2 font-medium">View Pages</div>
           <div className="mt-1 text-xs text-muted-foreground">See what's been crawled and generated.</div>
         </Link>
-        {!pinterestConnected && (
-          <Link to="/settings/integrations" className="rounded-lg border border-border p-4 transition-colors hover:border-neutral-400">
-            <KeyRound className="h-5 w-5 text-muted-foreground" />
-            <div className="mt-2 font-medium">Connect Pinterest</div>
-            <div className="mt-1 text-xs text-muted-foreground">Publish pins automatically once you're ready.</div>
-          </Link>
-        )}
         <Link to="/dashboard" className="rounded-lg border border-border p-4 transition-colors hover:border-neutral-400">
           <LayoutDashboard className="h-5 w-5 text-muted-foreground" />
           <div className="mt-2 font-medium">Go to Dashboard</div>
           <div className="mt-1 text-xs text-muted-foreground">Review and schedule your first pins.</div>
         </Link>
       </div>
+      {showGoogleCard && (
+        <div className="relative text-left">
+          <button
+            type="button"
+            aria-label="Dismiss, I'll connect Google Analytics later"
+            onClick={() => setDismissed(true)}
+            className="absolute right-3 top-3 z-10 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Optional -- only needed to see which pins are driving traffic back to your site on the Insights page.
+          </p>
+          <GoogleConnectionsCard returnTo="onboarding" />
+        </div>
+      )}
+      {googleConnected && (
+        <div className="flex items-center justify-center gap-2 text-sm text-emerald-600">
+          <Check className="h-4 w-4" />
+          Google Analytics connected
+        </div>
+      )}
       <Button type="button" className="bg-[#E60023] text-white hover:bg-[#E60023]/90" onClick={onFinish}>
         Go to Dashboard →
       </Button>
