@@ -86,10 +86,10 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
         brandHost,
         brandColors,
         brandFont: site.brand_font,
-        vertical: site.vertical,
+        vertical: site.vertical as Parameters<typeof buildThemedPinPrompt>[0]["vertical"],
         brandName: site.brand_name,
-        displayMode: site.display_mode,
-        nameMode: site.name_mode,
+        displayMode: site.display_mode as "logo" | "text" | null | undefined,
+        nameMode: site.name_mode as "brand_name" | "domain" | null | undefined,
         hasLogo,
       });
 
