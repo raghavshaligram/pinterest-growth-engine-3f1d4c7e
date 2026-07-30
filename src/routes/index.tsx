@@ -9,7 +9,7 @@
 // that would require ssr:false and hide this page from anyone without
 // a session -- including Pinterest's own review of it.
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/Logo";
 import { LegalFooter } from "@/components/LegalPageShell";
@@ -126,13 +126,22 @@ function LandingPage() {
   );
 }
 
-// Placeholder image slot for the real dashboard screenshot -- drop the
-// file in at public/marketing/dashboard-screenshot.png (same filename)
-// and it renders automatically, no code change needed. Until then, the
-// <img>'s onError swaps in a plain placeholder frame instead of a
-// broken-image icon.
+// Placeholder image slot for the real dashboard screenshot. This page
+// is server-rendered (no ssr:false -- see the file header), which means
+// an <img> pointed at a file that doesn't exist yet gets requested by
+// the browser as soon as the SSR'd HTML streams in, before React
+// hydrates and can attach an onError handler -- the fallback-on-error
+// approach tried here previously lost that race and left the browser's
+// native broken-image icon on screen instead of swapping to a
+// placeholder. Flipping a plain boolean instead of depending on a
+// client-side error event sidesteps the race entirely: nothing ever
+// requests a missing file, so there's nothing to fail.
+//
+// To wire in the real screenshot: save it at
+// public/marketing/dashboard-screenshot.png and flip this to true.
+const HAS_SCREENSHOT = false;
+
 function DashboardScreenshot() {
-  const [loaded, setLoaded] = useState(true);
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-lg">
       <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-4 py-2.5">
@@ -140,18 +149,17 @@ function DashboardScreenshot() {
         <span className="h-2.5 w-2.5 rounded-full bg-border" />
         <span className="h-2.5 w-2.5 rounded-full bg-border" />
       </div>
-      {loaded ? (
+      {HAS_SCREENSHOT ? (
         <img
           src="/marketing/dashboard-screenshot.png"
           alt="Pinspider dashboard showing scheduled and published pins"
           className="block w-full"
-          onError={() => setLoaded(false)}
         />
       ) : (
         <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-muted/30 px-6 text-center">
           <span className="text-sm font-medium text-muted-foreground">Dashboard screenshot</span>
           <span className="text-xs text-muted-foreground">
-            Drop the image in at public/marketing/dashboard-screenshot.png
+            Drop the image in at public/marketing/dashboard-screenshot.png, then set HAS_SCREENSHOT to true above.
           </span>
         </div>
       )}
