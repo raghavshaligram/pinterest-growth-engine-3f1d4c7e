@@ -108,6 +108,7 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
           baseImageBytes: rendered.imageBytes,
           logoBytes,
           placement: (site.logo_placement as LogoPlacement | null) ?? "bottom-center",
+          accentColor: site.accent_color ?? null,
         });
         finalBytes = composited.imageBytes;
         finalContentType = composited.contentType;

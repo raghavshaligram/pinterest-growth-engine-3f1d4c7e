@@ -471,16 +471,21 @@ export function buildThemedPinPrompt(input: {
   const footerText = !wantsLogo && input.nameMode === "brand_name" && input.brandName
     ? input.brandName
     : input.brandHost;
-  // Logo mode: the model renders a blank reserved bar; a separate
-  // deterministic step (logo-composite.server.ts) draws the real logo
-  // into it afterward at an exact pixel position. Earlier this asked
-  // the model to composite a supplied reference logo image itself --
-  // that didn't reliably work (see logo-composite.server.ts's own
-  // comment for the root cause), so the model is no longer asked to
-  // place the logo at all, only to leave the space for it empty.
+  // Logo mode: the model is no longer asked to reserve, leave blank, or
+  // render ANY footer/URL-bar zone at all -- two earlier attempts both
+  // trusted the model to get that zone right (as a reference-image edit,
+  // then as a "leave this bar blank" instruction) and both failed in
+  // practice (see logo-composite.server.ts's own comment for the full
+  // history). Instead the CTA band is simply the last thing in the
+  // image, flush to the real bottom edge; a separate deterministic step
+  // (logo-composite.server.ts) appends a brand-color band below the
+  // model's untouched output afterward and composites the real logo
+  // into that guaranteed-clean, code-drawn band.
+  const ctaIsFinalElement = wantsLogo
+    ? ` This CTA band is the LAST element in the image -- it must sit flush against the canvas's real bottom edge. Do not render a URL bar, footer strip, logo, wordmark, tagline, social handle, extra URL, or watermark of any kind below it, or anywhere else on the pin -- the canvas ends at the bottom of the CTA band. The brand's logo will be added afterward, in a new band appended below this image, outside of this generation step.`
+    : ``;
   const footerZoneLines = wantsLogo
-    ? `- A thin, full-width solid brand-color bar flush to the very bottom edge, in the exact same position and dimensions as a standard URL bar. Leave this bar COMPLETELY BLANK -- solid brand color only, no text, no logo, no wordmark, no icon, no pattern, nothing rendered inside it at all. It will be filled in separately, outside of this image generation step.
-- No tagline, no social handle, no extra URL, no watermark anywhere on the pin.`
+    ? ``
     : `- A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${footerText}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.`;
 
@@ -509,13 +514,13 @@ GLOBAL BRAND RULES:
 LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are internal composition guidance only; never render any numbers, measurements, fractions, or percentages anywhere in the image itself):
 - A compact title band at the very top. Place this exact title text, uppercase when it suits the theme: "${title}".
 - Below it, the main themed visual, filling the large majority of the canvas: ${middle}
-- A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
+- A slim CTA band directly below the main visual${wantsLogo ? "" : " and directly above the URL bar"}. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".${ctaIsFinalElement}
 ${footerZoneLines}
 
 QUALITY CONTROL:
 - Must look like the same brand/template as the uploaded references.
-- Must not crop, omit, or shrink the title, CTA band, URL bar, card text, or panel images -- the CTA band is as mandatory as the title and URL bar, not optional.
-- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- the bottom bar must be left entirely blank, no text or icon of any kind" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
+- Must not crop, omit, or shrink the title, CTA band${wantsLogo ? "" : ", URL bar,"} card text, or panel images -- the CTA band is as mandatory as the title${wantsLogo ? "" : " and URL bar"}, not optional.
+- The ONLY text allowed anywhere on the pin is the title and the CTA text${wantsLogo ? "" : ", and the URL bar host,"} exactly as quoted above${wantsLogo ? " -- nothing else may appear anywhere on the pin, especially not below the CTA band" : ""} -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }

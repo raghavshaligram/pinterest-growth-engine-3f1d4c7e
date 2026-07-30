@@ -58,7 +58,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider, display_mode, name_mode, logo_url, logo_placement))")
+        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_provider, display_mode, name_mode, logo_url, logo_placement, accent_color))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -76,7 +76,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
             url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
             vertical?: SiteVertical | null; image_provider?: ImageProvider | null;
             display_mode?: "logo" | "text" | null; name_mode?: "brand_name" | "domain" | null; logo_url?: string | null;
-            logo_placement?: LogoPlacement | null;
+            logo_placement?: LogoPlacement | null; accent_color?: string | null;
           };
         };
       }).pages;
@@ -177,6 +177,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
           baseImageBytes: imageBytes,
           logoBytes,
           placement: (page?.sites?.logo_placement as LogoPlacement | null) ?? "bottom-center",
+          accentColor: page?.sites?.accent_color ?? null,
         });
         imageBytes = composited.imageBytes;
         contentType = composited.contentType;
