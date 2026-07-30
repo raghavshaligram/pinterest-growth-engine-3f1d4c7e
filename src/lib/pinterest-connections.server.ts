@@ -49,6 +49,30 @@ export type PinterestConnectionSummary = {
 async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+  // The tombstone (pinterest_migrated_at on the legacy integrations row)
+  // is checked FIRST and is the real source of truth for "has this user
+  // already been migrated" -- deliberately independent of whether a
+  // pinterest_connections row currently exists. A pure row-count check
+  // can't tell "never migrated" apart from "migrated, then the user
+  // disconnected their last connection on purpose" -- both read as zero
+  // rows. Without this, a deliberate disconnect-to-zero would look
+  // exactly like a fresh, unmigrated account on the very next read, and
+  // this function would silently recreate an equivalent connection from
+  // the never-deleted legacy row, undoing the disconnect.
+  const { data: legacyRow, error: legacyErr } = await supabaseAdmin
+    .from("integrations")
+    .select("id, config_ciphertext, pinterest_migrated_at")
+    .eq("user_id", userId)
+    .eq("provider", "pinterest")
+    .maybeSingle();
+  // Same reasoning as the count-check error below: a real query error
+  // must not be silently treated as "no legacy row, nothing to do" --
+  // that would let a transient failure masquerade as an account that
+  // was simply never migrated.
+  if (legacyErr) throw legacyErr;
+  if (!legacyRow) return; // never had a legacy Pinterest integration -- nothing to migrate, ever
+  if (legacyRow.pinterest_migrated_at) return; // tombstoned: migration already happened at some point -- never re-run, regardless of current row count
+
   const { count, error: countErr } = await supabaseAdmin
     .from("pinterest_connections")
     .select("id", { count: "exact", head: true })
@@ -60,23 +84,25 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
   // returning silently with nothing surfaced anywhere (looked like a
   // permanent hang rather than a transient, self-healing condition).
   if (countErr) throw countErr;
-  if ((count ?? 0) > 0) return; // already migrated (or never had a legacy connection worth migrating)
-
-  const { data: legacyRow } = await supabaseAdmin
-    .from("integrations")
-    .select("config_ciphertext")
-    .eq("user_id", userId)
-    .eq("provider", "pinterest")
-    .maybeSingle();
-  if (!legacyRow) return; // nothing to migrate for this user
+  if ((count ?? 0) > 0) {
+    // Already migrated under the pre-tombstone guard (a row exists) but
+    // never stamped -- this covers every account migrated before this
+    // column existed. Stamp it now so a future disconnect-to-zero can't
+    // re-trigger the backfill for this user either.
+    await supabaseAdmin
+      .from("integrations")
+      .update({ pinterest_migrated_at: new Date().toISOString() })
+      .eq("id", legacyRow.id);
+    return;
+  }
 
   let legacyCfg: { access_token?: string; refresh_token?: string; publish_mode?: "api" | "webhook"; webhook_url?: string } = {};
   try {
     legacyCfg = JSON.parse(decrypt(legacyRow.config_ciphertext));
   } catch {
-    return; // corrupt/unreadable -- nothing safe to migrate
+    return; // corrupt/unreadable -- nothing safe to migrate (left un-tombstoned: if this ever becomes readable, e.g. a decrypt-key fix, it can still migrate on a later read)
   }
-  if (!legacyCfg.access_token) return; // never actually connected
+  if (!legacyCfg.access_token) return; // never actually connected -- nothing to migrate, and no connection for a future disconnect to ever undo, so leaving this un-tombstoned is harmless
 
   // The legacy flow never tracked token expiry at all (see
   // integrations.server.ts's PinterestConfig -- no expires_at field), so
@@ -111,6 +137,10 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
     })
     .select("id")
     .single();
+  // Don't tombstone on a failed insert -- leave this un-migrated so the
+  // next read retries, same resilience intent as the countErr/legacyErr
+  // throws above (a transient failure must stay retryable, not get
+  // permanently stamped as "done" when nothing was actually created).
   if (insertErr || !inserted) return;
 
   // Map every existing site this user has right now -- all of them were
@@ -122,6 +152,17 @@ async function backfillLegacyConnectionIfNeeded(userId: string): Promise<void> {
     .update({ pinterest_connection_id: inserted.id })
     .eq("user_id", userId)
     .is("pinterest_connection_id", null);
+
+  // Tombstone LAST, only after the connection row and site mappings are
+  // both actually in place -- this is the flag that permanently retires
+  // the backfill for this user. A genuine future reconnect goes through
+  // the normal OAuth flow (startPinterestConnectionOAuth / the
+  // pinterest.callback.ts INSERT path) and never consults this column at
+  // all, so tombstoning here can't block or interfere with that.
+  await supabaseAdmin
+    .from("integrations")
+    .update({ pinterest_migrated_at: new Date().toISOString() })
+    .eq("id", legacyRow.id);
 }
 
 export async function listPinterestConnectionsForUser(userId: string): Promise<PinterestConnectionSummary[]> {

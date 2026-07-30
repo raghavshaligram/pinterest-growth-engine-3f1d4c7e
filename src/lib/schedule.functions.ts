@@ -335,6 +335,18 @@ export const runPublisher = createServerFn({ method: "POST" })
   });
 
 // Publish a single scheduled pin immediately, ignoring its scheduled_at.
+//
+// processDuePinsForUser catches every per-pin failure internally and
+// ALWAYS resolves (never rejects) with a { processed, ok, fail } summary
+// -- correct for its other caller, the nightly batch cron (runPublisher),
+// where one bad pin must never abort the rest of the batch. But this is
+// the single-pin, user-initiated "Publish now" call site: the client
+// mutation's onSuccess/onError split only works if a real failure
+// actually rejects the promise, so this handler checks the summary
+// itself and throws when the one pin it asked for didn't actually
+// publish -- surfacing the real error scheduled_pins.last_error already
+// recorded, rather than letting a resolved-but-failed result read as
+// success.
 export const publishNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
@@ -347,7 +359,16 @@ export const publishNow = createServerFn({ method: "POST" })
       .in("status", ["draft", "queued", "failed"]);
     if (upErr) throw upErr;
     const { processDuePinsForUser } = await import("./publisher.server");
-    return await processDuePinsForUser(context.userId, 1, data.id);
+    const result = await processDuePinsForUser(context.userId, 1, data.id);
+    if (result.fail > 0) {
+      const { data: row } = await context.supabase
+        .from("scheduled_pins")
+        .select("last_error")
+        .eq("id", data.id)
+        .maybeSingle();
+      throw new Error(row?.last_error || "Publish failed");
+    }
+    return result;
   });
 
 export const rescheduleOrCancel = createServerFn({ method: "POST" })
