@@ -330,14 +330,6 @@ export function BrandEditorFields({
         </span>
       </div>
 
-      <BrandDisplayFields
-        logoPath={logoPath} onLogoChange={onLogoChange}
-        displayMode={displayMode} onDisplayMode={onDisplayMode}
-        nameMode={nameMode} onNameMode={onNameMode}
-        logoPlacement={logoPlacement} onLogoPlacement={onLogoPlacement}
-        brandName={brandName} previewHost={previewHost ?? "www"}
-      />
-
       {siteType === "website" && (
         <div>
           <Label className="mb-2 block">
@@ -367,6 +359,20 @@ export function BrandEditorFields({
           </div>
         </div>
       )}
+
+      {/* Ordered last among the primary (non-Advanced) fields, per spec:
+          name/tagline -> accent -> vertical -> logo/display choice. This
+          is also the LAST brand input before Pin Style Setup can run
+          (see AddSiteWizard's own step 4), so by the time a user reaches
+          that preview, every brand input including this one has already
+          been through this same screen. */}
+      <BrandDisplayFields
+        logoPath={logoPath} onLogoChange={onLogoChange}
+        displayMode={displayMode} onDisplayMode={onDisplayMode}
+        nameMode={nameMode} onNameMode={onNameMode}
+        logoPlacement={logoPlacement} onLogoPlacement={onLogoPlacement}
+        brandName={brandName} previewHost={previewHost ?? "www"}
+      />
 
       <button type="button" onClick={onToggleAdvanced} className="flex items-center gap-1.5 text-sm font-medium">
         <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />Advanced
@@ -458,7 +464,7 @@ export function BrandEditorFields({
 // -- it owns real client-side upload I/O (Storage), unlike every other
 // field there which is just local form state until the caller's Save/
 // Create mutation fires.
-function BrandDisplayFields({
+export function BrandDisplayFields({
   logoPath, onLogoChange, displayMode, onDisplayMode, nameMode, onNameMode,
   logoPlacement, onLogoPlacement, brandName, previewHost,
 }: {
