@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,11 @@ function AuthPage() {
         </Card>
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Single-user Pinterest automation engine. Bring your own OpenAI, Replicate, Apify and Pinterest credentials in Settings after sign-in.
+        </p>
+        <p className="mt-3 flex items-center justify-center gap-3 text-center text-xs text-muted-foreground">
+          <Link to="/privacy" className="hover:text-foreground hover:underline">Privacy Policy</Link>
+          <span aria-hidden="true">&middot;</span>
+          <Link to="/terms" className="hover:text-foreground hover:underline">Terms of Service</Link>
         </p>
       </div>
     </div>

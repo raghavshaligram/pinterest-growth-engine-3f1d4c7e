@@ -18,9 +18,11 @@ import { Route as KeywordsRouteImport } from './routes/keywords'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PinsRouteImport } from './routes/pins'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SitesRouteImport } from './routes/sites'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PagesIndexRouteImport } from './routes/pages.index'
 import { Route as PagesIdRouteImport } from './routes/pages.$id'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
@@ -80,6 +82,11 @@ const PinsRoute = PinsRouteImport.update({
   path: '/pins',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScheduleRoute = ScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
@@ -93,6 +100,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SitesRoute = SitesRouteImport.update({
   id: '/sites',
   path: '/sites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PagesIndexRoute = PagesIndexRouteImport.update({
@@ -174,9 +186,11 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/pins': typeof PinsRoute
+  '/privacy': typeof PrivacyRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRouteWithChildren
+  '/terms': typeof TermsRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/sites/style-setup': typeof SitesStyleSetupRoute
@@ -201,9 +215,11 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/pins': typeof PinsRoute
+  '/privacy': typeof PrivacyRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRouteWithChildren
+  '/terms': typeof TermsRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/sites/style-setup': typeof SitesStyleSetupRoute
@@ -229,9 +245,11 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/pins': typeof PinsRoute
+  '/privacy': typeof PrivacyRoute
   '/schedule': typeof ScheduleRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/sites': typeof SitesRouteWithChildren
+  '/terms': typeof TermsRoute
   '/pages/$id': typeof PagesIdRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/sites/style-setup': typeof SitesStyleSetupRoute
@@ -258,9 +276,11 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/pins'
+    | '/privacy'
     | '/schedule'
     | '/sitemap.xml'
     | '/sites'
+    | '/terms'
     | '/pages/$id'
     | '/settings/integrations'
     | '/sites/style-setup'
@@ -285,9 +305,11 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/pins'
+    | '/privacy'
     | '/schedule'
     | '/sitemap.xml'
     | '/sites'
+    | '/terms'
     | '/pages/$id'
     | '/settings/integrations'
     | '/sites/style-setup'
@@ -312,9 +334,11 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/pins'
+    | '/privacy'
     | '/schedule'
     | '/sitemap.xml'
     | '/sites'
+    | '/terms'
     | '/pages/$id'
     | '/settings/integrations'
     | '/sites/style-setup'
@@ -340,9 +364,11 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   OnboardingRoute: typeof OnboardingRoute
   PinsRoute: typeof PinsRoute
+  PrivacyRoute: typeof PrivacyRoute
   ScheduleRoute: typeof ScheduleRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SitesRoute: typeof SitesRouteWithChildren
+  TermsRoute: typeof TermsRoute
   PagesIdRoute: typeof PagesIdRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   PagesIndexRoute: typeof PagesIndexRoute
@@ -422,6 +448,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PinsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedule': {
       id: '/schedule'
       path: '/schedule'
@@ -441,6 +474,13 @@ declare module '@tanstack/react-router' {
       path: '/sites'
       fullPath: '/sites'
       preLoaderRoute: typeof SitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pages/': {
@@ -557,9 +597,11 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   OnboardingRoute: OnboardingRoute,
   PinsRoute: PinsRoute,
+  PrivacyRoute: PrivacyRoute,
   ScheduleRoute: ScheduleRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SitesRoute: SitesRouteWithChildren,
+  TermsRoute: TermsRoute,
   PagesIdRoute: PagesIdRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   PagesIndexRoute: PagesIndexRoute,
