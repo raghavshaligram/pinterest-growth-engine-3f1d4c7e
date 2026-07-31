@@ -841,6 +841,50 @@ function SubStepTabs({
 
 // ---------- Step 4: First crawl preview ----------
 
+// Three-phase progress indicator for StepCrawlPreview -- Crawl / Choose
+// pin style / Generate. Purely presentational (no new state, no new
+// gating): style_locked_at is still what actually blocks generation,
+// this just makes the sequence visible instead of the screen going
+// from a spinner straight to an unlabeled panel with no explanation of
+// why it's there or what happens after. Mirrors the wizard's own
+// top-level step-dots color language (onboarding.tsx's Onboarding
+// component: emerald done, Pinterest red current, gray upcoming)
+// rather than inventing a new visual vocabulary for a 3-item version
+// of the same idea.
+function CrawlPhaseIndicator({ phase }: { phase: "crawl" | "style" | "generate" }) {
+  const PHASES: { key: "crawl" | "style" | "generate"; label: string }[] = [
+    { key: "crawl", label: "Crawl" },
+    { key: "style", label: "Choose pin style" },
+    { key: "generate", label: "Generate" },
+  ];
+  const currentIndex = PHASES.findIndex((p) => p.key === phase);
+  return (
+    <div className="mb-5 flex items-center justify-center gap-1.5 text-xs font-medium">
+      {PHASES.map((p, i) => {
+        const done = i < currentIndex;
+        const current = i === currentIndex;
+        return (
+          <div key={p.key} className="flex items-center gap-1.5">
+            <span
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
+              style={{
+                background: done ? "#ECFDF5" : current ? "#FCE9EA" : "transparent",
+                color: done ? "#059669" : current ? "#E60023" : "#9CA3AF",
+              }}
+            >
+              {done
+                ? <Check className="h-3 w-3" />
+                : <span className="h-1.5 w-1.5 rounded-full" style={{ background: current ? "#E60023" : "#D1D5DB" }} />}
+              {p.label}
+            </span>
+            {i < PHASES.length - 1 && <span className="text-muted-foreground">→</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function StepCrawlPreview({
   siteId, onNext, onBack, onAdjustBrand,
 }: {
@@ -861,6 +905,9 @@ function StepCrawlPreview({
   // connected (step 3, just before this one), so it's the right place to
   // surface Pin Style Setup rather than forcing it back at step 1's site
   // creation, when no provider exists yet to render a real preview with.
+  // Still the one thing that actually gates generation -- everything
+  // below just makes that requirement visible in advance instead of
+  // leaving the "Generate" control missing with no explanation.
   const styleLocked = Boolean(site?.style_locked_at);
 
   const crawlMut = useMutation({
@@ -885,72 +932,127 @@ function StepCrawlPreview({
     enabled: crawlMut.isSuccess,
   });
   const preview = (pages ?? []).slice(0, 5);
+  const discovered = crawlMut.data?.discovered ?? 0;
+
+  // Drives CrawlPhaseIndicator above -- "crawl" until the mutation
+  // succeeds (covers the pending AND error returns below too, since
+  // both render before this component reaches its main return), "style"
+  // once crawled but not yet locked, "generate" once locked. Never
+  // "done" from inside this component -- once generateFirstBatch
+  // actually succeeds, onNext() advances the wizard past this screen
+  // entirely, so there's no state where phase 3 needs to render checked.
+  const phase: "crawl" | "style" | "generate" = !crawlMut.isSuccess ? "crawl" : !styleLocked ? "style" : "generate";
 
   if (crawlMut.isPending || crawlMut.isIdle) {
     return (
-      <div className="space-y-3 py-10 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Crawling {site ? hostFromUrl(site.url) : "your site"}…</p>
+      <div>
+        <CrawlPhaseIndicator phase={phase} />
+        <div className="space-y-3 py-10 text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Crawling {site ? hostFromUrl(site.url) : "your site"}…</p>
+        </div>
       </div>
     );
   }
 
   if (crawlMut.isError) {
     return (
-      <div className="space-y-4 py-6 text-center">
-        <p className="text-sm text-destructive">{getErrorMessage(crawlMut.error)}</p>
-        <div className="flex justify-center gap-2">
-          <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-          <Button type="button" onClick={() => crawlMut.mutate()}>Try again</Button>
+      <div>
+        <CrawlPhaseIndicator phase={phase} />
+        <div className="space-y-4 py-6 text-center">
+          <p className="text-sm text-destructive">{getErrorMessage(crawlMut.error)}</p>
+          <div className="flex justify-center gap-2">
+            <Button type="button" variant="outline" onClick={onBack}>Back</Button>
+            <Button type="button" onClick={() => crawlMut.mutate()}>Try again</Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-5">
-      <div className="text-center">
-        <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
-        <p className="mt-2 text-sm">
-          Found {crawlMut.data?.discovered ?? preview.length} page{(crawlMut.data?.discovered ?? preview.length) === 1 ? "" : "s"} on {site ? hostFromUrl(site.url) : "your site"}
-        </p>
-      </div>
-      {preview.length > 0 ? (
-        <ul className="space-y-2">
-          {preview.map((p) => (
-            <li key={p.id} className="truncate rounded-md border border-border px-3 py-2 text-sm" title={p.title ?? p.url}>
-              {p.title || p.url}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-center text-sm text-muted-foreground">
-          No pages found yet — double check the sitemap URL in Sites, or add pages there once your site's live.
-        </p>
-      )}
-      {!styleLocked && site && (
-        <div className="border-t border-border pt-5">
-          <PinStyleSetupPanel
-            site={{ id: site.id, brand_name: site.brand_name, url: site.url }}
-            onDone={() => qc.invalidateQueries({ queryKey: ["sites-switcher"] })}
-            onAdjust={onAdjustBrand}
-          />
-        </div>
-      )}
+  // No usable pages at all -- either the sitemap had zero URLs listed,
+  // or it had URLs but every single one failed to crawl (added===0 &&
+  // updated===0 with discovered>0). crawlSite (sites.functions.ts)
+  // doesn't distinguish reasons beyond that -- a genuinely unreachable
+  // sitemap already throws and lands in the isError branch above, not
+  // here. Previously this state left "Generate first batch" (hidden
+  // behind !styleLocked anyway) permanently disabled with no way
+  // forward on this screen; now it offers a retry and an explicit way
+  // to move on, per "don't trap them."
+  const noPages = preview.length === 0;
 
-      {styleLocked && (
+  const generateDisabledReason = !styleLocked
+    ? "Approve a pin style below before generating."
+    : noPages
+      ? "No pages were found to generate from."
+      : undefined;
+
+  return (
+    <div>
+      <CrawlPhaseIndicator phase={phase} />
+      <div className="space-y-5">
+        {!noPages && (
+          <div className="text-center">
+            <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
+            <p className="mt-2 text-sm">
+              Found {discovered || preview.length} page{(discovered || preview.length) === 1 ? "" : "s"} on {site ? hostFromUrl(site.url) : "your site"}
+            </p>
+          </div>
+        )}
+        {!noPages ? (
+          <ul className="space-y-2">
+            {preview.map((p) => (
+              <li key={p.id} className="truncate rounded-md border border-border px-3 py-2 text-sm" title={p.title ?? p.url}>
+                {p.title || p.url}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="space-y-3 rounded-md border border-dashed border-border p-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              {discovered === 0
+                ? "We couldn't find any pages listed in the sitemap yet."
+                : `We found ${discovered} page${discovered === 1 ? "" : "s"} listed, but couldn't crawl any of them successfully.`}
+            </p>
+            <p className="text-xs text-muted-foreground">Double-check the sitemap URL in Sites, then try again.</p>
+            <div className="flex justify-center gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => crawlMut.mutate()}>Try again</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={onNext}>Skip for now →</Button>
+            </div>
+          </div>
+        )}
+
+        {!styleLocked && site && (
+          <div className="border-t border-border pt-5">
+            <div className="mb-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next: choose a pin style</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {!noPages
+                  ? `We found ${discovered || preview.length} page${(discovered || preview.length) === 1 ? "" : "s"}. Approve a pin style below before generating your first batch -- this is what determines how every pin looks.`
+                  : "Approve a pin style below -- it's still worth setting up now, even before any pages are ready to generate from."}
+              </p>
+            </div>
+            <PinStyleSetupPanel
+              site={{ id: site.id, brand_name: site.brand_name, url: site.url }}
+              onDone={() => qc.invalidateQueries({ queryKey: ["sites-switcher"] })}
+              onAdjust={onAdjustBrand}
+            />
+          </div>
+        )}
+
         <div className="flex justify-between pt-2">
           <Button type="button" variant="outline" onClick={onBack}>Back</Button>
           <Button
             type="button"
             className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
             onClick={() => generateFirstBatch.mutate(undefined, { onSuccess: onNext, onError: (e) => toast.error(getErrorMessage(e)) })}
-            disabled={!preview.length || generateFirstBatch.isPending}
+            disabled={Boolean(generateDisabledReason) || generateFirstBatch.isPending}
+            title={generateDisabledReason}
           >
             {generateFirstBatch.isPending ? "Generating…" : "Generate first batch →"}
           </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
