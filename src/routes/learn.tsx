@@ -39,21 +39,57 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { PinspiderMark } from "@/components/PinspiderMark";
 import { LegalFooter } from "@/components/LegalPageShell";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+// Production domain isn't defined anywhere in this codebase -- sitemap.xml.ts
+// (src/routes/sitemap[.]xml.ts) has the same open placeholder (`BASE_URL = ""`).
+// Fill this in with the real domain before relying on canonical/OG URLs or the
+// JSON-LD below; until then they resolve to relative paths.
+const SITE_URL = "";
+const LEARN_PATH = "/learn";
+const LEARN_TITLE = "How to Find Pinterest Keywords That Actually Drive Traffic — Pinspider";
+const LEARN_DESCRIPTION = "A practical guide to Pinterest keyword research: guided search, Pinterest Trends, SERP analysis, competitor board mining, and exactly where to place keywords in your pins.";
 
 export const Route = createFileRoute("/learn")({
   head: () => ({
     meta: [
-      { title: "How to Find Pinterest Keywords That Actually Drive Traffic — Pinspider" },
-      { name: "description", content: "A practical guide to Pinterest keyword research: guided search, Pinterest Trends, SERP analysis, competitor board mining, and exactly where to place keywords in your pins." },
+      { title: LEARN_TITLE },
+      { name: "description", content: LEARN_DESCRIPTION },
+      { property: "og:type", content: "article" },
+      { property: "og:title", content: LEARN_TITLE },
+      { property: "og:description", content: LEARN_DESCRIPTION },
+      { property: "og:url", content: `${SITE_URL}${LEARN_PATH}` },
+    ],
+    links: [
+      { rel: "canonical", href: `${SITE_URL}${LEARN_PATH}` },
     ],
   }),
   component: LearnPage,
 });
 
+// Article JSON-LD, rendered inline as a <script> in the component body rather
+// than through head()'s links/meta arrays -- this repo has no node_modules
+// installed to confirm whether TanStack Router's head() API supports an
+// inline "scripts" entry, so this is the framework-agnostic, definitely-safe
+// path.
+const ARTICLE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: "How to Find Pinterest Keywords That Actually Drive Traffic",
+  description: LEARN_DESCRIPTION,
+  datePublished: "2026-07-23",
+  author: { "@type": "Organization", name: "Pinspider" },
+  publisher: { "@type": "Organization", name: "Pinspider" },
+  mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}${LEARN_PATH}` },
+};
+
 function LearnPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(ARTICLE_JSON_LD) }}
+      />
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/">
@@ -99,18 +135,20 @@ function BlogTag({ children, color = "#E60023", bg = "#FFF5F6" }: { children: Re
 
 function Callout({ type, children }: { type: "tip" | "note" | "example"; children: ReactNode }) {
   const styles = {
-    tip: { bg: "#FFF5F6", border: "#FECDD3", icon: "💡", label: "Pro Tip", labelColor: "#E60023" },
-    note: { bg: "#F0F9FF", border: "#BAE6FD", icon: "ℹ️", label: "Note", labelColor: "#0369A1" },
-    example: { bg: "#F5F3FF", border: "#DDD6FE", icon: "✦", label: "Example", labelColor: "#7C3AED" },
+    tip: { bg: "#FFF5F6", border: "#FECDD3", label: "Pro Tip", labelColor: "#E60023" },
+    note: { bg: "#F0F9FF", border: "#BAE6FD", label: "Note", labelColor: "#0369A1" },
+    example: { bg: "#F5F3FF", border: "#DDD6FE", label: "Example", labelColor: "#7C3AED" },
   };
   const s = styles[type];
   return (
     <div style={{ margin: "20px 0", padding: "14px 18px", borderRadius: 14, backgroundColor: s.bg, borderLeft: `3px solid ${s.border}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-        <span style={{ fontSize: 13 }}>{s.icon}</span>
         <span style={{ fontSize: 11, fontWeight: 800, color: s.labelColor, textTransform: "uppercase", letterSpacing: "0.07em" }}>{s.label}</span>
       </div>
-      <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7 }}>{children}</div>
+      {/* 15px, up from 13px -- a judgment call to keep callout body text
+          from reading smaller than the surrounding 16px body copy now that
+          body type has been scaled up (not explicitly requested). */}
+      <div style={{ fontSize: 15, color: "#374151", lineHeight: 1.7 }}>{children}</div>
     </div>
   );
 }
@@ -125,8 +163,8 @@ function KwPill({ children }: { children: ReactNode }) {
 
 function H2({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <h2 id={id} style={{ fontSize: 22, fontWeight: 900, color: "#111827", letterSpacing: "-0.04em", margin: "40px 0 10px", lineHeight: 1.25, scrollMarginTop: 24 }}>
-      <span style={{ display: "inline-block", width: 3, height: 22, borderRadius: 2, backgroundColor: "#E60023", marginRight: 10, verticalAlign: "middle" }} />
+    <h2 id={id} style={{ fontSize: 25, fontWeight: 900, color: "#111827", letterSpacing: "-0.04em", margin: "40px 0 10px", lineHeight: 1.25, scrollMarginTop: 24 }}>
+      <span style={{ display: "inline-block", width: 3, height: 25, borderRadius: 2, backgroundColor: "#E60023", marginRight: 10, verticalAlign: "middle" }} />
       {children}
     </h2>
   );
@@ -134,18 +172,43 @@ function H2({ id, children }: { id: string; children: ReactNode }) {
 
 function H3({ children }: { children: ReactNode }) {
   return (
-    <h3 style={{ fontSize: 16, fontWeight: 800, color: "#111827", letterSpacing: "-0.025em", margin: "28px 0 8px", lineHeight: 1.35 }}>
+    <h3 style={{ fontSize: 18, fontWeight: 800, color: "#111827", letterSpacing: "-0.025em", margin: "28px 0 8px", lineHeight: 1.35 }}>
       {children}
     </h3>
   );
 }
 
 function P({ children }: { children: ReactNode }) {
-  return <p style={{ margin: "0 0 16px", fontSize: 14, color: "#374151", lineHeight: 1.8 }}>{children}</p>;
+  return <p style={{ margin: "0 0 16px", fontSize: 16, color: "#374151", lineHeight: 1.75 }}>{children}</p>;
 }
 
 function BlogView() {
   const [activeSection, setActiveSection] = useState("why");
+
+  // Scroll-spy: track which section heading is nearest the top of the
+  // viewport as the reader scrolls, not just the last-clicked TOC link
+  // (which otherwise goes stale the moment they scroll).
+  useEffect(() => {
+    const sections = BLOG_TOC.map((item) => document.getElementById(item.id)).filter(
+      (el): el is HTMLElement => el !== null
+    );
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0) {
+          setActiveSection(visible[0].target.id);
+        }
+      },
+      { rootMargin: "0px 0px -70% 0px", threshold: 0 }
+    );
+
+    sections.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div style={{ backgroundColor: "#fff" }}>
@@ -165,12 +228,18 @@ function BlogView() {
         </div>
       </div>
 
-      {/* Body: article + TOC -- column on mobile, row from md: up */}
-      <div className="flex flex-col md:flex-row md:items-start">
+      {/* Body: article + TOC grouped as a single centred unit -- mx-auto
+          max-w-[1040px] wraps both, with the article as flex-1 inside it.
+          Previously the article had its own independent maxWidth:720/
+          margin:auto centering inside a full-width row, so it centred in
+          its own space while the TOC anchored to the viewport edge,
+          leaving a gap between them on wide screens. Column on mobile,
+          row from md: up. */}
+      <div className="mx-auto max-w-[1040px] flex flex-col md:flex-row md:items-start">
 
         {/* Article */}
         <div className="flex-1 min-w-0">
-          <div className="px-4 pt-8 pb-14 md:px-10 md:pt-10 md:pb-20" style={{ maxWidth: 720, margin: "0 auto" }}>
+          <div className="px-4 pt-8 pb-10 md:px-10 md:pt-10 md:pb-16">
 
             {/* Hero */}
             <div style={{ marginBottom: 32 }}>
@@ -179,10 +248,10 @@ function BlogView() {
                 <BlogTag color="#374151" bg="#F5F5F5">SEO</BlogTag>
                 <BlogTag color="#059669" bg="#F0FDF4">Beginner-friendly</BlogTag>
               </div>
-              <h1 className="text-[28px] md:text-[36px] leading-[1.15] md:tracking-[-0.05em] tracking-[-0.03em]" style={{ fontWeight: 900, color: "#111827", margin: "0 0 16px" }}>
+              <h1 className="text-[32px] md:text-[40px] leading-[1.15] md:tracking-[-0.05em] tracking-[-0.03em]" style={{ fontWeight: 900, color: "#111827", margin: "0 0 16px" }}>
                 How to Find Pinterest Keywords That Actually Drive Traffic
               </h1>
-              <p style={{ fontSize: 16, color: "#6B7280", lineHeight: 1.7, margin: "0 0 24px", fontWeight: 400 }}>
+              <p style={{ fontSize: 18, color: "#6B7280", lineHeight: 1.7, margin: "0 0 24px", fontWeight: 400 }}>
                 Pinterest is a search engine dressed as a social network. Master its keyword system and your pins reach buyers who are actively looking for what you sell — months or even years after you publish.
               </p>
               <div className="flex flex-wrap items-center gap-3.5" style={{ paddingTop: 20, borderTop: "1px solid #F3F3F3" }}>
@@ -191,21 +260,8 @@ function BlogView() {
                 </div>
                 <div>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827" }}>Pinspider Team</p>
-                  <p style={{ margin: 0, fontSize: 11, color: "#9CA3AF" }}>Published July 23, 2026 · Updated weekly</p>
+                  <p style={{ margin: 0, fontSize: 11, color: "#9CA3AF" }}>Published July 23, 2026</p>
                 </div>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                  <button style={{ padding: "6px 14px", borderRadius: 999, border: "1.5px solid #EFEFEF", backgroundColor: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Share</button>
-                  <button style={{ padding: "6px 14px", borderRadius: 999, border: "none", backgroundColor: "#E60023", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Save to Pinspider</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Hero image placeholder */}
-            <div className="h-[160px] md:h-[240px]" style={{ borderRadius: 20, backgroundColor: "#F8F3F0", marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #F0EBE8", overflow: "hidden", position: "relative" }}>
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, #E60023 0%, #FF6B6B 50%, #FFB347 100%)", opacity: 0.08 }} />
-              <div style={{ textAlign: "center", zIndex: 1 }}>
-                <div style={{ fontSize: 48, marginBottom: 8 }}>🔍</div>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#9CA3AF" }}>Pinterest keyword research diagram</p>
               </div>
             </div>
 
@@ -229,7 +285,7 @@ function BlogView() {
             <P>
               Pinterest's algorithm weighs keywords in this rough priority order:
             </P>
-            <ol style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 14, color: "#374151", lineHeight: 2.2 }}>
+            <ol style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 16, color: "#374151", lineHeight: 2.2 }}>
               <li><strong style={{ color: "#111827" }}>Pin title</strong> — highest weight, first thing indexed</li>
               <li><strong style={{ color: "#111827" }}>Pin description</strong> — supports and expands on the title</li>
               <li><strong style={{ color: "#111827" }}>Board name and board description</strong> — gives context to all pins in that board</li>
@@ -263,7 +319,7 @@ function BlogView() {
               Pinterest Trends (trends.pinterest.com) shows you real search volume data over time, with seasonal breakdowns. It's free, requires only a Pinterest business account, and is criminally underused by most sellers.
             </P>
             <H3>What to look for</H3>
-            <ul style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 14, color: "#374151", lineHeight: 2.2 }}>
+            <ul style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 16, color: "#374151", lineHeight: 2.2 }}>
               <li><strong style={{ color: "#111827" }}>Rising trends</strong> — keywords showing upward momentum over 90 days. Create pins before peak, not at peak.</li>
               <li><strong style={{ color: "#111827" }}>Seasonal spikes</strong> — if "holiday gift ceramic mug" peaks every October, schedule those pins in September.</li>
               <li><strong style={{ color: "#111827" }}>Evergreen flats</strong> — steady year-round search volume with no spikes. Safe bets for your core content.</li>
@@ -277,7 +333,7 @@ function BlogView() {
               Search your target keyword and study the top 20 results. These pins are already winning — they tell you the exact language, framing, and format that Pinterest's algorithm currently rewards.
             </P>
             <H3>What to note from each top pin</H3>
-            <ol style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 14, color: "#374151", lineHeight: 2.2 }}>
+            <ol style={{ margin: "0 0 20px", paddingLeft: 22, fontSize: 16, color: "#374151", lineHeight: 2.2 }}>
               <li>The <strong>exact phrasing</strong> in the title — copy the structure, not the words</li>
               <li>Whether they use <strong>numbers</strong> ("7 ideas", "3-step guide") — these boost CTR</li>
               <li>The <strong>image format</strong> — portrait or square? Text overlay or clean photo?</li>
@@ -331,10 +387,10 @@ function BlogView() {
             </div>
 
             <H2 id="mistakes">Common mistakes to avoid</H2>
-            <ul style={{ margin: "0 0 24px", paddingLeft: 22, fontSize: 14, color: "#374151", lineHeight: 2.4 }}>
+            <ul style={{ margin: "0 0 24px", paddingLeft: 22, fontSize: 16, color: "#374151", lineHeight: 2.4 }}>
               <li><strong style={{ color: "#E60023" }}>Keyword stuffing</strong> — Pinterest's algorithm now penalises unnatural keyword stacking. Write for humans first.</li>
               <li><strong style={{ color: "#E60023" }}>Ignoring board descriptions</strong> — most creators leave board descriptions blank. Fill them with 2–3 keyword-rich sentences.</li>
-              <li><strong style={{ color: "#E60023" }}>Using hashtags as keywords</strong> — Pinterest deprioritised hashtags in 2022. They're decorative at best.</li>
+              <li><strong style={{ color: "#E60023" }}>Using hashtags as keywords</strong> — hashtags are a weak discovery signal on Pinterest. Put your keywords in the title, description, and board name instead.</li>
               <li><strong style={{ color: "#E60023" }}>Publishing at peak season</strong> — you're too late. Publish 30–45 days before the seasonal spike.</li>
               <li><strong style={{ color: "#E60023" }}>One pin per page</strong> — create 3–5 pin variations per piece of content, each targeting a slightly different keyword angle.</li>
             </ul>
@@ -343,7 +399,7 @@ function BlogView() {
             <P>
               Here's what to do this week:
             </P>
-            <ol style={{ margin: "0 0 24px", paddingLeft: 22, fontSize: 14, color: "#374151", lineHeight: 2.4 }}>
+            <ol style={{ margin: "0 0 24px", paddingLeft: 22, fontSize: 16, color: "#374151", lineHeight: 2.4 }}>
               <li>Pick your top 5 products or blog posts</li>
               <li>Run the guided search method on 3 seed terms per piece</li>
               <li>Check Pinterest Trends for seasonal timing</li>
