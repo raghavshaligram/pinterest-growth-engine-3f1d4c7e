@@ -26,6 +26,15 @@
 //   sticky-positioned instead of independently scrolling. No copy,
 //   color, spacing, or component design changed -- only how the
 //   article/TOC panels size and scroll.
+// - Responsive pass: the template had no mobile breakpoints at all
+//   (it assumed a fixed desktop app panel). Layout-level properties
+//   that need to differ by viewport (flex direction, widths, padding,
+//   font size, sticky vs. static) now come from Tailwind className
+//   utilities (mobile-first, md: override) instead of inline style,
+//   matching how index.tsx/LegalPageShell already handle responsive
+//   layout elsewhere in this app. Colors, border styles, radii, and
+//   everything that doesn't need to change by viewport stay exactly
+//   as inline style, unchanged.
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Logo } from "@/components/Logo";
 import { PinspiderMark } from "@/components/PinspiderMark";
@@ -50,7 +59,7 @@ function LearnPage() {
           <Link to="/">
             <Logo size={28} withWordmark />
           </Link>
-          <nav className="flex items-center gap-5 text-sm text-muted-foreground">
+          <nav className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <Link to="/learn" className="font-medium text-foreground">Learn</Link>
             <Link to="/privacy" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Privacy</Link>
             <Link to="/terms" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Terms</Link>
@@ -156,12 +165,12 @@ function BlogView() {
         </div>
       </div>
 
-      {/* Body: article + TOC */}
-      <div style={{ display: "flex", alignItems: "flex-start" }}>
+      {/* Body: article + TOC -- column on mobile, row from md: up */}
+      <div className="flex flex-col md:flex-row md:items-start">
 
         {/* Article */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 40px 80px" }}>
+        <div className="flex-1 min-w-0">
+          <div className="px-4 pt-8 pb-14 md:px-10 md:pt-10 md:pb-20" style={{ maxWidth: 720, margin: "0 auto" }}>
 
             {/* Hero */}
             <div style={{ marginBottom: 32 }}>
@@ -170,13 +179,13 @@ function BlogView() {
                 <BlogTag color="#374151" bg="#F5F5F5">SEO</BlogTag>
                 <BlogTag color="#059669" bg="#F0FDF4">Beginner-friendly</BlogTag>
               </div>
-              <h1 style={{ fontSize: 36, fontWeight: 900, color: "#111827", letterSpacing: "-0.05em", lineHeight: 1.15, margin: "0 0 16px" }}>
+              <h1 className="text-[28px] md:text-[36px] leading-[1.15] md:tracking-[-0.05em] tracking-[-0.03em]" style={{ fontWeight: 900, color: "#111827", margin: "0 0 16px" }}>
                 How to Find Pinterest Keywords That Actually Drive Traffic
               </h1>
               <p style={{ fontSize: 16, color: "#6B7280", lineHeight: 1.7, margin: "0 0 24px", fontWeight: 400 }}>
                 Pinterest is a search engine dressed as a social network. Master its keyword system and your pins reach buyers who are actively looking for what you sell — months or even years after you publish.
               </p>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, paddingTop: 20, borderTop: "1px solid #F3F3F3" }}>
+              <div className="flex flex-wrap items-center gap-3.5" style={{ paddingTop: 20, borderTop: "1px solid #F3F3F3" }}>
                 <div style={{ width: 38, height: 38, borderRadius: "50%", backgroundColor: "#E60023", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <span style={{ color: "#fff", fontSize: 14, fontWeight: 800 }}>P</span>
                 </div>
@@ -192,7 +201,7 @@ function BlogView() {
             </div>
 
             {/* Hero image placeholder */}
-            <div style={{ borderRadius: 20, backgroundColor: "#F8F3F0", height: 240, marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #F0EBE8", overflow: "hidden", position: "relative" }}>
+            <div className="h-[160px] md:h-[240px]" style={{ borderRadius: 20, backgroundColor: "#F8F3F0", marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #F0EBE8", overflow: "hidden", position: "relative" }}>
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, #E60023 0%, #FF6B6B 50%, #FFB347 100%)", opacity: 0.08 }} />
               <div style={{ textAlign: "center", zIndex: 1 }}>
                 <div style={{ fontSize: 48, marginBottom: 8 }}>🔍</div>
@@ -368,7 +377,7 @@ function BlogView() {
 
         {/* TOC sidebar -- sticky instead of independently scrolling, since
             the page now scrolls as a whole (see file-level comment). */}
-        <div style={{ width: 220, flexShrink: 0, borderLeft: "1px solid #F3F3F3", padding: "28px 20px", position: "sticky", top: 0, alignSelf: "flex-start", display: "flex", flexDirection: "column" }}>
+        <div className="w-full border-t border-[#F3F3F3] md:w-[220px] md:flex-shrink-0 md:border-l md:border-t-0 md:sticky md:top-0 md:self-start" style={{ padding: "28px 20px", display: "flex", flexDirection: "column" }}>
           <p style={{ margin: "0 0 14px", fontSize: 10, fontWeight: 800, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em" }}>On this page</p>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {BLOG_TOC.map((item) => (
