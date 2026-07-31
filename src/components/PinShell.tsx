@@ -13,7 +13,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Calendar, Layers, Globe, FileText, Images,
-  KeyRound, Settings2, ScrollText, LogOut, BarChart3, PanelLeftClose, PanelLeft,
+  KeyRound, Settings2, ScrollText, LogOut, BarChart3, PanelLeftClose, PanelLeft, BookOpen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
@@ -24,7 +24,7 @@ import { HelpMenu } from "@/components/HelpMenu";
 import { useSetupStatus } from "@/lib/onboarding-gate";
 import { useEffect, useState, type ReactNode } from "react";
 
-type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "settings";
+type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "settings" | "learn";
 
 const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboard; key: NavKey }> = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -41,6 +41,11 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   { to: "/keywords", label: "Keywords", icon: KeyRound, key: "keywords" },
   { to: "/logs", label: "Logs", icon: ScrollText, key: "logs" },
   { to: "/settings/integrations", label: "Settings", icon: Settings2, key: "settings" },
+  // Static keyword-research guide -- no data fetching of its own, just
+  // the app's own educational content (routes/learn.tsx). Last in the
+  // rail since it's a reference page, not a working surface like
+  // everything above it.
+  { to: "/learn", label: "Learn", icon: BookOpen, key: "learn" },
 ];
 
 // Icon-only width (unchanged from before this change) vs. the
