@@ -464,10 +464,23 @@ async function pickBoardForSite(params: {
       .maybeSingle();
     connectionId = (site as { pinterest_connection_id: string | null } | null)?.pinterest_connection_id ?? null;
   }
-  const eligible = boards.filter((b) => {
-    const bc = (b as { pinterest_connection_id: string | null }).pinterest_connection_id;
-    return !bc || bc === connectionId;
-  });
+  // Scoped-first, universal-fallback-second -- and NOT filter() order,
+  // which interleaves them arbitrarily as returned by the DB. That
+  // interleaving was a real bug: findSafeBoard walks the array starting
+  // at index 0, so an untagged "universal" board could get tried (and
+  // picked) before a board actually scoped to this site's own Pinterest
+  // connection existed further down the list. If that universal board
+  // happened to belong to a different Pinterest account/connection than
+  // the one whose token is about to be used to publish, Pinterest
+  // correctly 403s the pin-create call ("You are not permitted to
+  // access that resource") -- a permission error, not a bug on
+  // Pinterest's side. Mirrors autoSchedule's own boardIdsForSite
+  // (same file, above) exactly, for the same reason.
+  const universalBoards = boards.filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id);
+  const scopedBoards = connectionId
+    ? boards.filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
+    : [];
+  const eligible = connectionId ? [...scopedBoards, ...universalBoards] : universalBoards;
   if (!eligible.length) {
     throw new Error("No board is eligible for this site's Pinterest connection yet -- sync boards or map one to this connection.");
   }
