@@ -16,11 +16,22 @@ export async function renderPinImage(opts: {
   provider: ImageProvider;
   prompt: string;
   apiKey: string;
+  // Optional explicit output size (e.g. "1536x1024"), forwarded ONLY to
+  // the OpenAI branch below -- gpt-image-1 is the only provider wired
+  // here whose underlying function already accepts a size override
+  // (openaiGenerateImage's `size?` field, previously never passed
+  // through). Added for scripts/generate-hero.ts, which needs a fixed
+  // landscape/portrait output rather than each provider's own default.
+  // Additive and backward-compatible: existing callers (image-worker,
+  // pin-style-setup) don't pass this, so their behavior is unchanged.
+  // The other 6 provider branches ignore it for now -- no verified size
+  // override exists for them here yet.
+  size?: string;
 }): Promise<{ imageBytes: Uint8Array; contentType: string; providerPredictionId: string; modelUsed: string }> {
   if (opts.provider === "openai") {
     const { openaiGenerateImage } = await import("./openai-image.server");
     const modelUsed = "gpt-image-1";
-    const result = await openaiGenerateImage({ apiKey: opts.apiKey, model: modelUsed, prompt: opts.prompt });
+    const result = await openaiGenerateImage({ apiKey: opts.apiKey, model: modelUsed, prompt: opts.prompt, size: opts.size });
     return { imageBytes: result.imageBytes, contentType: result.contentType, providerPredictionId: result.id, modelUsed };
   }
   if (opts.provider === "fal") {
