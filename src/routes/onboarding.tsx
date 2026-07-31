@@ -23,10 +23,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Logo } from "@/components/Logo";
 import { getErrorMessage } from "@/lib/error-message";
-import { useSetupStatus, useGenerateFirstBatch, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
+import { useSetupStatus, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
 import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
@@ -36,7 +37,8 @@ import {
 } from "@/lib/sites.functions";
 import { crawlSite } from "@/lib/sites.functions";
 import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
-import { listPages } from "@/lib/pages.functions";
+import { listPages, analyzePage } from "@/lib/pages.functions";
+import { generateBriefs, renderImagesForPage } from "@/lib/briefs.functions";
 import { listIntegrations } from "@/lib/integrations.functions";
 import { listApiKeyConnections } from "@/lib/api-key-connections.functions";
 import { getPublishingProfile } from "@/lib/publishing-profile.functions";
@@ -921,6 +923,16 @@ function CrawlPhaseIndicator({ phase }: { phase: "crawl" | "style" | "generate" 
   );
 }
 
+// Upper bound on how many pages the wizard's first batch will ever touch
+// in one run, regardless of how many pages the crawl discovered (a site
+// can easily discover hundreds). Picked to be small enough that "N pages,
+// N pins, your own API keys" is honestly statable and small enough that a
+// first click is never a surprise bill -- see the batch loop below, which
+// processes exactly one pin per selected page (never generateBriefs'
+// usual count:10), so total pins generated == number of pages selected,
+// always <= this cap.
+const FIRST_BATCH_PAGE_CAP = 10;
+
 function StepCrawlPreview({
   siteId, onNext, onBack, onAdjustBrand,
 }: {
@@ -934,7 +946,9 @@ function StepCrawlPreview({
   const site = (sites ?? []).find((s) => (s as SiteRow).id === siteId) as SiteRow | undefined;
   const crawlFn = useServerFn(crawlSite);
   const listPagesFn = useServerFn(listPages);
-  const generateFirstBatch = useGenerateFirstBatch();
+  const analyzeFn = useServerFn(analyzePage);
+  const generateBriefsFn = useServerFn(generateBriefs);
+  const renderImagesForPageFn = useServerFn(renderImagesForPage);
   // "Generate first batch" calls generateBriefs under the hood, which is
   // gated on style_locked_at (see briefs.functions.ts) -- this is the
   // first point in onboarding where a real image provider is guaranteed
@@ -962,21 +976,103 @@ function StepCrawlPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
+  type PreviewPage = { id: string; url: string; title: string | null; last_analyzed_at: string | null; pin_briefs?: { id: string }[] };
   const { data: pages } = useQuery({
     queryKey: ["onboarding-pages-preview", siteId],
-    queryFn: () => listPagesFn({ data: { siteId } }),
+    queryFn: () => listPagesFn({ data: { siteId } }) as Promise<PreviewPage[]>,
     enabled: crawlMut.isSuccess,
   });
   const preview = (pages ?? []).slice(0, 5);
   const discovered = crawlMut.data?.discovered ?? 0;
 
+  // The actual candidate set for the first batch -- up to
+  // FIRST_BATCH_PAGE_CAP pages, all individually selectable/deselectable
+  // below (not just the 5-item "Found N pages" preview list above, which
+  // stays display-only). Selection is seeded once the pages list resolves
+  // (everything in the candidate set starts checked) and is never
+  // re-seeded after that, so a partial run that gets cancelled doesn't
+  // lose the user's choices when this list re-renders.
+  const batchCandidates = (pages ?? []).slice(0, FIRST_BATCH_PAGE_CAP);
+  const [selectedPageIds, setSelectedPageIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    if (selectedPageIds === null && batchCandidates.length > 0) {
+      setSelectedPageIds(new Set(batchCandidates.map((p) => p.id)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pages]);
+  function toggleSelected(pageId: string) {
+    setSelectedPageIds((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(pageId)) next.delete(pageId); else next.add(pageId);
+      return next;
+    });
+  }
+  const selectedCount = selectedPageIds?.size ?? 0;
+
+  // Cancellable, page-by-page batch -- deliberately NOT runFullPipeline/
+  // useGenerateFirstBatch (onboarding-gate.tsx), which processes up to 25
+  // pages analyzed / up to 100 briefs across up to 10 pages / 20 images
+  // rendered now with the rest silently queued for the nightly cron. That
+  // scope is invisible to a first-time user and, at hundreds of
+  // discovered pages, produces real BYOK billing with no way to see it
+  // coming or stop it partway through. This instead reuses the exact
+  // same page-scoped, idempotent functions the Pages detail view already
+  // exposes per-page (routes/pages.$id.tsx: Analyze / Generate / Render),
+  // looping over only the pages the user selected, one pin per page, so
+  // "N pages selected" and "N pins generated" are the same number stated
+  // on screen before the click. cancelRef lets Cancel take effect between
+  // pages without an AbortController plumbed through three server calls --
+  // the in-flight page finishes (can't interrupt a request already sent),
+  // then the loop stops before starting the next one.
+  const cancelRef = useRef(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; label: string | null } | null>(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
+
+  const batchMut = useMutation({
+    mutationFn: async (pageIds: string[]) => {
+      cancelRef.current = false;
+      setCancelRequested(false);
+      const candidateById = new Map(batchCandidates.map((p) => [p.id, p]));
+      let done = 0;
+      for (const pageId of pageIds) {
+        if (cancelRef.current) break;
+        const p = candidateById.get(pageId);
+        setBatchProgress({ done, total: pageIds.length, label: p?.title || p?.url || null });
+        if (!p?.last_analyzed_at) await analyzeFn({ data: { pageId } });
+        if (cancelRef.current) break;
+        const hasBrief = Boolean(p?.pin_briefs?.length);
+        if (!hasBrief) await generateBriefsFn({ data: { pageId, count: 1 } });
+        if (cancelRef.current) break;
+        await renderImagesForPageFn({ data: { pageId } });
+        done += 1;
+        setBatchProgress({ done, total: pageIds.length, label: null });
+      }
+      return { done, total: pageIds.length, cancelled: cancelRef.current };
+    },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ["pages"] });
+      qc.invalidateQueries({ queryKey: ["onboarding-pages-preview", siteId] });
+      qc.invalidateQueries({ queryKey: ["scheduled"] });
+      qc.invalidateQueries({ queryKey: ["dash-logs"] });
+      setBatchProgress(null);
+      if (r.cancelled) {
+        toast.info(`Stopped after ${r.done} of ${r.total} page${r.total === 1 ? "" : "s"}. The rest are untouched -- generate them any time from Pages.`);
+      } else {
+        onNext();
+      }
+    },
+    onError: (e) => { setBatchProgress(null); toast.error(getErrorMessage(e)); },
+  });
+
   // Drives CrawlPhaseIndicator above -- "crawl" until the mutation
   // succeeds (covers the pending AND error returns below too, since
   // both render before this component reaches its main return), "style"
   // once crawled but not yet locked, "generate" once locked. Never
-  // "done" from inside this component -- once generateFirstBatch
-  // actually succeeds, onNext() advances the wizard past this screen
-  // entirely, so there's no state where phase 3 needs to render checked.
+  // "done" from inside this component -- once the batch actually
+  // completes (not cancelled), onNext() advances the wizard past this
+  // screen entirely, so there's no state where phase 3 needs to render
+  // checked.
   const phase: "crawl" | "style" | "generate" = !crawlMut.isSuccess ? "crawl" : !styleLocked ? "style" : "generate";
 
   if (crawlMut.isPending || crawlMut.isIdle) {
@@ -1021,7 +1117,9 @@ function StepCrawlPreview({
     ? "Approve a pin style below before generating."
     : noPages
       ? "No pages were found to generate from."
-      : undefined;
+      : selectedCount === 0
+        ? "Select at least one page below to generate."
+        : undefined;
 
   return (
     <div>
@@ -1035,15 +1133,7 @@ function StepCrawlPreview({
             </p>
           </div>
         )}
-        {!noPages ? (
-          <ul className="space-y-2">
-            {preview.map((p) => (
-              <li key={p.id} className="truncate rounded-md border border-border px-3 py-2 text-sm" title={p.title ?? p.url}>
-                {p.title || p.url}
-              </li>
-            ))}
-          </ul>
-        ) : (
+        {noPages && (
           <div className="space-y-3 rounded-md border border-dashed border-border p-4 text-center">
             <p className="text-sm text-muted-foreground">
               {discovered === 0
@@ -1076,17 +1166,99 @@ function StepCrawlPreview({
           </div>
         )}
 
-        <div className="flex justify-between pt-2">
-          <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-          <Button
-            type="button"
-            className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-            onClick={() => generateFirstBatch.mutate(undefined, { onSuccess: onNext, onError: (e) => toast.error(getErrorMessage(e)) })}
-            disabled={Boolean(generateDisabledReason) || generateFirstBatch.isPending}
-            title={generateDisabledReason}
-          >
-            {generateFirstBatch.isPending ? "Generating…" : "Generate first batch →"}
-          </Button>
+        {!noPages && (
+          <div className="border-t border-border pt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Choose your first batch</div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {`${selectedCount} of ${batchCandidates.length} page${batchCandidates.length === 1 ? "" : "s"} selected`}
+                  {discovered > batchCandidates.length ? ` (out of ${discovered} found -- the rest can be generated later from Pages).` : "."}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setSelectedPageIds(new Set(batchCandidates.map((p) => p.id)))}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setSelectedPageIds(new Set())}
+                >
+                  Select none
+                </button>
+              </div>
+            </div>
+            <ul className="space-y-1.5">
+              {batchCandidates.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+                  <Checkbox
+                    checked={selectedPageIds?.has(p.id) ?? false}
+                    onCheckedChange={() => toggleSelected(p.id)}
+                    disabled={batchMut.isPending}
+                  />
+                  <span className="truncate" title={p.title ?? p.url}>{p.title || p.url}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!noPages && styleLocked && (
+          <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            {batchMut.isPending && batchProgress
+              ? `Working on page ${Math.min(batchProgress.done + 1, batchProgress.total)} of ${batchProgress.total}${batchProgress.label ? ` -- ${batchProgress.label}` : ""}…`
+              : `This analyzes ${selectedCount} page${selectedCount === 1 ? "" : "s"} and generates ${selectedCount} pin${selectedCount === 1 ? "" : "s"} (1 per page) using your own API keys. You can cancel partway through, and anything not generated here can always be generated later from Pages.`}
+          </div>
+        )}
+
+        {batchMut.isPending && batchProgress && (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-[#E60023] transition-all"
+              style={{ width: `${batchProgress.total ? Math.round((batchProgress.done / batchProgress.total) * 100) : 0}%` }}
+            />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onBack} disabled={batchMut.isPending}>Back</Button>
+          <div className="flex items-center gap-2">
+            {!noPages && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onNext}
+                disabled={batchMut.isPending}
+              >
+                Skip -- generate pages individually later
+              </Button>
+            )}
+            {batchMut.isPending ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { cancelRef.current = true; setCancelRequested(true); }}
+                disabled={cancelRequested}
+              >
+                {cancelRequested ? "Cancelling…" : "Cancel"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
+                onClick={() => batchMut.mutate(Array.from(selectedPageIds ?? []))}
+                disabled={Boolean(generateDisabledReason)}
+                title={generateDisabledReason}
+              >
+                {`Generate ${selectedCount} pin${selectedCount === 1 ? "" : "s"} →`}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
