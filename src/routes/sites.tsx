@@ -39,6 +39,7 @@ import type { ApiKeyConnectionSummary } from "@/lib/api-key-connections.server";
 import { getAccountProviderDefaults } from "@/lib/account-provider-defaults.functions";
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
+import { SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 
 export const Route = createFileRoute("/sites")({
   ssr: false,
@@ -186,6 +187,14 @@ function SitesPage() {
     // SiteSwitcher/SiteProvider (Dashboard/Schedule) read the lighter
     // listSites query -- keep both in sync on any change here.
     qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+    // getSetupStatus() derives site_connected/brand_identity straight
+    // from the sites table -- any add/edit/delete here can flip either,
+    // and the Dashboard checklist, FinishSetupBanner, and the
+    // onboarding wizard's own step logic all read this same cached
+    // query. Without this, deleting a site (especially the last one)
+    // leaves every one of those surfaces showing stale "done" state
+    // until something unrelated happens to refetch it.
+    qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
   }
 
   const delMut = useMutation({

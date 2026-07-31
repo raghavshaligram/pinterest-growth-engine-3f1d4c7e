@@ -36,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { getAccountProviderDefaults, setAccountProviderDefault } from "@/lib/account-provider-defaults.functions";
+import { SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 import { useSiteContext } from "@/lib/site-context";
 import { listSites, upsertSite, type SiteType } from "@/lib/sites.functions";
 import { hostFromUrl } from "@/routes/sites";
@@ -114,6 +115,12 @@ function IntegrationsPage() {
   const invalidateConnections = () => {
     qc.invalidateQueries({ queryKey: ["api-key-connections"] });
     qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
+    // getSetupStatus()'s text_provider_connected/image_provider_connected
+    // (and the textProviderInUse/imageProviderInUse it reports for
+    // display) resolve straight off these connections -- deleting the
+    // one key an account had leaves the Dashboard checklist and
+    // FinishSetupBanner showing a stale "connected" row otherwise.
+    qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
   };
 
   // Every site this account has, for the "Used by" picker on each key
@@ -977,6 +984,12 @@ function PinterestConnectionsCard() {
       // site-data queries the Connections card actually reads.
       qc.invalidateQueries({ queryKey: ["sites-overview"] });
       qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+      // getSetupStatus()'s pinterest_connected (and therefore
+      // readyToGenerate/isFullyOnboarded) depends on this row existing --
+      // disconnecting the only Pinterest account otherwise leaves the
+      // wizard step-dots, checklist, and gate hook all showing "still
+      // connected" until an unrelated refetch happens to correct it.
+      qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
@@ -1149,6 +1162,11 @@ export function GoogleConnectionsCard({ returnTo }: { returnTo?: "settings" | "o
       // that's genuinely nulled, so this doesn't show as connected).
       qc.invalidateQueries({ queryKey: ["sites-overview"] });
       qc.invalidateQueries({ queryKey: ["sites-switcher"] });
+      // google_connected is optional (never gates readyToGenerate/
+      // isFullyOnboarded), but getSetupStatus() still reports it and the
+      // Dashboard checklist still renders a row for it -- keep that row
+      // from showing stale "connected" after a disconnect too.
+      qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });

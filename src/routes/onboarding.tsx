@@ -123,7 +123,7 @@ function OnboardingWizard() {
     if (target && target !== 1) setStep(target);
   }, [status, search.step]);
 
-  const { data: sites } = useSitesList();
+  const { data: sites, isLoading: sitesLoading } = useSitesList();
   useEffect(() => {
     // Seed the working site once the list resolves and nothing's been
     // explicitly chosen yet (e.g. resuming mid-wizard via the gate,
@@ -134,6 +134,42 @@ function OnboardingWizard() {
       setSiteId((sites[sites.length - 1] as SiteRow).id);
     }
   }, [sites, siteId]);
+
+  // Setup state must be derived from current data on every render, never
+  // from a stored/URL-supplied step that can go stale -- e.g. "Finish
+  // setup" navigating here with a ?step= computed from a setup-status
+  // snapshot taken before the user deleted every site. The moment a
+  // fresh status resolves with no site at all, restart at step 1
+  // unconditionally, regardless of what step the URL asked for or what
+  // step this session had already reached. Runs on every status
+  // load/refetch (not gated by autoResumedRef like the step-selection
+  // effect below), since "the only site got deleted" can become true at
+  // any point while the wizard is already open, not just at mount.
+  useEffect(() => {
+    if (!status) return;
+    if (!status.steps.site_connected && step !== 1) {
+      setStep(1);
+      setSiteId(null);
+    }
+  }, [status, step]);
+
+  // Same idea, one level more specific: a step already holding a real
+  // siteId (site_connected is true -- at least one site still exists)
+  // can still be pointing at a site that was itself deleted, e.g. one
+  // of several sites removed from the Sites page in another tab while
+  // this wizard sat open on step 2/3/5 for that exact site. Once the
+  // sites list has actually resolved (not mid-fetch -- an empty result
+  // while still loading isn't the same signal as "confirmed gone"),
+  // treat a siteId that no longer matches any row as gone and restart
+  // at step 1 rather than letting StepBrandIdentity/StepApiKeys/
+  // StepCrawlPreview render indefinitely against an undefined site.
+  useEffect(() => {
+    if (sitesLoading || !sites) return;
+    if (siteId && !sites.some((s) => (s as SiteRow).id === siteId) && step !== 1) {
+      setStep(1);
+      setSiteId(null);
+    }
+  }, [sites, sitesLoading, siteId, step]);
 
   // Both handlers prime the setup-status cache directly (setQueryData)
   // BEFORE navigating, rather than only invalidating it -- invalidate
