@@ -511,8 +511,9 @@ export const generateBriefs = createServerFn({ method: "POST" })
 
     // Copy generation connection: this site's own override connection
     // if it has one, else the account-level default connection, else
-    // this account's earliest OpenAI connection -- see
-    // provider-resolution.server.ts. Resolved here, after site is
+    // this account's earliest connection for the first of OpenAI/
+    // Anthropic that's actually connected (COPY_PROVIDERS order, see
+    // provider-resolution.server.ts). Resolved here, after site is
     // fetched, since it depends on site data. Declared outside the try
     // block below so the catch block's markApiKeyConnection call
     // reports against whichever connection was actually in play.

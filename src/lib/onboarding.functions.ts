@@ -20,7 +20,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const SETUP_STEP_IDS = [
   "site_connected",
   "brand_identity",
-  "image_generation",
+  "text_provider_connected",
   "pinterest_connected",
   "first_batch",
   "google_connected",
@@ -59,9 +59,9 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
     wizardStep: 2,
   },
   {
-    id: "image_generation",
-    title: "Connect OpenAI",
-    description: "Required for page analysis and pin copy -- Replicate is an optional extra for image rendering, connected in the same step.",
+    id: "text_provider_connected",
+    title: "Connect a text provider",
+    description: "Required for page analysis and pin copy -- connect OpenAI or Anthropic. Replicate is a separate, optional extra for image rendering, connected in the same step.",
     optional: false,
     wizardStep: 3,
   },
@@ -92,7 +92,7 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
 // images, Generate All) actually needs -- Pinterest is deliberately
 // excluded, matching the spec: you can generate and review pins with no
 // Pinterest connection at all, you just can't auto-publish them.
-const REQUIRED_FOR_GENERATION: readonly SetupStepId[] = ["site_connected", "brand_identity", "image_generation"];
+const REQUIRED_FOR_GENERATION: readonly SetupStepId[] = ["site_connected", "brand_identity", "text_provider_connected"];
 
 export type SetupStatus = {
   steps: Record<SetupStepId, boolean>;
@@ -135,25 +135,31 @@ export type SetupStatus = {
 // rather than imported, since listIntegrations returns every provider's
 // full metadata (last_error, timestamps, etc.) this only needs a yes/no.
 //
-// Deliberately OpenAI only, not "OpenAI OR Replicate" -- generateBriefs
-// (briefs.functions.ts) hard-requires an OpenAI key unconditionally, for
-// page analysis and pin copy, regardless of which provider a site
-// renders images with. Replicate is a fully-supported opt-in image
-// renderer (connect it in the wizard's image-provider sub-step or later
-// in Settings), but it can never substitute for OpenAI here -- a site
-// configured for Replicate-only rendering with no OpenAI key would still
-// hard-fail the very first pipeline step, so gating this step on
-// "either provider" would let a genuinely broken setup read as "ready."
-async function hasOpenAiCredential(userId: string): Promise<boolean> {
-  // OpenAI moved from the old single-row `integrations` table to the
-  // multi-connection api_key_connections table (a user can now hold
-  // several OpenAI keys) -- this just needs "at least one exists,"
-  // same yes/no this always returned, so earliestConnectionForProvider
-  // (any real connection would do) is the right check here, not a
-  // direct table query duplicated a second way.
+// Text generation (page analysis, in pages.functions.ts:analyzePage, and
+// pin copy, in briefs.functions.ts:generateBriefs) is provider-flexible:
+// both resolve their actual connection via resolveCopyConnection
+// (provider-resolution.server.ts), which accepts either an OpenAI or an
+// Anthropic connection -- COPY_PROVIDERS (sites.functions.ts) is the
+// canonical list of which providers count. This step is done once ANY
+// of them has a working connection; it is NOT "OpenAI OR Replicate" --
+// Replicate is a fully-supported opt-in IMAGE renderer (connect it in
+// the wizard's image-provider sub-step or later in Settings), a
+// completely separate role from text generation, and never counts here
+// regardless of whether it's connected.
+async function hasTextProviderCredential(userId: string): Promise<boolean> {
+  // Multi-connection api_key_connections table (a user can hold several
+  // keys per provider) -- this just needs "at least one connection
+  // exists for at least one text provider," so earliestConnectionForProvider
+  // (any real connection for that provider would do) checked across
+  // COPY_PROVIDERS is the right existence check here, not a direct table
+  // query duplicated a second way, and not the fuller
+  // override/account-default resolution chain resolveCopyConnection does
+  // at actual generation time -- this is only ever "has something been
+  // connected at all," the same bar every other checklist step uses.
   const { earliestConnectionForProvider } = await import("./api-key-connections.server");
-  const conn = await earliestConnectionForProvider(userId, "openai");
-  return Boolean(conn);
+  const { COPY_PROVIDERS } = await import("./sites.functions");
+  const results = await Promise.all(COPY_PROVIDERS.map((provider) => earliestConnectionForProvider(userId, provider)));
+  return results.some(Boolean);
 }
 
 function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | 5 | 6 | null {
@@ -172,17 +178,17 @@ export const getSetupStatus = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SetupStatus> => {
     const s = context.supabase;
 
-    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, openaiConnected, googleConnectionsRes] = await Promise.all([
+    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, textProviderConnected, googleConnectionsRes] = await Promise.all([
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
       s.from("account_onboarding").select("dismissed_onboarding_prompt").eq("user_id", context.userId).maybeSingle(),
       s.from("account_publishing_profiles").select("user_id").eq("user_id", context.userId).maybeSingle(),
-      hasOpenAiCredential(context.userId),
+      hasTextProviderCredential(context.userId),
       // Existence check only -- same "at least one row" bar every other
-      // step here uses (site_connected, image_generation via
-      // hasOpenAiCredential). No per-property validation; that's what
-      // the Insights page's own GA4 property picker is for.
+      // step here uses (site_connected, text_provider_connected via
+      // hasTextProviderCredential). No per-property validation; that's
+      // what the Insights page's own GA4 property picker is for.
       s.from("google_connections").select("id", { count: "exact", head: true }),
     ]);
 
@@ -212,7 +218,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     const steps: Record<SetupStepId, boolean> = {
       site_connected: siteConnected,
       brand_identity: brandIdentity,
-      image_generation: openaiConnected,
+      text_provider_connected: textProviderConnected,
       pinterest_connected: pinterestConnected,
       first_batch: firstBatch,
       google_connected: googleConnected,

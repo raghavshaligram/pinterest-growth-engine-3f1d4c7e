@@ -499,7 +499,7 @@ function StepApiKeys({
   // loading flash).
   const [sub, setSub] = useState<"openai" | "imagegen">(() => {
     if (!setupStatus) return "openai";
-    return setupStatus.steps.image_generation ? "imagegen" : "openai";
+    return setupStatus.steps.text_provider_connected ? "imagegen" : "openai";
   });
   const listConns = useServerFn(listApiKeyConnections);
   const { data: connections } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => listConns() });
@@ -571,7 +571,7 @@ function StepApiKeys({
       {sub === "openai" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Powers page analysis and pin copy — every brief starts here, regardless of which image generator you pick next.
+            Powers page analysis and pin copy by default. Prefer Claude? Connect Anthropic instead from Settings → Integrations and set it as your text provider default.
           </p>
           <FirstApiKeySetup meta={openaiMeta} connections={openaiConnections} onChanged={invalidateIntegrations} />
           <div className="flex justify-between pt-2">
@@ -581,7 +581,7 @@ function StepApiKeys({
               className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
               onClick={() => setSub("imagegen")}
               disabled={openaiConnections.length === 0}
-              title={openaiConnections.length === 0 ? "Add and save an OpenAI key to continue -- it's required for page analysis and pin copy regardless of which image provider you pick next." : undefined}
+              title={openaiConnections.length === 0 ? "Add and save an OpenAI key to continue, or connect Anthropic instead from Settings → Integrations first." : undefined}
             >
               Next →
             </Button>

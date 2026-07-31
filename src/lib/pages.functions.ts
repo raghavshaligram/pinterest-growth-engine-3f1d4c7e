@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
+import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
 
 type PipelineStatus = "images_ready" | "in_progress" | "not_started" | "error";
 
@@ -195,15 +196,25 @@ export const analyzePage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { pageId: string }) => z.object({ pageId: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    // Account-level OpenAI usage, not part of the per-site image/copy
-    // override resolution chain -- page analysis just needs "this
-    // account's working OpenAI key," same as the SERP-pattern
-    // summarizer in keywords.functions.ts.
-    const { earliestConnectionForProvider, markApiKeyConnection } = await import("./api-key-connections.server");
-    const { openaiJSON } = await import("./openai.server");
+    // Same account-level text-generation connection generateBriefs uses
+    // (briefs.functions.ts) -- resolveCopyConnection(userId, null),
+    // deliberately passing null instead of a site's
+    // copy_connection_override_id. That override exists so a single
+    // site's *copy* can be pinned to a specific connection; analysis
+    // isn't per-site in that sense, and there's no separate
+    // "analysis provider" setting -- it always follows the account's
+    // text-provider default (or, for an account that's never set one,
+    // provider-resolution.server.ts's own OpenAI-connection fallback,
+    // same as before this change for anyone who only has OpenAI).
+    const { markApiKeyConnection } = await import("./api-key-connections.server");
+    const { resolveCopyConnection } = await import("./provider-resolution.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const conn = await earliestConnectionForProvider(context.userId, "openai");
-    if (!conn) throw new Error("Missing openai integration — add it in Settings.");
+    const conn = await resolveCopyConnection(context.userId, null);
+    const provider: ApiKeyProvider = conn.provider;
+    const generateJSON = provider === "anthropic"
+      ? (await import("./anthropic.server")).anthropicJSON
+      : (await import("./openai.server")).openaiJSON;
+    const model = provider === "anthropic" ? "claude-sonnet-5" : "gpt-4o-mini";
     const { data: page, error } = await context.supabase.from("pages").select("*").eq("id", data.pageId).single();
     if (error || !page) throw error ?? new Error("Page not found");
 
@@ -220,9 +231,9 @@ export const analyzePage = createServerFn({ method: "POST" })
         seasonality: string;
         pin_opportunities: number;
       };
-      const analysis = await openaiJSON<Analysis>({
+      const analysis = await generateJSON<Analysis>({
         apiKey: conn.apiKey,
-        model: "gpt-4o-mini",
+        model,
         system: "You are a Pinterest SEO strategist. Return strict JSON.",
         user: `Analyze this page for Pinterest SEO. Return JSON with keys: topic, primary_keyword, secondary_keywords (5-10), lsi_keywords (5-10), questions (5-8), intent, category, audience, seasonality, pin_opportunities (integer 5-25).
 
@@ -238,13 +249,18 @@ Headings: ${JSON.stringify(((page.headings as unknown as unknown[]) ?? []).slice
         last_analyzed_at: new Date().toISOString(),
       }).eq("id", page.id);
 
-      // Sync keywords
+      // Sync keywords -- defensively defaulted to [] on all three array
+      // fields. Pre-existing latent gap even before this change (a
+      // malformed OpenAI response could already have thrown here), but
+      // worth closing now: Anthropic's JSON-mode is prompt-enforced
+      // rather than a native response_format like OpenAI's, so a
+      // slightly malformed field is more likely, not less.
       await supabaseAdmin.from("keywords").delete().eq("page_id", page.id);
       const rows = [
         { keyword: analysis.primary_keyword, kind: "primary" as const },
-        ...analysis.secondary_keywords.map((k) => ({ keyword: k, kind: "secondary" as const })),
-        ...analysis.lsi_keywords.map((k) => ({ keyword: k, kind: "lsi" as const })),
-        ...analysis.questions.map((k) => ({ keyword: k, kind: "question" as const })),
+        ...(analysis.secondary_keywords ?? []).map((k) => ({ keyword: k, kind: "secondary" as const })),
+        ...(analysis.lsi_keywords ?? []).map((k) => ({ keyword: k, kind: "lsi" as const })),
+        ...(analysis.questions ?? []).map((k) => ({ keyword: k, kind: "question" as const })),
       ].map((r) => ({ ...r, user_id: context.userId, page_id: page.id, tracked: r.kind === "primary" }));
       if (rows.length) await supabaseAdmin.from("keywords").insert(rows);
 
