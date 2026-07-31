@@ -12,7 +12,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useSetupStatus } from "@/lib/onboarding-gate";
-import { parseMapSiteError, siteConnectionsSearch } from "@/lib/site-mapping";
+import { parseMapSiteError, siteConnectionsLink } from "@/lib/site-mapping";
 
 // Warns (never gates) that pins about to be generated have nowhere to
 // publish. Generating for an unmapped site is legitimate -- you may map
@@ -54,10 +54,9 @@ export function useSiteMappingWarning() {
       duration: 8000,
       action: {
         label: target ? "Map now" : "Review sites",
-        onClick: () => navigate({
-          to: "/sites",
-          search: target ? siteConnectionsSearch(target.id) : {},
-        }),
+        onClick: () => (target
+          ? navigate(siteConnectionsLink(target.id))
+          : navigate({ to: "/sites", search: {} })),
       },
     });
   }
@@ -92,7 +91,7 @@ export function usePublishErrorToast() {
       duration: 10000,
       action: {
         label: "Map now",
-        onClick: () => navigate({ to: "/sites", search: siteConnectionsSearch(mapping.siteId) }),
+        onClick: () => navigate(siteConnectionsLink(mapping.siteId)),
       },
     });
   };

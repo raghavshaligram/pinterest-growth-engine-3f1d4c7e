@@ -11,7 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster, DEFAULT_DURATION_MS } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -122,7 +122,30 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
-      <Toaster richColors position="top-right" />
+      {/* Bottom-right, out of the way of the primary action area and of
+          HelpMenu's own fixed top-right button, which top-right toasts
+          used to land directly on top of.
+
+          The bottom offset reads a CSS variable so a screen with a fixed
+          bottom bar can lift the stack above it without this line
+          changing or the bar moving -- the Sites brand editor's sticky
+          save bar sets it (see routes/sites.$id.tsx). Sonner writes the
+          value straight into --offset-bottom, so a var() reference
+          resolves normally; unset, it falls back to 24px.
+
+          duration here is the success/info figure; errors are lifted to
+          6s in components/ui/sonner.tsx, since Sonner has no per-type
+          duration at the provider. closeButton is what makes a toast
+          dismissible -- Sonner binds its dismiss handler to that button
+          and to swipe, never to the toast body. */}
+      <Toaster
+        richColors
+        position="bottom-right"
+        duration={DEFAULT_DURATION_MS}
+        visibleToasts={3}
+        closeButton
+        offset={{ bottom: "var(--app-toast-bottom, 24px)", right: 24, top: 24, left: 24 }}
+      />
     </QueryClientProvider>
   );
 }

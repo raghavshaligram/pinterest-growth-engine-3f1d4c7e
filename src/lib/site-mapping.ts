@@ -14,15 +14,23 @@
 // model -- reading sites.pinterest_connection_id is still the only
 // question anyone asks; this file is about surfacing the answer.
 
-// Search params for /sites that focus one site and expand its
-// Connections section. Every "map it" link in the app builds its target
-// through this, so the route's validateSearch (routes/sites.tsx) and the
-// links can't drift apart on param names.
-export type SiteFocusSearch = { site?: string; section?: "connections" };
-
-export function siteConnectionsSearch(siteId: string): Required<SiteFocusSearch> {
-  return { site: siteId, section: "connections" };
+// Every "map this site" affordance in the app targets the same place:
+// the Connections tab of that site's detail route. Built here so the
+// route name, the param name and the tab value live in one spot rather
+// than being retyped at each of the seven call sites.
+//
+// Spreads straight into either API — <Link {...siteConnectionsLink(id)} />
+// or navigate(siteConnectionsLink(id)).
+export function siteConnectionsLink(siteId: string) {
+  return { to: "/sites/$id" as const, params: { id: siteId }, search: { tab: "connections" as const } };
 }
+
+// Legacy shape: /sites?site=<id>&section=connections, which is where
+// these links pointed before the site editor had its own route. The
+// list page still validates and redirects it (routes/sites.tsx) so
+// links already sent out — in a toast a user hasn't clicked yet, or a
+// scheduled_pins.last_error written earlier — still land correctly.
+export type SiteFocusSearch = { site?: string; section?: "connections" };
 
 // Server-thrown errors are plain strings by the time they reach the
 // client (they cross the server-fn boundary and land in

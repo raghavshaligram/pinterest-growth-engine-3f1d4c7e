@@ -46,7 +46,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus, FlaskConical } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 import { ProviderPicker } from "@/components/ProviderPicker";
-import { siteConnectionsSearch, siteDisplayName } from "@/lib/site-mapping";
+import { siteConnectionsLink, siteDisplayName } from "@/lib/site-mapping";
 
 type Provider =
   | "openai" | "replicate" | "apify" | "pinterest"
@@ -1010,11 +1010,7 @@ function PinterestMappingSummary({ connections }: { connections: { id: string; l
           <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
             {unmapped.map((s) => (
               <li key={s.id}>
-                <RouterLink
-                  to="/sites"
-                  search={siteConnectionsSearch(s.id)}
-                  className="text-sm font-medium text-primary hover:underline"
-                >
+                <RouterLink {...siteConnectionsLink(s.id)} className="text-sm font-medium text-primary hover:underline">
                   Map {siteDisplayName(s)} →
                 </RouterLink>
               </li>

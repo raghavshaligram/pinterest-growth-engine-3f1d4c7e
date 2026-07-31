@@ -31,7 +31,7 @@ import {
 } from "@/lib/onboarding-gate";
 import { SETUP_STEPS, type SetupStatus, type SetupStepMeta } from "@/lib/onboarding.functions";
 import { STEP_LABELS, getMissingRequiredSteps, resolveStepTarget, type StepTarget } from "@/lib/setup-checklist-copy";
-import { siteConnectionsSearch } from "@/lib/site-mapping";
+import { siteConnectionsLink } from "@/lib/site-mapping";
 import { useSiteMappingWarning } from "@/lib/site-mapping-gate";
 import { useSiteContext } from "@/lib/site-context";
 
@@ -139,7 +139,8 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
             // so this stays a dumb navigate.
             onStepClick={(target) => {
               if (target.kind === "sites") {
-                navigate({ to: "/sites", search: target.siteId ? siteConnectionsSearch(target.siteId) : {} });
+                if (target.siteId) navigate(siteConnectionsLink(target.siteId));
+                else navigate({ to: "/sites", search: {} });
               } else {
                 navigate({ to: "/onboarding", search: { step: target.step } });
               }
@@ -428,13 +429,11 @@ export function SetupSummaryBar({
         <span> — not finished yet{missing.length > 1 ? `, +${missing.length - 1} more` : ""}</span>
       </div>
       {nextTarget.kind === "sites" ? (
-        <Link
-          to="/sites"
-          search={nextTarget.siteId ? siteConnectionsSearch(nextTarget.siteId) : {}}
-          style={summaryActionStyle}
-        >
-          {nextTarget.siteId ? "Map now →" : "Review sites →"}
-        </Link>
+        nextTarget.siteId ? (
+          <Link {...siteConnectionsLink(nextTarget.siteId)} style={summaryActionStyle}>Map now →</Link>
+        ) : (
+          <Link to="/sites" search={{}} style={summaryActionStyle}>Review sites →</Link>
+        )
       ) : (
         <Link to="/onboarding" search={{ step: nextTarget.step }} style={summaryActionStyle}>
           Continue →

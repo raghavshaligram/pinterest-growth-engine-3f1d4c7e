@@ -26,7 +26,7 @@ import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useSetupStatus } from "@/lib/onboarding-gate";
 import { getMissingRequiredSteps, STEP_LABELS } from "@/lib/setup-checklist-copy";
-import { siteConnectionsSearch } from "@/lib/site-mapping";
+import { siteConnectionsLink } from "@/lib/site-mapping";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 
 const DISMISS_KEY = "pinspider:setup-banner-dismissed";
@@ -100,13 +100,11 @@ export function FinishSetupBanner() {
             {only ? "its pins can't publish until it is." : "their pins can't publish until they are."}
           </span>
         </div>
-        <Link
-          to="/sites"
-          search={only ? siteConnectionsSearch(only.id) : {}}
-          style={actionStyle}
-        >
-          {only ? "Map now" : "Review sites"}
-        </Link>
+        {only ? (
+          <Link {...siteConnectionsLink(only.id)} style={actionStyle}>Map now</Link>
+        ) : (
+          <Link to="/sites" search={{}} style={actionStyle}>Review sites</Link>
+        )}
       </div>
     );
   }

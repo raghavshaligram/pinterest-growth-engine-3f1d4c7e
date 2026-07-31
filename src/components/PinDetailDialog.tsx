@@ -14,7 +14,7 @@ import {
   Check, PinIcon, Undo2, CalendarOff, AlertTriangle,
 } from "lucide-react";
 import type { listScheduled } from "@/lib/schedule.functions";
-import { parseMapSiteError, siteConnectionsSearch } from "@/lib/site-mapping";
+import { parseMapSiteError, siteConnectionsLink } from "@/lib/site-mapping";
 
 export type PinDetailRow = Awaited<ReturnType<typeof listScheduled>>[number];
 
@@ -195,11 +195,7 @@ function PublishErrorText({ message }: { message: string }) {
   return (
     <p className="whitespace-pre-wrap text-destructive">
       {mapping.text}{" "}
-      <Link
-        to="/sites"
-        search={siteConnectionsSearch(mapping.siteId)}
-        className="font-medium underline underline-offset-2"
-      >
+      <Link {...siteConnectionsLink(mapping.siteId)} className="font-medium underline underline-offset-2">
         Map it now →
       </Link>
     </p>

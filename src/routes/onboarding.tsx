@@ -17,7 +17,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X, ExternalLink, Link2,
+  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, BarChart3, X, ExternalLink, Link2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Logo } from "@/components/Logo";
 import { getErrorMessage } from "@/lib/error-message";
 import { useSetupStatus, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
-import { siteConnectionsSearch } from "@/lib/site-mapping";
+import { siteConnectionsLink } from "@/lib/site-mapping";
 import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
 import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
@@ -373,7 +373,6 @@ function StepBrandIdentity({
   const [brandColors, setBrandColors] = useState<string[]>([]);
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const seededRef = useRef(false);
 
   useEffect(() => {
@@ -457,46 +456,57 @@ function StepBrandIdentity({
         </div>
       </div>
 
-      <button type="button" onClick={() => setAdvancedOpen((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium">
-        <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />Advanced
-      </button>
-
-      {advancedOpen && (
-        <div className="space-y-4 border-t border-border pt-4">
-          <div>
-            <Label className="mb-2 block">Brand palette <span className="font-normal text-muted-foreground">(optional, extra colors for image gen)</span></Label>
-            <div className="flex flex-wrap gap-2">
-              {ACCENT_PRESETS.map((hex) => {
-                const active = brandColors.includes(hex);
-                return (
-                  <button
-                    key={hex} type="button"
-                    onClick={() => setBrandColors((cur) => (cur.includes(hex) ? cur.filter((c) => c !== hex) : [...cur, hex]))}
-                    title={hex} aria-label={hex}
-                    className="flex h-7 w-7 items-center justify-center rounded-full"
-                    style={{ background: hex, boxShadow: active ? "0 0 0 2px #fff, 0 0 0 4px #111111" : "0 0 0 1px rgba(0,0,0,0.08)" }}
-                  >
-                    {active && <Check className="h-3.5 w-3.5 text-white" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <Label className="mb-2 block">Typography direction</Label>
-            <Select value={typography || undefined} onValueChange={setTypography}>
-              <SelectTrigger><SelectValue placeholder="Choose a pairing" /></SelectTrigger>
-              <SelectContent>
-                {TYPOGRAPHY_PRESETS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.value}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Brand notes for image gen</Label>
-            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Warm editorial photography, minimal overlays, no stock illustrations." />
+      {/* Flattened — this used to be an "Advanced" disclosure hiding
+          exactly these three controls. All three feed image generation
+          directly (the palette is literally what the generator paints
+          with), so hiding them here made the wizard teach a user that
+          they were peripheral, then the Sites editor say otherwise.
+          Same reasoning, and the same Accent-vs-Image-palette wording,
+          as BrandEditorFields in routes/sites.tsx. */}
+      <div className="space-y-4 border-t border-border pt-4">
+        <div>
+          <Label className="mb-1 block">Image palette <span className="font-normal text-muted-foreground">(optional)</span></Label>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Several colours, passed to the image generator as the palette it paints your pins with. Separate from the
+            accent colour above, which Pinspider's own interface uses.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {ACCENT_PRESETS.map((hex) => {
+              const active = brandColors.includes(hex);
+              return (
+                <button
+                  key={hex} type="button"
+                  onClick={() => setBrandColors((cur) => (cur.includes(hex) ? cur.filter((c) => c !== hex) : [...cur, hex]))}
+                  title={hex} aria-label={`Image palette ${hex}`} aria-pressed={active}
+                  className="flex h-8 w-8 items-center justify-center rounded-full"
+                  style={{ background: hex, boxShadow: active ? "0 0 0 2px #fff, 0 0 0 4px #111111" : "0 0 0 1px rgba(0,0,0,0.08)" }}
+                >
+                  {active && <Check className="h-4 w-4 text-white" />}
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
+        <div>
+          <Label className="mb-2 block">Typography direction</Label>
+          <Select value={typography || undefined} onValueChange={setTypography}>
+            <SelectTrigger><SelectValue placeholder="Choose a pairing" /></SelectTrigger>
+            <SelectContent>
+              {TYPOGRAPHY_PRESETS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.value}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Image generation notes</Label>
+          <Textarea
+            rows={6}
+            className="min-h-[8rem] resize-y"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Warm editorial photography, minimal overlays, no stock illustrations."
+          />
+        </div>
+      </div>
 
       <div className="flex justify-between pt-2">
         <Button type="button" variant="outline" onClick={onBack}>Back</Button>
@@ -1326,13 +1336,15 @@ function StepComplete({
             Pins will still generate, but they can't publish until each site is pointed at one of your connected
             Pinterest accounts. This is set per site, on the Sites page.
           </p>
-          <Link
-            to="/sites"
-            search={unmappedSites.length === 1 ? siteConnectionsSearch(unmappedSites[0]!.id) : {}}
-            className="mt-2 inline-block text-xs font-medium underline underline-offset-2"
-          >
-            {unmappedSites.length === 1 ? "Map it now →" : "Review sites →"}
-          </Link>
+          {unmappedSites.length === 1 ? (
+            <Link {...siteConnectionsLink(unmappedSites[0]!.id)} className="mt-2 inline-block text-xs font-medium underline underline-offset-2">
+              Map it now →
+            </Link>
+          ) : (
+            <Link to="/sites" search={{}} className="mt-2 inline-block text-xs font-medium underline underline-offset-2">
+              Review sites →
+            </Link>
+          )}
         </div>
       )}
       <div className="grid gap-3 text-left sm:grid-cols-2">

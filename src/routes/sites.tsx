@@ -1,11 +1,11 @@
-// Standalone route -- opts out of the shared _authenticated layout
+// Standalone route — opts out of the shared _authenticated layout
 // (AppShell) so PinShell renders the Pinterest-native chrome, matching
 // Dashboard/Schedule/Boards. beforeLoad duplicates the _authenticated
 // route's auth guard; keep both in sync if that check ever changes.
-import { createFileRoute, redirect, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  Globe, Store, ShoppingBag, Trash2, RefreshCcw, ChevronDown, Plus, X, Check, BookOpen, Link2, Map,
-  ImageIcon, Upload, Loader2, Sparkles,
+  Globe, Store, ShoppingBag, Trash2, RefreshCcw, Plus, X, Check, BookOpen, Link2, Map,
+  ImageIcon, Sparkles,
 } from "lucide-react";
 import {
   getSitesOverview, upsertSite, deleteSite, crawlSite, SITE_TYPES, IMAGE_PROVIDERS, COPY_PROVIDERS,
@@ -30,7 +29,6 @@ import {
   type SiteOverviewRow, type SiteType, type ImageProvider, type CopyProvider,
 } from "@/lib/sites.functions";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
-import { InfoTooltip } from "@/components/InfoTooltip";
 import type { SiteVertical } from "@/lib/briefs.functions";
 import { listGoogleConnections, listGa4PropertiesForConnection } from "@/lib/google.functions";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
@@ -42,44 +40,31 @@ import { getErrorMessage } from "@/lib/error-message";
 import { SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
 import type { SiteFocusSearch } from "@/lib/site-mapping";
 
+// /sites is a LAYOUT route, not a page.
+//
+// File-based routing makes sites.$id.tsx and sites.style-setup.tsx
+// CHILDREN of this file, and a child only ever renders where its parent
+// renders an <Outlet/>. This route used to render the site list
+// directly, with no Outlet at all, so every child match resolved to the
+// list: /sites/$id showed the list, and /sites/style-setup — which
+// predates this split and is what useSiteStyleGate redirects to — had
+// been silently doing the same thing.
+//
+// So this renders nothing but the Outlet. The list itself moved to
+// sites.index.tsx, and each child owns its own PinShell, so there is no
+// shared chrome here to duplicate.
+//
+// The non-route exports further down (BrandEditorFields,
+// SiteConnectionsSection, AddSiteWizard, the presets and helpers) stay
+// in this file because three other modules already import them from
+// "@/routes/sites".
 export const Route = createFileRoute("/sites")({
   ssr: false,
-  // Deep link target for every "map this site" action in the app (the
-  // setup banner, the Sites-card warning, the publish error, the
-  // generation warning). ?site=<id>&section=connections scrolls that
-  // site's card into view and expands its Connections section, so a
-  // multi-site account lands on the right card instead of being dropped
-  // at the top of the page to find it. Both params are optional and
-  // ignored when they don't match anything -- a stale link degrades to
-  // a plain Sites page rather than an error.
-  validateSearch: (search: Record<string, unknown>): SiteFocusSearch => ({
-    site: typeof search.site === "string" ? search.site : undefined,
-    section: search.section === "connections" ? "connections" : undefined,
-  }),
-  beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
-  },
-  head: () => ({ meta: [{ title: "Sites — Pinspider" }] }),
-  // SiteProvider now lives inside PinShell itself (see components/
-  // PinShell.tsx).
-  component: () => <SitesRoute />,
+  component: () => <Outlet />,
 });
 
-function SitesRoute() {
-  const { user } = Route.useRouteContext();
-  return (
-    <PinShell active="sites" userEmail={user.email}>
-      <div className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar" style={{ scrollbarWidth: "none" }}>
-        <SitesPage />
-      </div>
-    </PinShell>
-  );
-}
-
 // ---------- Shared type/style config ----------
-// Deliberately generic icons (not each platform's real logo) -- same
+// Deliberately generic icons (not each platform's real logo) — same
 // trademark reasoning as the Pinterest mark elsewhere in this app: this
 // is a third-party tool, not Etsy or the storefront platforms it
 // connects to.
@@ -148,7 +133,7 @@ export const TYPOGRAPHY_PRESETS = [
   { value: "Serif Display + Clean Sans", headingFont: "Georgia, serif", bodyFont: "system-ui, sans-serif" },
 ] as const;
 
-// Display labels for the two provider pickers -- kept here (not
+// Display labels for the two provider pickers — kept here (not
 // inferred from IMAGE_PROVIDERS/COPY_PROVIDERS directly) since the raw
 // provider ids (e.g. "fal", "stability") aren't the names a user would
 // recognize on their own.
@@ -173,7 +158,7 @@ export function normalizeUrl(raw: string): string {
   const trimmed = raw.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
-function formatShortDate(iso: string): string {
+export function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 function formatRelative(iso: string): string {
@@ -186,92 +171,20 @@ function formatRelative(iso: string): string {
 
 // ---------- Page ----------
 
-function SitesPage() {
-  const qc = useQueryClient();
-  const overviewFn = useServerFn(getSitesOverview);
-  const delFn = useServerFn(deleteSite);
-  const crawlFn = useServerFn(crawlSite);
-
-  const { data: sites } = useQuery({ queryKey: ["sites-overview"], queryFn: () => overviewFn() });
-  const [wizardOpen, setWizardOpen] = useState(false);
-  // ?site=&section= -- see the route's validateSearch. Read here and
-  // passed down rather than read inside each card, so a card has no
-  // opinion about routing.
-  const focus = Route.useSearch();
-
-  function invalidate() {
-    qc.invalidateQueries({ queryKey: ["sites-overview"] });
-    // SiteSwitcher/SiteProvider (Dashboard/Schedule) read the lighter
-    // listSites query -- keep both in sync on any change here.
-    qc.invalidateQueries({ queryKey: ["sites-switcher"] });
-    // getSetupStatus() derives site_connected/brand_identity straight
-    // from the sites table -- any add/edit/delete here can flip either,
-    // and the Dashboard checklist, FinishSetupBanner, and the
-    // onboarding wizard's own step logic all read this same cached
-    // query. Without this, deleting a site (especially the last one)
-    // leaves every one of those surfaces showing stale "done" state
-    // until something unrelated happens to refetch it.
-    qc.invalidateQueries({ queryKey: SETUP_STATUS_QUERY_KEY });
-  }
-
-  const delMut = useMutation({
-    mutationFn: (id: string) => delFn({ data: { id } }),
-    onSuccess: () => { toast.success("Site removed"); invalidate(); },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-  const crawlMut = useMutation({
-    mutationFn: (id: string) => crawlFn({ data: { siteId: id } }),
-    onSuccess: (r) => { toast.success(`Crawl: +${r.added} added, ${r.updated} updated, ${r.errors} errors`); invalidate(); },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
-  const rows = (sites ?? []) as SiteOverviewRow[];
-  const totalPins = rows.reduce((sum, s) => sum + s.pinsCreated, 0);
-
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl">My Sites</h1>
-          <p className="text-sm text-muted-foreground">{rows.length} connected · {totalPins} total pins created</p>
-        </div>
-        {wizardOpen ? (
-          <Button className="bg-black text-white hover:bg-neutral-900" onClick={() => setWizardOpen(false)}>
-            <X className="mr-1.5 h-4 w-4" />Cancel
-          </Button>
-        ) : (
-          <Button className="bg-[#E60023] text-white hover:bg-[#E60023]/90" onClick={() => setWizardOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />Add a site
-          </Button>
-        )}
-      </header>
-
-      {wizardOpen && (
-        <AddSiteWizard onCancel={() => setWizardOpen(false)} onCreated={() => { setWizardOpen(false); invalidate(); }} />
-      )}
-
-      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {rows.map((site) => (
-          <SiteCard
-            key={site.id}
-            site={site}
-            onDelete={() => delMut.mutate(site.id)}
-            onCrawl={() => crawlMut.mutate(site.id)}
-            crawlPending={crawlMut.isPending}
-            onSaved={invalidate}
-            focusConnections={focus.site === site.id && focus.section === "connections"}
-          />
-        ))}
-      </div>
-      {!rows.length && !wizardOpen && (
-        <p className="text-sm text-muted-foreground">No sites yet — add one to get started.</p>
-      )}
-    </div>
-  );
-}
-
 // ---------- Shared brand editor (used by both the wizard step 3 and each card's inline "Brand" panel) ----------
 
+// The full brand editor. Nothing here is behind a disclosure any more.
+//
+// The old "Advanced" section hid brand palette, typography and image-gen
+// notes. That grouping was never a judgement about importance — all
+// three feed image generation directly, and the palette in particular is
+// what the generator paints with. They were demoted because the editor
+// lived inside a site CARD on a list page and there was no room. Now
+// that the editor has its own route (routes/sites.$id.tsx) the room
+// exists, so the disclosure is gone rather than reorganised.
+//
+// Section order is Identity, Colours, Typography, Content vertical,
+// Image generation notes.
 export function BrandEditorFields({
   brandName, onBrandName,
   tagline, onTagline,
@@ -280,7 +193,6 @@ export function BrandEditorFields({
   typography, onTypography,
   notes, onNotes,
   siteType, vertical, onVertical,
-  advancedOpen, onToggleAdvanced,
   previewLabel = "Your brand name",
   previewHost = "www",
 }: {
@@ -290,18 +202,17 @@ export function BrandEditorFields({
   brandColors: string[]; onToggleBrandColor: (hex: string) => void; onRemoveLegacyColor: (hex: string) => void;
   typography: string; onTypography: (v: string) => void;
   notes: string; onNotes: (v: string) => void;
-  // Image/Copy generation provider pickers used to live here (Advanced
-  // section, below) -- moved to each site's Connections section
+  // Image/Copy generation provider pickers used to live here (in the
+  // former Advanced section) — moved to each site's Connections tab
   // instead (ProviderOverrideCard, SiteConnectionsSection) once they
   // became optional per-site OVERRIDES of an account-level default
-  // rather than a mandatory per-site choice, per spec: this section is
-  // Brand settings, overrides are a connections/integration concern.
-  // Vertical selector is website-only (see WEBSITE_VERTICAL_OPTIONS) --
+  // rather than a mandatory per-site choice: this is Brand settings,
+  // overrides are a connections/integration concern.
+  // Vertical selector is website-only (see WEBSITE_VERTICAL_OPTIONS) —
   // Etsy/eComm sites auto-derive etsy_product/ecomm_product via a DB
   // trigger with no UI choice, so siteType decides whether this section
   // renders at all rather than the caller conditionally omitting props.
   siteType: SiteType; vertical: SiteVertical; onVertical: (v: SiteVertical) => void;
-  advancedOpen: boolean; onToggleAdvanced: () => void;
   previewLabel?: string;
   previewHost?: string;
 }) {
@@ -311,122 +222,102 @@ export function BrandEditorFields({
     : [{ value: typography, headingFont: undefined, bodyFont: undefined }, ...TYPOGRAPHY_PRESETS];
   const activeSample = TYPOGRAPHY_PRESETS.find((p) => p.value === typography);
   // Sites created via the DB auto-cycling trigger (see
-  // 20260720120000_site_accent_color.sql) get one of 4 colors
+  // 20260720120000_site_accent_color.sql) get one of 4 colours
   // (#4F7A5C/#8067AD/#C68A4B/#4A6C93) that aren't in this picker's 10
   // presets. Rendered as an 11th grid swatch this just wraps onto its
   // own line looking like a stray/broken circle, so instead it's
-  // rendered as a separate labeled "Current" pill next to the row --
+  // rendered as a separate labelled "Current" pill next to the row —
   // reads as intentional whether or not it wraps.
   const isCustomAccent = !ACCENT_PRESETS.includes(accentColor);
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label>Brand name</Label>
-          <Input value={brandName} onChange={(e) => onBrandName(e.target.value)} placeholder="Clara Goods" />
-        </div>
-        <div>
-          <Label>Tagline <span className="text-muted-foreground">(optional)</span></Label>
-          <Input value={tagline} onChange={(e) => onTagline(e.target.value)} placeholder="Slow living, thoughtfully made." />
-        </div>
-      </div>
-
-      <div>
-        <Label className="mb-2 block">Brand accent color <span className="font-normal text-muted-foreground">used on pin thumbnails</span></Label>
-        <div className="flex flex-wrap items-center gap-2">
-          {ACCENT_PRESETS.map((hex) => {
-            const active = accentColor === hex;
-            return (
-              <button
-                key={hex} type="button" onClick={() => onAccentColor(hex)}
-                title={hex} aria-label={hex}
-                className="flex h-8 w-8 items-center justify-center rounded-full"
-                style={{ background: hex, boxShadow: active ? "0 0 0 2px #fff, 0 0 0 4px #111111" : "0 0 0 1px rgba(0,0,0,0.08)" }}
-              >
-                {active && <Check className="h-4 w-4 text-white" />}
-              </button>
-            );
-          })}
-          {isCustomAccent && (
-            <span className="flex items-center gap-1.5 rounded-full border border-border py-1 pl-1 pr-2.5 text-xs text-muted-foreground">
-              <span
-                className="flex h-6 w-6 items-center justify-center rounded-full"
-                style={{ background: accentColor, boxShadow: "0 0 0 2px #fff, 0 0 0 3px #111111" }}
-              >
-                <Check className="h-3 w-3 text-white" />
-              </span>
-              Current
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background">
-          <Globe className="h-4 w-4" style={{ color: accentColor }} />
-        </span>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{brandName || previewLabel}</div>
-          <div className="truncate text-xs text-muted-foreground">{previewHost}</div>
-        </div>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="h-2 w-2 rounded-full" style={{ background: accentColor }} />accent
-        </span>
-      </div>
-
-      {siteType === "website" && (
-        <div>
-          <Label className="mb-2 flex items-center gap-1.5">
-            Content vertical <span className="font-normal text-muted-foreground">affects pin palette/tone only, not which templates are available</span>
-            <InfoTooltip text="Content Vertical shapes the palette, tone, and template flavor used when generating pins for this site. It only affects visual style -- it doesn't restrict which templates are available." />
-          </Label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {WEBSITE_VERTICAL_OPTIONS.map((opt) => {
-              const active = vertical === opt.value;
-              return (
-                <button
-                  key={opt.value} type="button" onClick={() => onVertical(opt.value)}
-                  className="rounded-lg border p-3 text-left transition-colors hover:border-neutral-400"
-                  style={{
-                    borderColor: active ? "#E60023" : "#E5E5E5",
-                    borderWidth: active ? 2 : 1,
-                    background: active ? "#FCE9EA" : "transparent",
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 font-medium">
-                    {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#E60023" }} />}
-                    {opt.label}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{opt.description}</div>
-                </button>
-              );
-            })}
+    <div className="space-y-8">
+      {/* ---------- Identity ---------- */}
+      <FieldGroup title="Identity" hint="How this site is labelled across Pinspider.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label>Brand name</Label>
+            <Input value={brandName} onChange={(e) => onBrandName(e.target.value)} placeholder="Clara Goods" />
+          </div>
+          <div>
+            <Label>Tagline <span className="text-muted-foreground">(optional)</span></Label>
+            <Input value={tagline} onChange={(e) => onTagline(e.target.value)} placeholder="Slow living, thoughtfully made." />
           </div>
         </div>
-      )}
+      </FieldGroup>
 
-      <button type="button" onClick={onToggleAdvanced} className="flex items-center gap-1.5 text-sm font-medium">
-        <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />Advanced
-      </button>
-
-      {advancedOpen && (
-        <div className="space-y-4 border-t border-border pt-4">
+      {/* ---------- Colours ----------
+          Two groups that were previously easy to confuse: they look
+          alike (both are swatch rows drawn from ACCENT_PRESETS) but do
+          entirely different jobs, and one of them was hidden under
+          Advanced while the other wasn't. Each is now labelled with what
+          it actually affects. */}
+      <FieldGroup title="Colours">
+        <div className="space-y-5">
           <div>
-            <Label className="mb-2 block">
-              Brand palette <span className="font-normal text-muted-foreground">(optional, extra colors for image gen)</span>
-            </Label>
+            <Label className="mb-1 block">Accent colour</Label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              A single colour, used by Pinspider's own interface — pin thumbnails, this site's card, its chart series.
+              Never sent to the image generator.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {ACCENT_PRESETS.map((hex) => {
+                const active = accentColor === hex;
+                return (
+                  <button
+                    key={hex} type="button" onClick={() => onAccentColor(hex)}
+                    title={hex} aria-label={`Accent colour ${hex}`} aria-pressed={active}
+                    className="flex h-8 w-8 items-center justify-center rounded-full"
+                    style={{ background: hex, boxShadow: active ? "0 0 0 2px #fff, 0 0 0 4px #111111" : "0 0 0 1px rgba(0,0,0,0.08)" }}
+                  >
+                    {active && <Check className="h-4 w-4 text-white" />}
+                  </button>
+                );
+              })}
+              {isCustomAccent && (
+                <span className="flex items-center gap-1.5 rounded-full border border-border py-1 pl-1 pr-2.5 text-xs text-muted-foreground">
+                  <span
+                    className="flex h-6 w-6 items-center justify-center rounded-full"
+                    style={{ background: accentColor, boxShadow: "0 0 0 2px #fff, 0 0 0 3px #111111" }}
+                  >
+                    <Check className="h-3 w-3 text-white" />
+                  </span>
+                  Current
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background">
+                <Globe className="h-4 w-4" style={{ color: accentColor }} />
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{brandName || previewLabel}</div>
+                <div className="truncate text-xs text-muted-foreground">{previewHost}</div>
+              </div>
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="h-2 w-2 rounded-full" style={{ background: accentColor }} />accent
+              </span>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-5">
+            <Label className="mb-1 block">Image palette <span className="font-normal text-muted-foreground">(optional)</span></Label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Several colours, passed to the image generator as the palette it paints your pins with. Pick as many as you
+              like, or none to let the generator choose from your content vertical alone.
+            </p>
             <div className="flex flex-wrap gap-2">
               {ACCENT_PRESETS.map((hex) => {
                 const active = brandColors.includes(hex);
                 return (
                   <button
                     key={hex} type="button" onClick={() => onToggleBrandColor(hex)}
-                    title={hex} aria-label={hex}
-                    className="flex h-7 w-7 items-center justify-center rounded-full"
+                    title={hex} aria-label={`Image palette ${hex}`} aria-pressed={active}
+                    className="flex h-8 w-8 items-center justify-center rounded-full"
                     style={{ background: hex, boxShadow: active ? "0 0 0 2px #fff, 0 0 0 4px #111111" : "0 0 0 1px rgba(0,0,0,0.08)" }}
                   >
-                    {active && <Check className="h-3.5 w-3.5 text-white" />}
+                    {active && <Check className="h-4 w-4 text-white" />}
                   </button>
                 );
               })}
@@ -445,43 +336,127 @@ export function BrandEditorFields({
               </div>
             )}
           </div>
-
-          <div>
-            <Label className="mb-2 block">Typography direction</Label>
-            <Select value={typography || undefined} onValueChange={onTypography}>
-              <SelectTrigger><SelectValue placeholder="Choose a pairing" /></SelectTrigger>
-              <SelectContent>
-                {typographyOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.value}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {activeSample && (
-              <div className="mt-2 rounded-md border border-border p-3">
-                <div className="text-lg" style={{ fontFamily: activeSample.headingFont }}>Heading sample</div>
-                <div className="text-sm text-muted-foreground" style={{ fontFamily: activeSample.bodyFont }}>Body text sample for this pairing.</div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label>Brand notes for image gen</Label>
-            <Textarea rows={3} value={notes} onChange={(e) => onNotes(e.target.value)} placeholder="Warm editorial photography, minimal overlays, no stock illustrations." />
-          </div>
         </div>
+      </FieldGroup>
+
+      {/* ---------- Typography ---------- */}
+      <FieldGroup title="Typography" hint="The headline and body pairing the image generator sets pin text in.">
+        <Select value={typography || undefined} onValueChange={onTypography}>
+          <SelectTrigger><SelectValue placeholder="Choose a pairing" /></SelectTrigger>
+          <SelectContent>
+            {typographyOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.value}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {activeSample && (
+          <div className="mt-2 rounded-md border border-border p-3">
+            <div className="text-lg" style={{ fontFamily: activeSample.headingFont }}>Heading sample</div>
+            <div className="text-sm text-muted-foreground" style={{ fontFamily: activeSample.bodyFont }}>Body text sample for this pairing.</div>
+          </div>
+        )}
+      </FieldGroup>
+
+      {/* ---------- Content vertical ----------
+          Was five large cards, each repeating the same "doesn't limit
+          which templates are available" sentence. Said once here, above
+          the group, so each option can collapse to one line. */}
+      {siteType === "website" && (
+        <FieldGroup
+          title="Content vertical"
+          hint="Sets the colour and genre flavour of generated pins. It does not limit which pin templates are available — every template stays usable whichever vertical you pick."
+        >
+          {/* Roving tabindex + arrow keys, per the WAI-ARIA radiogroup
+              pattern: the group is one tab stop and arrows move between
+              options, rather than five separate tab stops. */}
+          <div role="radiogroup" aria-label="Content vertical" className="divide-y divide-border rounded-lg border border-border">
+            {WEBSITE_VERTICAL_OPTIONS.map((opt, i) => {
+              const active = vertical === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  tabIndex={active || (!WEBSITE_VERTICAL_OPTIONS.some((o) => o.value === vertical) && i === 0) ? 0 : -1}
+                  onKeyDown={(e) => {
+                    const delta = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1
+                      : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+                    if (!delta) return;
+                    e.preventDefault();
+                    const n = WEBSITE_VERTICAL_OPTIONS.length;
+                    const next = WEBSITE_VERTICAL_OPTIONS[(i + delta + n) % n]!;
+                    onVertical(next.value);
+                    const group = e.currentTarget.parentElement;
+                    (group?.children[(i + delta + n) % n] as HTMLElement | undefined)?.focus();
+                  }}
+                  onClick={() => onVertical(opt.value)}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50"
+                  style={{ background: active ? "#FCE9EA" : undefined }}
+                >
+                  <span
+                    aria-hidden
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                    style={{ borderColor: active ? "#E60023" : "#C9C9C9", borderWidth: active ? 5 : 1 }}
+                  />
+                  <span className="min-w-0 flex-1 text-sm">
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="text-muted-foreground"> — {paletteSummary(opt.description)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </FieldGroup>
       )}
+
+      {/* ---------- Image generation notes ---------- */}
+      <FieldGroup title="Image generation notes" hint="Free-text direction handed to the image generator with every pin for this site.">
+        <Textarea
+          rows={8}
+          className="min-h-[11rem] resize-y"
+          value={notes}
+          onChange={(e) => onNotes(e.target.value)}
+          placeholder="Warm editorial photography, minimal overlays, no stock illustrations."
+        />
+      </FieldGroup>
     </div>
   );
 }
 
+// Section wrapper — a heading, an optional one-line explanation, then
+// the controls. Exists so the Brand tab's five sections are visibly
+// sections rather than an undifferentiated column of fields, which is
+// part of why the old editor felt like it needed an Advanced bucket.
+function FieldGroup({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {hint && <p className="mt-0.5 mb-3 max-w-2xl text-xs text-muted-foreground">{hint}</p>}
+      <div className={hint ? "" : "mt-3"}>{children}</div>
+    </section>
+  );
+}
+
+// WEBSITE_VERTICAL_OPTIONS descriptions carry both the palette
+// description and a repeat of the "doesn't limit templates" caveat. The
+// caveat is now stated once above the group, so this keeps only the
+// palette half for the one-line rows. Trimming here rather than editing
+// VERTICAL_UI_META keeps that copy intact for any other consumer.
+function paletteSummary(description: string): string {
+  const cut = description.search(/(Doesn't|Does not) limit/i);
+  const head = (cut === -1 ? description : description.slice(0, cut)).trim();
+  return head.replace(/[.\s]+$/, "").replace(/\s+--\s+/g, " — ");
+}
+
 // This account's actual API-key connections (Settings -> Integrations)
-// -- the per-site override picker (ProviderOverrideCard) filters
+// — the per-site override picker (ProviderOverrideCard) filters
 // against this so a site can never be silently pointed at a
 // connection it doesn't own (or that's since been deleted). Shared
 // here (rather than each of AddSiteWizard/SiteCard querying
 // independently) since it's the same account-wide
 // ["api-key-connections"] query key settings.integrations.tsx already
-// uses -- React Query dedupes the actual network call.
+// uses — React Query dedupes the actual network call.
 function useApiKeyConnections() {
   const list = useServerFn(listApiKeyConnections);
   const { data } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => list() });
@@ -495,12 +470,12 @@ function useApiKeyConnections() {
 
 type WizardStep = 1 | 2 | 3 | 4;
 
-// onCreated optionally receives the just-created/updated site row --
+// onCreated optionally receives the just-created/updated site row —
 // used by the onboarding wizard (routes/onboarding.tsx) to know which
 // site its later brand-identity/crawl steps operate on without having
 // to re-guess "the most recently created site" from a second query.
 // The plain Sites page usage below (`onCreated={() => {...}}`) is still
-// valid -- a callback that ignores its argument satisfies this type.
+// valid — a callback that ignores its argument satisfies this type.
 export function AddSiteWizard({
   onCancel, onCreated, showStyleSetupStep = true,
 }: {
@@ -511,7 +486,7 @@ export function AddSiteWizard({
   // embedded usage (step 1, site creation) sets this false: no image
   // provider is connected yet at that point (that happens at
   // onboarding's own step 3), so Pin Style Setup would always fail
-  // there -- onboarding instead surfaces it itself at step 4
+  // there — onboarding instead surfaces it itself at step 4
   // (StepCrawlPreview), right before "Generate first batch," which is
   // the earliest point a provider is guaranteed to exist.
   showStyleSetupStep?: boolean;
@@ -528,7 +503,6 @@ export function AddSiteWizard({
   const [typography, setTypography] = useState("");
   const [notes, setNotes] = useState("");
   const [vertical, setVertical] = useState<SiteVertical>(DEFAULT_WEBSITE_VERTICAL);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createdSite, setCreatedSite] = useState<{ id: string; url: string; brand_name: string | null; accent_color: string | null } | null>(null);
 
   const createMut = useMutation({
@@ -536,7 +510,7 @@ export function AddSiteWizard({
       data: {
         // Once createdSite exists (the user went back from step 4 to
         // adjust brand settings), include its id so this becomes an
-        // UPDATE of the same row instead of a second INSERT -- without
+        // UPDATE of the same row instead of a second INSERT — without
         // this, "Adjust brand settings" -> "Add site" again would
         // silently create a duplicate site.
         id: createdSite?.id,
@@ -549,7 +523,7 @@ export function AddSiteWizard({
         brand_colors: brandColors,
         brand_font: typography || undefined,
         brand_notes: notes || undefined,
-        // Only sent for website sites -- omitting it entirely for etsy/
+        // Only sent for website sites — omitting it entirely for etsy/
         // ecomm lets the DB trigger (tg_sites_default_vertical) assign
         // etsy_product/ecomm_product itself instead of this always-set
         // website-flavored value overriding it.
@@ -561,7 +535,7 @@ export function AddSiteWizard({
       const created = site as unknown as { id: string; url: string; brand_name: string | null; accent_color: string | null };
       if (!showStyleSetupStep) { onCreated(created); return; }
       // Move into Pin Style Setup instead of closing the wizard right
-      // away -- onCreated (which actually closes/refreshes the parent)
+      // away — onCreated (which actually closes/refreshes the parent)
       // only fires once that step is done or explicitly skipped, see
       // step 4 below.
       setCreatedSite(created);
@@ -681,7 +655,6 @@ export function AddSiteWizard({
             typography={typography} onTypography={setTypography}
             notes={notes} onNotes={setNotes}
             siteType={siteType} vertical={vertical} onVertical={setVertical}
-            advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
             previewHost={url.trim() ? hostFromUrl(normalizeUrl(url)) : undefined}
           />
         )}
@@ -699,7 +672,7 @@ export function AddSiteWizard({
                 className="text-xs text-muted-foreground hover:underline"
                 onClick={() => onCreated(createdSite)}
               >
-                Skip for now -- I&rsquo;ll set this up before my first batch
+                Skip for now — I&rsquo;ll set this up before my first batch
               </button>
             </div>
           </div>
@@ -735,7 +708,7 @@ export function AddSiteWizard({
 
 // ---------- Site card ----------
 
-// Top-level per-site "Connections" area -- deliberately NOT inside the
+// Top-level per-site "Connections" area — deliberately NOT inside the
 // Advanced/collapsible section of BrandEditorFields (that stays scoped
 // to brand_notes/typography_direction/brand palette only, per spec).
 // Two side-by-side summary cards, same visual tier as the primary
@@ -743,25 +716,30 @@ export function AddSiteWizard({
 // card" feel rather than a settings form.
 //
 // Pinterest here is a status + mapped-boards-count summary linking out
-// to /boards, not a relocated CRUD UI -- boards are a genuine many-to-
+// to /boards, not a relocated CRUD UI — boards are a genuine many-to-
 // many relationship (board.site_ids: uuid[], a board can target 0+
 // sites) managed on their own dedicated page, so "moving" board mapping
 // into a per-site card would mean either duplicating that whole UI or
 // crippling it down to a single-site view. A concise glanceable summary
 // + link preserves the real data model instead of faking a 1:1 one.
-function SiteConnectionsSection({
-  site, onSaved,
+export function SiteConnectionsSection({
+  site, onSaved, bare = false,
 }: {
   site: SiteOverviewRow;
   onSaved: () => void;
+  // `bare` drops the divider + heading this used to need when it was
+  // stacked inside a site card on the list page. On its own tab
+  // (routes/sites.$id.tsx) the tab label already says "Connections",
+  // so repeating it there would be a heading above a heading.
+  bare?: boolean;
 }) {
   const { imageConnections, copyConnections } = useApiKeyConnections();
   const getDefaults = useServerFn(getAccountProviderDefaults);
   const { data: defaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
 
   return (
-    <div className="mt-5 border-t border-border pt-5">
-      <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>
+    <div className={bare ? "" : "mt-5 border-t border-border pt-5"}>
+      {!bare && <div className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</div>}
       <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
         <PinterestSiteConnectionCard site={site} onSaved={onSaved} />
         <GoogleAnalyticsConnectionCard site={site} onSaved={onSaved} />
@@ -782,10 +760,10 @@ function SiteConnectionsSection({
   );
 }
 
-// Per-site image/copy generation summary -- READ-ONLY as of this pass.
+// Per-site image/copy generation summary — READ-ONLY as of this pass.
 // Assigning a site to a specific key now happens on the Integrations
 // page instead (each key's own "Used by" picker,
-// ApiKeyConnectionRow/settings.integrations.tsx) -- this card just
+// ApiKeyConnectionRow/settings.integrations.tsx) — this card just
 // reflects whatever that picker last set (same
 // image_connection_override_id/copy_connection_override_id field,
 // same data model, just a different screen writes it now), with a
@@ -847,7 +825,7 @@ function ProviderOverrideCard({
   );
 }
 
-// Reads/writes site.pinterest_connection_id directly -- deliberately NOT
+// Reads/writes site.pinterest_connection_id directly — deliberately NOT
 // a shared account-wide boolean prop the way this used to work. That
 // shared-prop version was the confirmed root cause of a site-isolation
 // bug: every SiteCard rendered the exact same "Connected" status because
@@ -875,7 +853,7 @@ function PinterestSiteConnectionCard({ site, onSaved }: { site: SiteOverviewRow;
     onError: (e) => toast.error(getErrorMessage(e)),
   });
 
-  // Defaulted off (see pinterest_hashtags_setting migration) -- publisher.server.ts
+  // Defaulted off (see pinterest_hashtags_setting migration) — publisher.server.ts
   // reads this to decide whether to append this site's briefs' stored
   // hashtags (capped at 5) to the end of the description at publish time.
   const hashtagsMut = useMutation({
@@ -989,7 +967,7 @@ function GoogleAnalyticsConnectionCard({ site, onSaved }: { site: SiteOverviewRo
   const [connId, setConnId] = useState<string | null>(site.google_connection_id);
 
   // Auto-select the only connection when there's nothing mapped yet and
-  // exactly one Google account is available -- per spec, this is the
+  // exactly one Google account is available — per spec, this is the
   // one case that shouldn't make the user pick from a list of one.
   const autoSelected = !site.google_connection_id && connections?.length === 1 ? connections[0].id : null;
   const effectiveConnId = connId ?? autoSelected;
@@ -1117,114 +1095,66 @@ function RouterLinkToSettings() {
   );
 }
 
-function SiteCard({
-  site, onDelete, onCrawl, crawlPending, onSaved, focusConnections = false,
+// Compact list card. Read-only: everything editable now lives on
+// /sites/$id (Brand / Connections / Activity tabs).
+//
+// It used to carry the full editor behind two disclosure toggles, which
+// is the reason brand palette, typography and image-gen notes ended up
+// filed under "Advanced" — there was no room, so they were demoted by
+// space rather than by importance. Splitting list from detail is what
+// let that bucket be deleted outright.
+export function SiteCard({
+  site, onDelete, onCrawl, crawlPending,
 }: {
-  site: SiteOverviewRow; onDelete: () => void; onCrawl: () => void; crawlPending: boolean; onSaved: () => void;
-  // True when this card is the deep-link target (?site=<id>&section=connections).
-  focusConnections?: boolean;
+  site: SiteOverviewRow; onDelete: () => void; onCrawl: () => void; crawlPending: boolean;
 }) {
-  const upsert = useServerFn(upsertSite);
-  const [editing, setEditing] = useState(false);
-  const [brandName, setBrandName] = useState(site.brand_name ?? "");
-  const [tagline, setTagline] = useState(site.tagline ?? "");
-  const [accentColor, setAccentColor] = useState(site.accent_color ?? ACCENT_PRESETS[0]);
-  const [brandColors, setBrandColors] = useState<string[]>(Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []);
-  const [typography, setTypography] = useState(site.brand_font ?? "");
-  const [notes, setNotes] = useState(site.brand_notes ?? "");
-  const [vertical, setVertical] = useState<SiteVertical>(site.vertical ?? DEFAULT_WEBSITE_VERTICAL);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [styleSetupOpen, setStyleSetupOpen] = useState(false);
-  // Collapsed by default -- same reasoning as the Image/Copy Generation
-  // provider rows on Integrations (settings.integrations.tsx): with
-  // several sites on this page, every card unconditionally showing its
-  // full Connections section (Pinterest, GA4, image key, copy key, 4
-  // sub-cards) at once reads as clutter, not a scannable list. Mirrors
-  // the "Brand" toggle right below exactly -- same button style, same
-  // ChevronDown rotate, plain boolean-gated render rather than the
-  // grid-animated CollapsibleSection settings.integrations.tsx uses,
-  // to match this component's own existing convention.
-  const [connectionsOpen, setConnectionsOpen] = useState(focusConnections);
-
-  // Deep-link arrival: expand Connections and bring this card into view.
-  // Runs on focusConnections changing rather than once on mount, so
-  // clicking a "Map now" link while already on /sites (which only
-  // changes the search params, no remount) still lands correctly.
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!focusConnections) return;
-    setConnectionsOpen(true);
-    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focusConnections]);
-
-  // Account-wide Pinterest connections, for the unmapped warning below.
-  // Same queryKey PinterestSiteConnectionCard already uses, so
-  // react-query serves both from one fetch rather than one per card.
-  const listConnsForWarning = useServerFn(listPinterestConnections);
-  const { data: pinterestConnections, isLoading: connectionsLoading } = useQuery({
-    queryKey: ["pinterest-connections"],
-    queryFn: () => listConnsForWarning(),
-  });
-  // Until this resolves, `data` is undefined and "has any connection"
-  // would read false -- which would render the "Connect an account"
-  // link on first paint for an account that already has one, sending a
-  // user who clicks fast to Settings to connect a second account they
-  // don't need. The warning text is true either way, so it shows
-  // immediately; only the action waits.
-  const hasAnyPinterestConnection = (pinterestConnections?.length ?? 0) > 0;
-  const unmapped = !site.pinterest_connection_id;
-
-  const saveMut = useMutation({
-    mutationFn: () => upsert({
-      data: {
-        id: site.id, url: site.url, sitemap_url: site.sitemap_url ?? undefined,
-        site_type: site.site_type,
-        brand_name: brandName || undefined,
-        tagline: tagline || undefined,
-        accent_color: accentColor,
-        brand_colors: brandColors,
-        brand_font: typography || undefined,
-        brand_notes: notes || undefined,
-        // Website-only, same reasoning as AddSiteWizard above -- never
-        // send this for etsy/ecomm sites so nothing can ever override
-        // their trigger-assigned vertical through this form.
-        vertical: site.site_type === "website" ? vertical : undefined,
-      },
-    }),
-    onSuccess: () => { toast.success("Brand saved"); setEditing(false); onSaved(); },
-    onError: (e) => toast.error(getErrorMessage(e)),
-  });
-
   const cfg = SITE_TYPE_CONFIG[site.site_type as SiteType] ?? SITE_TYPE_CONFIG.website;
   const Icon = cfg.icon;
   const host = hostFromUrl(site.url);
-  const swatches = Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : [];
   const accent = site.accent_color ?? "#8A867C";
+  const swatches = (Array.isArray(site.brand_colors) ? (site.brand_colors as string[]) : []).filter(Boolean);
+
+  // Account-wide Pinterest connections, for the unmapped warning. Same
+  // queryKey the detail route's picker uses, so React Query serves every
+  // card on this page from one fetch.
+  const listConns = useServerFn(listPinterestConnections);
+  const { data: pinterestConnections, isLoading: connectionsLoading } = useQuery({
+    queryKey: ["pinterest-connections"],
+    queryFn: () => listConns(),
+  });
+  const hasAnyPinterestConnection = (pinterestConnections?.length ?? 0) > 0;
+  const unmapped = !site.pinterest_connection_id;
 
   return (
-    <Card ref={cardRef} id={`site-card-${site.id}`} className="overflow-hidden p-0">
+    <Card id={`site-card-${site.id}`} className="overflow-hidden p-0">
       <div className="h-1.5 w-full" style={{ background: accent }} />
       <div className="p-5">
         <div className="mb-1 flex items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${accent}1A` }}>
             <Icon className="h-4 w-4" style={{ color: accent }} />
           </span>
-          <span className="min-w-0 truncate font-semibold">{site.brand_name || host}</span>
+          <Link
+            to="/sites/$id"
+            params={{ id: site.id }}
+            search={{}}
+            className="min-w-0 truncate font-semibold hover:underline"
+          >
+            {site.brand_name || host}
+          </Link>
           <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cfg.badgeClass}`}>{cfg.label}</span>
         </div>
         <div className="mb-2 truncate text-xs text-muted-foreground">{host}</div>
-        {site.tagline && <p className="mb-3 text-sm italic text-muted-foreground">"{site.tagline}"</p>}
 
         {swatches.length > 0 && (
           <div className="mb-3 flex items-center gap-1.5">
             {swatches.slice(0, 4).map((c) => (
               <span key={c} className="h-4 w-4 rounded-full border border-border" style={{ background: c }} />
             ))}
-            <span className="text-[11px] text-muted-foreground">brand palette</span>
+            <span className="text-[11px] text-muted-foreground">image palette</span>
           </div>
         )}
 
-        <div className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+        <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
           <span><strong className="text-foreground">{site.pageCount}</strong> {site.pageCount === 1 ? cfg.unitSingular : cfg.unitPlural}</span>
           <span>·</span>
           <span><strong className="text-foreground">{site.pinsCreated}</strong> pins created</span>
@@ -1238,50 +1168,38 @@ function SiteCard({
           )}
         </div>
 
-        {site.site_type === "website" && site.sitemap_url && (
-          <div className="mb-4 flex items-center justify-between gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-xs">
-            <span className="flex min-w-0 items-center gap-1.5 truncate text-muted-foreground">
-              <BookOpen className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{site.sitemap_url.replace(/^https?:\/\//, "")}</span>
-            </span>
-            <span className="shrink-0 font-medium text-emerald-600">Sitemap linked</span>
-          </div>
-        )}
+        {/* Connection status — the summary the old card only showed once
+            you expanded Connections. */}
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span className={`flex items-center gap-1.5 ${site.pinterest_connection_id ? "text-emerald-600" : "text-muted-foreground"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${site.pinterest_connection_id ? "bg-emerald-500" : "bg-neutral-300"}`} />
+            Pinterest
+          </span>
+          <span className={`flex items-center gap-1.5 ${site.google_connection_id ? "text-emerald-600" : "text-muted-foreground"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${site.google_connection_id ? "bg-emerald-500" : "bg-neutral-300"}`} />
+            Analytics
+          </span>
+        </div>
 
         {!site.style_locked_at && (
-          <div className="mt-5 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" />Pin style not previewed yet -- required before generating pins for this site.</span>
-            <button type="button" onClick={() => setStyleSetupOpen(true)} className="shrink-0 font-medium underline underline-offset-2">
-              Set up now →
-            </button>
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 shrink-0" />Pin style not previewed yet — required before generating pins.</span>
+            <Link to="/sites/$id" params={{ id: site.id }} search={{ tab: "activity" as const }} className="shrink-0 font-medium underline underline-offset-2">
+              Set up →
+            </Link>
           </div>
         )}
 
-        {/* Same amber warning treatment as the pin-style prerequisite
-            above -- deliberately identical, because it's the same kind
-            of thing: a per-site prerequisite that is invisible until it
-            bites. Unlike pin style, this one doesn't block generation,
-            only publishing, which is why the copy says "publish" rather
-            than "generate".
-
-            The action differs by whether there's anything to map TO. With
-            no connected accounts, opening the Connections picker would
-            show an empty list, so the link goes to Integrations to
-            connect one first. */}
         {unmapped && (
-          <div className="mt-5 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span className="flex items-center gap-1.5">
               <Link2 className="h-3.5 w-3.5 shrink-0" />
-              No Pinterest account mapped -- required before this site can publish.
+              No Pinterest account mapped — required before this site can publish.
             </span>
             {connectionsLoading ? null : hasAnyPinterestConnection ? (
-              <button
-                type="button"
-                onClick={() => setConnectionsOpen(true)}
-                className="shrink-0 font-medium underline underline-offset-2"
-              >
+              <Link to="/sites/$id" params={{ id: site.id }} search={{ tab: "connections" as const }} className="shrink-0 font-medium underline underline-offset-2">
                 Map now →
-              </button>
+              </Link>
             ) : (
               <Link to="/settings/integrations" className="shrink-0 font-medium underline underline-offset-2">
                 Connect an account →
@@ -1290,12 +1208,9 @@ function SiteCard({
           </div>
         )}
 
-        <div className="mt-5 flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setConnectionsOpen((v) => !v)}>
-            Connections<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${connectionsOpen ? "rotate-180" : ""}`} />
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setEditing((v) => !v)}>
-            Brand<ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${editing ? "rotate-180" : ""}`} />
+        <div className="mt-4 flex items-center gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link to="/sites/$id" params={{ id: site.id }} search={{}}>Open</Link>
           </Button>
           <Button size="sm" variant="outline" onClick={onCrawl} disabled={crawlPending}>
             <RefreshCcw className="mr-1 h-3.5 w-3.5" />Crawl
@@ -1322,44 +1237,7 @@ function SiteCard({
             </AlertDialogContent>
           </AlertDialog>
         </div>
-
-        {connectionsOpen && <SiteConnectionsSection site={site} onSaved={onSaved} />}
-
-        {editing && (
-          <div className="mt-5 border-t border-border pt-5">
-            <BrandEditorFields
-              brandName={brandName} onBrandName={setBrandName}
-              tagline={tagline} onTagline={setTagline}
-              accentColor={accentColor} onAccentColor={setAccentColor}
-              brandColors={brandColors}
-              onToggleBrandColor={(hex) => setBrandColors((cur) => (cur.includes(hex) ? cur.filter((c) => c !== hex) : [...cur, hex]))}
-              onRemoveLegacyColor={(hex) => setBrandColors((cur) => cur.filter((c) => c !== hex))}
-              typography={typography} onTypography={setTypography}
-              notes={notes} onNotes={setNotes}
-              siteType={site.site_type as SiteType} vertical={vertical} onVertical={setVertical}
-              advancedOpen={advancedOpen} onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
-              previewLabel={host}
-              previewHost={host}
-            />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>Save brand</Button>
-            </div>
-          </div>
-        )}
       </div>
-
-      <Dialog open={styleSetupOpen} onOpenChange={setStyleSetupOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Pin Style Setup</DialogTitle>
-          </DialogHeader>
-          <PinStyleSetupPanel
-            site={site}
-            onDone={() => { setStyleSetupOpen(false); onSaved(); }}
-            onAdjust={() => { setStyleSetupOpen(false); setEditing(true); }}
-          />
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }
