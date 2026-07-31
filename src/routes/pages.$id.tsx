@@ -18,8 +18,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
 import { useSetupGate } from "@/lib/onboarding-gate";
 import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
+import { publishBriefNow } from "@/lib/schedule.functions";
 import { toast } from "sonner";
-import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap } from "lucide-react";
+import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap, Send, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
@@ -617,7 +618,10 @@ function BriefCard({ b }: { b: Brief }) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
+  const publish = useServerFn(publishBriefNow);
   const [url, setUrl] = useState<string | null>(null);
+  const [publishResult, setPublishResult] = useState<string | null>(null); // pinterest_pin_id from the most recent publish-now on this card
+  const [publishError, setPublishError] = useState<string | null>(null);
   // Reserve a "2 / 3" guess so there's no zero-height flash while the
   // signed URL and image are still loading, then correct to the real
   // proportions once known -- same self-correcting approach as
@@ -650,6 +654,22 @@ function BriefCard({ b }: { b: Brief }) {
     mutationFn: () => del({ data: { briefId: b.id } }),
     onSuccess: () => { toast.success("Pin deleted"); qc.invalidateQueries(); },
     onError: (e) => toast.error(getErrorMessage(e)),
+  });
+  const publishMut = useMutation({
+    mutationFn: () => publish({ data: { briefId: b.id } }),
+    onMutate: () => { setPublishError(null); },
+    onSuccess: (result) => {
+      toast.success("Published to Pinterest");
+      setPublishResult(result.pinterestPinId ?? null);
+      qc.invalidateQueries({ queryKey: ["page"] });
+      qc.invalidateQueries({ queryKey: ["briefs"] });
+      qc.invalidateQueries();
+    },
+    onError: (e) => {
+      const message = getErrorMessage(e);
+      toast.error(message);
+      setPublishError(message);
+    },
   });
   const [open, setOpen] = useState(false);
   const tag = templateTag(b.template_id);
@@ -720,6 +740,17 @@ function BriefCard({ b }: { b: Brief }) {
             >
               <Trash2 size={12} style={{ color: COLOR_ERROR }} />
             </button>
+            {!isPublished && (
+              <button
+                type="button"
+                title="Publish now"
+                onClick={(e) => { e.stopPropagation(); publishMut.mutate(); }}
+                disabled={publishMut.isPending || !path}
+                style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              >
+                {publishMut.isPending ? <Loader2 size={12} className="animate-spin" style={{ color: TEXT_LABEL }} /> : <Send size={12} style={{ color: TEXT_LABEL }} />}
+              </button>
+            )}
           </div>
         </div>
         <div style={{ padding: "14px 14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -749,6 +780,22 @@ function BriefCard({ b }: { b: Brief }) {
               serpPatternsCapturedAt={b.serp_patterns_captured_at}
             />
           </div>
+          {publishError && (
+            <span style={{ display: "block", fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, color: COLOR_ERROR }}>
+              {publishError}
+            </span>
+          )}
+          {publishResult && (
+            <a
+              href={`https://www.pinterest.com/pin/${publishResult}/`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, color: COLOR_SUCCESS }}
+            >
+              Published — view pin {publishResult}<ExternalLink size={11} />
+            </a>
+          )}
         </div>
       </div>
 

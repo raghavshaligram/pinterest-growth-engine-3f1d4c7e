@@ -1,8 +1,83 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
 import { SAFETY, buildScheduleState, findSafeBoard, commitPlacement, type ExistingRow } from "@/lib/scheduling-safety.server";
 import { getErrorMessage } from "@/lib/error-message";
+
+type AppSupabaseClient = SupabaseClient<Database>;
+
+// Shared by publishNow (below -- the Dashboard/Schedule calendar's
+// existing "Publish now", which always operates on an existing
+// scheduled_pins row) and publishBriefNow (the new Pins/Pages "Publish
+// now", which may create that row first). One publish code path, not
+// two: both funnel through processDuePinsForUser, the exact function
+// the nightly cron uses.
+//
+// Runs the daily-cap check FIRST, before touching the row at all, so a
+// capped-out account gets a clear "daily limit reached" error instead
+// of a confusing Pinterest-side failure or a silently re-queued pin
+// that just sits there.
+async function assertDailyCapNotExceeded(userId: string, supabase: AppSupabaseClient): Promise<void> {
+  const { getEffectiveLimits } = await import("./publishing-profile.server");
+  const effective = await getEffectiveLimits(userId);
+  // Accounts that haven't completed the publishing-profile onboarding
+  // step have no tier yet -- fall back to the same flat ceiling the
+  // manual autoSchedule() tool uses, so this is still capped, never
+  // unlimited, for a not-yet-onboarded account.
+  const limit = effective?.limits.maxPerAccountPerDay ?? SAFETY.maxPerAccountPerDay;
+
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("scheduled_pins")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "published")
+    .gte("published_at", startOfDay.toISOString());
+  if (error) throw error;
+  const publishedToday = count ?? 0;
+  if (publishedToday >= limit) {
+    throw new Error(
+      `Daily posting limit reached (${publishedToday}/${limit} pins published today) -- try again tomorrow, or raise your cap in Settings -> Integrations.`,
+    );
+  }
+}
+
+// The actual "publish this one scheduled_pins row right now" logic,
+// extracted so publishNow and publishBriefNow both call the exact same
+// thing instead of two copies. See the comment on the exported
+// publishNow below for why this checks and throws on failure instead
+// of trusting processDuePinsForUser's always-resolving summary.
+async function runPublishNow(
+  scheduledPinId: string,
+  userId: string,
+  supabase: AppSupabaseClient,
+): Promise<{ processed: number; ok: number; fail: number; exported: number; pinterestPinId: string | null }> {
+  await assertDailyCapNotExceeded(userId, supabase);
+
+  // Flip to queued and move scheduled_at to now so the publisher picks it up.
+  const { error: upErr } = await supabase
+    .from("scheduled_pins")
+    .update({ status: "queued", scheduled_at: new Date().toISOString() })
+    .eq("id", scheduledPinId)
+    .in("status", ["draft", "queued", "failed"]);
+  if (upErr) throw upErr;
+  const { processDuePinsForUser } = await import("./publisher.server");
+  const result = await processDuePinsForUser(userId, 1, scheduledPinId);
+
+  const { data: row } = await supabase
+    .from("scheduled_pins")
+    .select("pinterest_pin_id, last_error")
+    .eq("id", scheduledPinId)
+    .maybeSingle();
+
+  if (result.fail > 0) {
+    throw new Error(row?.last_error || "Publish failed");
+  }
+  return { ...result, pinterestPinId: row?.pinterest_pin_id ?? null };
+}
 
 export const listScheduled = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -342,33 +417,164 @@ export const runPublisher = createServerFn({ method: "POST" })
 // where one bad pin must never abort the rest of the batch. But this is
 // the single-pin, user-initiated "Publish now" call site: the client
 // mutation's onSuccess/onError split only works if a real failure
-// actually rejects the promise, so this handler checks the summary
-// itself and throws when the one pin it asked for didn't actually
-// publish -- surfacing the real error scheduled_pins.last_error already
-// recorded, rather than letting a resolved-but-failed result read as
-// success.
+// actually rejects the promise, so runPublishNow (above) checks the
+// summary itself and throws when the one pin it asked for didn't
+// actually publish -- surfacing the real error scheduled_pins.last_error
+// already recorded, rather than letting a resolved-but-failed result
+// read as success. Also now runs the daily-cap check (see
+// assertDailyCapNotExceeded) before touching anything -- this button
+// previously bypassed the cap entirely, unlike autoSchedule/the nightly
+// materializer, which is exactly the gap publishBriefNow (below) needed
+// closed too, so it's closed here once for both.
 export const publishNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
-    // Flip to queued and move scheduled_at to now so the publisher picks it up.
-    const { error: upErr } = await context.supabase
+    return runPublishNow(data.id, context.userId, context.supabase);
+  });
+
+// Resolves a safe Pinterest board for a specific brief's site right now
+// (not a bulk round-robin planner like autoSchedule -- just "give me one
+// board this single pin can safely go to at this instant"), reusing the
+// exact same anti-ban gates (per-board cap, same-URL/board repost gap)
+// autoSchedule and the nightly materializer already enforce, via the
+// shared buildScheduleState/findSafeBoard from scheduling-safety.server.
+// Board eligibility mirrors autoSchedule's own boardIdsForSite: boards
+// tagged with this site's Pinterest connection, plus any board never
+// tagged with a connection at all ("universal").
+async function pickBoardForSite(params: {
+  siteId: string | null;
+  pageId: string | null;
+  pageUrl: string;
+  userId: string;
+}): Promise<string> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: boards } = await supabaseAdmin
+    .from("boards")
+    .select("id, pinterest_connection_id")
+    .eq("user_id", params.userId);
+  if (!boards?.length) throw new Error("No boards yet -- sync or add a board first.");
+
+  let connectionId: string | null = null;
+  if (params.siteId) {
+    const { data: site } = await supabaseAdmin
+      .from("sites")
+      .select("pinterest_connection_id")
+      .eq("id", params.siteId)
+      .maybeSingle();
+    connectionId = (site as { pinterest_connection_id: string | null } | null)?.pinterest_connection_id ?? null;
+  }
+  const eligible = boards.filter((b) => {
+    const bc = (b as { pinterest_connection_id: string | null }).pinterest_connection_id;
+    return !bc || bc === connectionId;
+  });
+  if (!eligible.length) {
+    throw new Error("No board is eligible for this site's Pinterest connection yet -- sync boards or map one to this connection.");
+  }
+
+  const lookback = new Date(Date.now() - SAFETY.sameUrlBoardGapDays * 86400_000);
+  const { data: existingRows } = await supabaseAdmin
+    .from("scheduled_pins")
+    .select("scheduled_at, board_id, image_id, brief_id, pin_briefs(page_id, pages(url))")
+    .eq("user_id", params.userId)
+    .in("status", ["draft", "queued", "publishing", "published", "exported"])
+    .gte("scheduled_at", lookback.toISOString());
+  const history: ExistingRow[] = (existingRows ?? []).map((e) => ({
+    when: new Date(e.scheduled_at).getTime(),
+    boardId: e.board_id,
+    url: (e as { pin_briefs?: { pages?: { url?: string } } }).pin_briefs?.pages?.url ?? "",
+    imageId: e.image_id,
+    pageId: (e as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id ?? null,
+  }));
+  const state = buildScheduleState(history);
+  const found = findSafeBoard(state, SAFETY, {
+    when: Date.now(),
+    pageId: params.pageId,
+    pageUrl: params.pageUrl,
+    boardIds: eligible.map((b) => b.id),
+    boardIdx: 0,
+  });
+  if (!found) {
+    throw new Error(
+      "No board currently clears the posting-safety limits (per-board cap or same-URL repost gap) -- try again later, or schedule it for a future slot instead.",
+    );
+  }
+  return found.boardId;
+}
+
+// "Publish now" for the Pins and Pages views, where (unlike the
+// Dashboard/Schedule calendar) a brief usually has no scheduled_pins
+// row at all yet. Reuses any existing LIVE row for this brief
+// (draft/queued/failed) instead of creating a second one -- so a pin
+// that was already sitting on the calendar gets that exact slot
+// repurposed and published now, rather than left queued to publish
+// twice. Delegates to the same runPublishNow() publishNow uses either
+// way -- there is only one publish code path.
+export const publishBriefNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: brief, error: briefErr } = await supabaseAdmin
+      .from("pin_briefs")
+      .select("id, page_id, pin_images(id), pages(url, site_id)")
+      .eq("id", data.briefId)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (briefErr) throw briefErr;
+    if (!brief) throw new Error("Pin not found");
+
+    const { data: existing, error: existingErr } = await supabaseAdmin
       .from("scheduled_pins")
-      .update({ status: "queued", scheduled_at: new Date().toISOString() })
-      .eq("id", data.id)
-      .in("status", ["draft", "queued", "failed"]);
-    if (upErr) throw upErr;
-    const { processDuePinsForUser } = await import("./publisher.server");
-    const result = await processDuePinsForUser(context.userId, 1, data.id);
-    if (result.fail > 0) {
-      const { data: row } = await context.supabase
-        .from("scheduled_pins")
-        .select("last_error")
-        .eq("id", data.id)
-        .maybeSingle();
-      throw new Error(row?.last_error || "Publish failed");
+      .select("id, status, pinterest_pin_id")
+      .eq("brief_id", data.briefId)
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+
+    if (existing) {
+      if (existing.status === "published") {
+        throw new Error(
+          `This pin was already published${existing.pinterest_pin_id ? ` (Pinterest id ${existing.pinterest_pin_id})` : ""}.`,
+        );
+      }
+      if (existing.status === "publishing") {
+        throw new Error("This pin is already being published -- please wait a moment and refresh.");
+      }
+      if (existing.status === "draft" || existing.status === "queued" || existing.status === "failed") {
+        // Already scheduled (or a previously-failed attempt) -- repurpose
+        // this exact row instead of inserting a new one, so it's never
+        // left queued to publish twice.
+        return runPublishNow(existing.id, context.userId, context.supabase);
+      }
+      // canceled/exported -- fall through and create a fresh slot below.
     }
-    return result;
+
+    const image = brief.pin_images?.[0];
+    if (!image) throw new Error("This pin has no rendered image yet.");
+    const siteId = (brief as { pages?: { site_id?: string } }).pages?.site_id ?? null;
+    const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
+    if (!pageUrl) throw new Error("This pin's source page has no URL.");
+
+    const boardId = await pickBoardForSite({ siteId, pageId: brief.page_id, pageUrl, userId: context.userId });
+
+    const newId = crypto.randomUUID();
+    const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert({
+      id: newId,
+      user_id: context.userId,
+      brief_id: data.briefId,
+      image_id: image.id,
+      board_id: boardId,
+      scheduled_at: new Date().toISOString(),
+      status: "draft",
+    });
+    if (insErr) throw insErr;
+    await supabaseAdmin.from("pin_briefs").update({ status: "scheduled" }).eq("id", data.briefId);
+
+    return runPublishNow(newId, context.userId, context.supabase);
   });
 
 export const rescheduleOrCancel = createServerFn({ method: "POST" })

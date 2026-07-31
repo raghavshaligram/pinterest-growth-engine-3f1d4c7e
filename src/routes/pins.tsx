@@ -9,6 +9,7 @@ import { PinShell } from "@/components/PinShell";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listBriefs, runImageWorker, rerenderBrief, deleteBrief } from "@/lib/briefs.functions";
+import { publishBriefNow } from "@/lib/schedule.functions";
 import { useSiteContext } from "@/lib/site-context";
 import { TopBar } from "@/components/PinTopBar";
 import { Card } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Hash, ImageIcon, Link as LinkIcon, Loader2, RefreshCw, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
 import { getErrorMessage } from "@/lib/error-message";
@@ -53,11 +54,16 @@ function PinsPage({ search }: { search: string }) {
   const worker = useServerFn(runImageWorker);
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
+  const publish = useServerFn(publishBriefNow);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ["briefs", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ ok: number; fail: number }>({ ok: 0, fail: 0 });
   const [open, setOpen] = useState<Brief | null>(null);
+  // Keyed to the brief it belongs to, so switching to a different pin's
+  // detail dialog doesn't carry over a stale success banner.
+  const [publishResult, setPublishResult] = useState<{ briefId: string; pinterestPinId: string | null } | null>(null);
+  const [publishError, setPublishError] = useState<{ briefId: string; message: string } | null>(null);
   const stopRef = useRef(false);
 
   const pending = data?.filter((b) => b.status !== "ready" && !b.pin_images?.length).length ?? 0;
@@ -107,6 +113,21 @@ function PinsPage({ search }: { search: string }) {
     },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
+  const publishMut = useMutation({
+    mutationFn: (briefId: string) => publish({ data: { briefId } }),
+    onMutate: (briefId) => { setPublishError(null); setPublishResult((r) => (r?.briefId === briefId ? null : r)); },
+    onSuccess: (result, briefId) => {
+      toast.success("Published to Pinterest");
+      setPublishResult({ briefId, pinterestPinId: result.pinterestPinId ?? null });
+      qc.invalidateQueries({ queryKey: ["briefs"] });
+      qc.invalidateQueries({ queryKey: ["scheduled"] });
+    },
+    onError: (e, briefId) => {
+      const message = getErrorMessage(e);
+      toast.error(message);
+      setPublishError({ briefId, message });
+    },
+  });
 
   // Batch-sign all image URLs in a single request (avoids N round-trips).
   const paths = (data ?? []).map((b) => b.pin_images?.[0]?.storage_path).filter(Boolean) as string[];
@@ -148,7 +169,14 @@ function PinsPage({ search }: { search: string }) {
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {visible.map((b) => {
           const p = b.pin_images?.[0]?.storage_path;
-          return <PinTile key={b.id} b={b} url={p ? urlMap?.[p] ?? null : null} onOpen={() => setOpen(b)} />;
+          return (
+            <PinTile
+              key={b.id}
+              b={b}
+              url={p ? urlMap?.[p] ?? null : null}
+              onOpen={() => { setPublishResult(null); setOpen(b); }}
+            />
+          );
         })}
         {!visible.length && (
           <p className="text-sm text-muted-foreground">
@@ -160,11 +188,15 @@ function PinsPage({ search }: { search: string }) {
       <PinDetail
         row={open}
         signedUrl={open?.pin_images?.[0]?.storage_path ? urlMap?.[open.pin_images[0].storage_path] ?? null : null}
-        onOpenChange={(v) => !v && setOpen(null)}
+        onOpenChange={(v) => { if (!v) { setOpen(null); setPublishResult(null); setPublishError(null); } }}
         onRerender={(id) => rerenderMut.mutate(id)}
         onDelete={(id) => deleteMut.mutate(id)}
+        onPublishNow={(id) => publishMut.mutate(id)}
         rerendering={rerenderMut.isPending}
         deleting={deleteMut.isPending}
+        publishing={publishMut.isPending}
+        publishResult={publishResult && publishResult.briefId === open?.id ? publishResult : null}
+        publishError={publishError && publishError.briefId === open?.id ? publishError.message : null}
       />
     </div>
   );
@@ -217,15 +249,19 @@ function PinTile({ b, url, onOpen }: { b: Brief; url: string | null; onOpen: () 
 }
 
 function PinDetail({
-  row, signedUrl, onOpenChange, onRerender, onDelete, rerendering, deleting,
+  row, signedUrl, onOpenChange, onRerender, onDelete, onPublishNow, rerendering, deleting, publishing, publishResult, publishError,
 }: {
   row: Brief | null;
   signedUrl: string | null;
   onOpenChange: (v: boolean) => void;
   onRerender: (id: string) => void;
   onDelete: (id: string) => void;
+  onPublishNow: (id: string) => void;
   rerendering: boolean;
   deleting: boolean;
+  publishing: boolean;
+  publishResult: { briefId: string; pinterestPinId: string | null } | null;
+  publishError: string | null;
 }) {
   const url = signedUrl;
 
@@ -301,13 +337,37 @@ function PinDetail({
                 </Field>
               </dl>
 
+              {publishError && (
+                <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  {publishError}
+                </div>
+              )}
+              {publishResult && (
+                <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  Published to Pinterest.{" "}
+                  {publishResult.pinterestPinId ? (
+                    <a
+                      href={`https://www.pinterest.com/pin/${publishResult.pinterestPinId}/`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-medium underline"
+                    >
+                      View pin {publishResult.pinterestPinId}<ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                </div>
+              )}
               <div className="mt-6 flex justify-end gap-2 border-t pt-4">
                 <Button variant="destructive" onClick={() => onDelete(row.id)} disabled={deleting}>
                   <Trash2 className="mr-2 h-4 w-4" />Delete
                 </Button>
-                <Button onClick={() => onRerender(row.id)} disabled={rerendering}>
+                <Button variant="outline" onClick={() => onRerender(row.id)} disabled={rerendering}>
                   {rerendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                   Re-render
+                </Button>
+                <Button onClick={() => onPublishNow(row.id)} disabled={publishing || !row.pin_images?.length}>
+                  {publishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Publish now
                 </Button>
               </div>
             </div>
