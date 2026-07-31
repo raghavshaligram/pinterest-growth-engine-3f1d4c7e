@@ -125,6 +125,14 @@ const BLOG_TOC = [
   { id: "action", label: "Your action plan" },
 ];
 
+// Single source of truth for horizontal centering/width/padding, shared by
+// the breadcrumb bar, the article column, and the TOC sidebar -- so they
+// can't drift out of alignment with each other if the width or padding
+// changes later. The breadcrumb bar's own border stays full-width (it wraps
+// this container rather than using it directly); article/TOC compose it
+// directly as their row wrapper.
+const BLOG_CONTAINER_CLASSNAME = "mx-auto max-w-[1040px] px-4 md:px-10";
+
 function BlogTag({ children, color = "#E60023", bg = "#FFF5F6" }: { children: ReactNode; color?: string; bg?: string }) {
   return (
     <span style={{ display: "inline-block", padding: "3px 11px", borderRadius: 999, backgroundColor: bg, color, fontSize: 11, fontWeight: 700, letterSpacing: "0.02em" }}>
@@ -213,18 +221,23 @@ function BlogView() {
   return (
     <div style={{ backgroundColor: "#fff" }}>
 
-      {/* Top bar */}
-      <div style={{ borderBottom: "1px solid #F3F3F3", padding: "12px 24px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pinspider</span>
-          <span style={{ color: "#D1D5DB" }}>›</span>
-          <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Learn</span>
-          <span style={{ color: "#D1D5DB" }}>›</span>
-          <span style={{ fontSize: 11, color: "#374151", fontWeight: 600 }}>Pinterest Keyword Research</span>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <BlogTag>Keyword Research</BlogTag>
-          <BlogTag color="#374151" bg="#F5F5F5">12 min read</BlogTag>
+      {/* Top bar -- the border spans full width, but its contents sit inside
+          the same BLOG_CONTAINER_CLASSNAME as the article/TOC row below, so
+          the breadcrumb starts at the same left edge as the article text
+          and the tags end at the same right edge as the TOC sidebar. */}
+      <div style={{ borderBottom: "1px solid #F3F3F3" }}>
+        <div className={`${BLOG_CONTAINER_CLASSNAME} flex flex-wrap items-center gap-2.5 py-3`}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pinspider</span>
+            <span style={{ color: "#D1D5DB" }}>›</span>
+            <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Learn</span>
+            <span style={{ color: "#D1D5DB" }}>›</span>
+            <span style={{ fontSize: 11, color: "#374151", fontWeight: 600 }}>Pinterest Keyword Research</span>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <BlogTag>Keyword Research</BlogTag>
+            <BlogTag color="#374151" bg="#F5F5F5">12 min read</BlogTag>
+          </div>
         </div>
       </div>
 
@@ -235,11 +248,13 @@ function BlogView() {
           its own space while the TOC anchored to the viewport edge,
           leaving a gap between them on wide screens. Column on mobile,
           row from md: up. */}
-      <div className="mx-auto max-w-[1040px] flex flex-col md:flex-row md:items-start">
+      <div className={`${BLOG_CONTAINER_CLASSNAME} flex flex-col md:flex-row md:items-start md:gap-10`}>
 
-        {/* Article */}
+        {/* Article -- horizontal inset now comes from BLOG_CONTAINER_CLASSNAME
+            on the row above, not its own padding, so its text lines up with
+            the breadcrumb. */}
         <div className="flex-1 min-w-0">
-          <div className="px-4 pt-8 pb-10 md:px-10 md:pt-10 md:pb-16">
+          <div className="pt-8 pb-10 md:pt-10 md:pb-16">
 
             {/* Hero */}
             <div style={{ marginBottom: 32 }}>
@@ -432,8 +447,11 @@ function BlogView() {
         </div>
 
         {/* TOC sidebar -- sticky instead of independently scrolling, since
-            the page now scrolls as a whole (see file-level comment). */}
-        <div className="w-full border-t border-[#F3F3F3] md:w-[220px] md:flex-shrink-0 md:border-l md:border-t-0 md:sticky md:top-0 md:self-start" style={{ padding: "28px 20px", display: "flex", flexDirection: "column" }}>
+            the page now scrolls as a whole (see file-level comment). No
+            longer carries its own horizontal padding: its right edge now
+            lines up with the shared container's right inset (matching the
+            breadcrumb tags above) instead of sitting 20px further in. */}
+        <div className="w-full border-t border-[#F3F3F3] md:w-[220px] md:flex-shrink-0 md:border-l md:border-t-0 md:pl-5 md:sticky md:top-0 md:self-start" style={{ paddingTop: 28, display: "flex", flexDirection: "column" }}>
           <p style={{ margin: "0 0 14px", fontSize: 10, fontWeight: 800, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em" }}>On this page</p>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {BLOG_TOC.map((item) => (
