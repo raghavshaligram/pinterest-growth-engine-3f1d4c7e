@@ -127,6 +127,17 @@ export type SetupStatus = {
   // Finish-setup banner shows precisely when this is true AND
   // isFullyOnboarded is still false.
   dismissedOnboarding: boolean;
+  // When the wizard's Finish button was clicked (account_onboarding.
+  // completed_at, written by dismissOnboardingPrompt below with
+  // reason:"completed") -- null if onboarding was skipped instead of
+  // finished, or hasn't been completed at all yet. Display-only: lets
+  // the Dashboard show a one-time "you just finished setup" success
+  // state based on how recently this happened, rather than confusing
+  // "readyToGenerate && !hasFirstBatch" (which stays true indefinitely
+  // for a returning user who still hasn't generated anything) with
+  // "just walked out of the wizard." Nothing here gates any boolean
+  // above -- purely a timestamp for that one display decision.
+  completedAt: string | null;
   // First not-yet-done step in wizard order, walking ALL steps
   // including optional ones (pinterest_connected) -- so an account
   // that's done everything required but still has an unanswered
@@ -228,7 +239,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
-      s.from("account_onboarding").select("dismissed_onboarding_prompt").eq("user_id", context.userId).maybeSingle(),
+      s.from("account_onboarding").select("dismissed_onboarding_prompt, completed_at").eq("user_id", context.userId).maybeSingle(),
       s.from("account_publishing_profiles").select("user_id").eq("user_id", context.userId).maybeSingle(),
       hasTextProviderCredential(context.userId),
       hasImageProviderCredential(context.userId),
@@ -320,6 +331,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       hasFirstBatch: firstBatch,
       isFullyOnboarded,
       dismissedOnboarding: onboardingRes.data?.dismissed_onboarding_prompt ?? false,
+      completedAt: onboardingRes.data?.completed_at ?? null,
       firstMissingWizardStep: firstMissing(steps),
       textProviderInUse,
       imageProviderInUse,

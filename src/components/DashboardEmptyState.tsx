@@ -22,7 +22,7 @@
 // unchanged from before this redesign.
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "@tanstack/react-router";
-import { Sparkles, Globe, Wand2, Send, Loader2, Info, ChevronDown, X } from "lucide-react";
+import { Sparkles, Globe, Wand2, Send, Loader2, Info, ChevronDown, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 import { PinspiderMark } from "@/components/PinspiderMark";
@@ -31,6 +31,7 @@ import {
 } from "@/lib/onboarding-gate";
 import { SETUP_STEPS, type SetupStatus, type SetupStepMeta } from "@/lib/onboarding.functions";
 import { STEP_LABELS, getMissingRequiredSteps } from "@/lib/setup-checklist-copy";
+import { useSiteContext } from "@/lib/site-context";
 
 // Short display names for the checklist's one "which option did you
 // pick" row (text_provider_connected) -- deliberately not COPY_GEN_PROVIDERS'
@@ -72,8 +73,19 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
   const { data: status } = useSetupStatus();
   const { guard } = useSetupGate();
   const generateFirstBatch = useGenerateFirstBatch();
+  const { sites, selectedSite } = useSiteContext();
 
   const isStateB = Boolean(status?.readyToGenerate);
+
+  // The site to personalize with -- an explicit SiteSwitcher pick always
+  // wins, but right after onboarding nothing has ever set one (only
+  // SiteSwitcher itself calls setSelectedSiteId), so this also falls
+  // back to "the" site when there's unambiguously only one, which is the
+  // overwhelmingly common shape for an account that just finished setup.
+  // Left null (no fallback) once there's more than one site and none
+  // chosen -- guessing which of several to name would be worse than the
+  // generic copy it falls back to below.
+  const primarySiteName = selectedSite?.brand_name || (sites.length === 1 ? sites[0]?.brand_name : null) || null;
 
   function handleGenerateClick() {
     // Kept as a safety net, not the mechanism that prevents a broken
@@ -109,8 +121,9 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
 
       {isStateB ? (
         <>
+          <OnboardingSuccessBanner status={status} userEmail={userEmail} siteName={primarySiteName} />
           <SetupSummaryBar status={status} />
-          <EmptyFeedIllustration onGenerate={handleGenerateClick} pending={generateFirstBatch.isPending} />
+          <EmptyFeedIllustration onGenerate={handleGenerateClick} pending={generateFirstBatch.isPending} siteName={primarySiteName} />
         </>
       ) : (
         <>
@@ -123,6 +136,94 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
       )}
     </div>
   );
+}
+
+// Recency window for OnboardingSuccessBanner below -- "just finished" has
+// to mean something narrower than "hasn't generated pins yet," which can
+// stay true indefinitely for a returning user who set up days ago and
+// never clicked Generate. A calendar day comfortably covers "finished
+// setup, came back the next morning to generate" without also greeting
+// someone who finished onboarding last week with a stale congratulations
+// message every time they check the Dashboard.
+const ONBOARDING_SUCCESS_RECENCY_MS = 24 * 60 * 60 * 1000;
+const ONBOARDING_SUCCESS_DISMISS_KEY_PREFIX = "pinspider:onboarding-success-dismissed:";
+
+// One-time "you just finished setup" confirmation -- shown in State B
+// only when account_onboarding.completed_at (SetupStatus.completedAt,
+// written exactly once by the wizard's Finish button, never by Skip) is
+// within ONBOARDING_SUCCESS_RECENCY_MS AND the user hasn't already
+// dismissed it (localStorage, same per-user-email-scoped pattern as
+// HowItWorksRow below). Time-based, not `!hasFirstBatch`-based, per the
+// distinction in SetupStatus.completedAt's own doc comment -- a
+// returning user who set up days ago and still hasn't generated
+// anything is still in State B, but showing them a congratulations
+// banner every visit would be wrong.
+function OnboardingSuccessBanner({
+  status, userEmail, siteName,
+}: {
+  status: SetupStatus | null | undefined;
+  userEmail?: string | null;
+  siteName?: string | null;
+}) {
+  const storageKey = ONBOARDING_SUCCESS_DISMISS_KEY_PREFIX + (userEmail ?? "anon");
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    setDismissed(typeof window !== "undefined" && window.localStorage.getItem(storageKey) === "1");
+  }, [storageKey]);
+
+  const completedAtMs = status?.completedAt ? new Date(status.completedAt).getTime() : null;
+  const isRecent = completedAtMs !== null && !Number.isNaN(completedAtMs) && Date.now() - completedAtMs < ONBOARDING_SUCCESS_RECENCY_MS;
+
+  if (dismissed || !isRecent) return null;
+
+  function dismiss() {
+    window.localStorage.setItem(storageKey, "1");
+    setDismissed(true);
+  }
+
+  const connectedParts = [
+    siteName || null,
+    status?.textProviderInUse ? `${TEXT_PROVIDER_TITLES[status.textProviderInUse]} for text` : null,
+    status?.imageProviderInUse ? `${IMAGE_PROVIDER_TITLES[status.imageProviderInUse] ?? status.imageProviderInUse} for images` : null,
+    status?.steps.pinterest_connected ? "Pinterest" : null,
+  ].filter((v): v is string => Boolean(v));
+
+  return (
+    <div
+      style={{
+        marginBottom: 16, borderRadius: 12, border: `1px solid ${PIN.border}`, background: PIN.roseTint,
+        display: "flex", alignItems: "flex-start", gap: 10, padding: "14px 16px",
+      }}
+    >
+      <CheckCircle2 size={18} style={{ color: PIN.accent, flexShrink: 0, marginTop: 1 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: PIN_FONT, fontSize: 13.5, fontWeight: 700, color: PIN.textPrimary }}>Setup complete</div>
+        {connectedParts.length > 0 && (
+          <div style={{ fontFamily: PIN_FONT, fontSize: 12.5, color: PIN.textSecondary, marginTop: 2 }}>
+            {`Connected: ${joinWithAnd(connectedParts)}.`}
+          </div>
+        )}
+      </div>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="Dismiss setup complete message"
+        onClick={dismiss}
+        onKeyDown={(e) => { if (e.key === "Enter") dismiss(); }}
+        style={{ display: "flex", color: PIN.textMuted, cursor: "pointer", flexShrink: 0 }}
+      >
+        <X size={14} />
+      </span>
+    </div>
+  );
+}
+
+function joinWithAnd(parts: string[]): string {
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
 // The State A checklist. Full width, single column -- no more sharing a
@@ -394,7 +495,13 @@ function HowItWorksRow({ userEmail }: { userEmail?: string | null }) {
 // previously always rendered alongside the checklist regardless of
 // readiness, which is what let the Generate button appear, enabled,
 // in State A.
-function EmptyFeedIllustration({ onGenerate, pending }: { onGenerate: () => void; pending: boolean }) {
+function EmptyFeedIllustration({
+  onGenerate, pending, siteName,
+}: {
+  onGenerate: () => void;
+  pending: boolean;
+  siteName?: string | null;
+}) {
   return (
     <div
       style={{
@@ -408,7 +515,9 @@ function EmptyFeedIllustration({ onGenerate, pending }: { onGenerate: () => void
         <Sparkles size={18} style={{ position: "absolute", top: -4, right: -6, color: PIN.accent }} />
       </div>
       <div>
-        <div style={{ fontFamily: PIN_FONT, fontSize: 15, fontWeight: 700, color: PIN.textPrimary }}>Your pins will show up here</div>
+        <div style={{ fontFamily: PIN_FONT, fontSize: 15, fontWeight: 700, color: PIN.textPrimary }}>
+          {siteName ? `Your ${siteName} pins will show up here` : "Your pins will show up here"}
+        </div>
         <div style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textSecondary, marginTop: 4, maxWidth: 360 }}>
           {`Analyzes your first ${FIRST_BATCH_MAX_ANALYZE} pages and generates pins from them, using your own API keys. Up to ${FIRST_BATCH_MAX_IMAGES} images render right away -- the rest continue shortly after. You can always generate more from Pages.`}
         </div>
