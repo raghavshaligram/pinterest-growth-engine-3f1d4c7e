@@ -238,8 +238,29 @@ function PageDetail() {
       {/* Analyze / Generate actions -- flexShrink:0, stays fixed. Granular
           per-page controls live here instead of the Pages list header
           (see pages.index.tsx). */}
-      <div style={{ flexShrink: 0, display: "flex", gap: 8, padding: "14px 24px 0" }}>
-        <ActionButton icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} label="Analyze" onClick={() => anaMut.mutate()} disabled={anaMut.isPending} />
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "14px 24px 0" }}>
+        <ActionButton
+          icon={anaMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          label={analyzed ? "Re-analyze" : "Analyze"}
+          onClick={() => {
+            // Analyze always makes an LLM call on the user's own key --
+            // fine the first time (nothing to lose by re-running once),
+            // but a plain "Analyze" button that silently re-runs on an
+            // already-analyzed page re-bills for identical output on
+            // every accidental double-click. Once analyzed, this becomes
+            // an explicit "Re-analyze" with a confirmation naming when it
+            // was last run, instead of a same-looking button that quietly
+            // charges the same key again.
+            if (analyzed && !confirm(`Re-analyze this page? It was last analyzed ${formatDate(page.last_analyzed_at)} -- this makes another AI call on your own key for the same page.`)) return;
+            anaMut.mutate();
+          }}
+          disabled={anaMut.isPending}
+        />
+        {analyzed && (
+          <span style={{ fontFamily: PIN_FONT, fontSize: 11.5, color: TEXT_MUTED }}>
+            {`Analyzed ${formatDate(page.last_analyzed_at)}`}
+          </span>
+        )}
         <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => { if (guard()) genMut.mutate(10); }} disabled={genMut.isPending || !analyzed} />
         {briefs.length > 0 && (
           <button

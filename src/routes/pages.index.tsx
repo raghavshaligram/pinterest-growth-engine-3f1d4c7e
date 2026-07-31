@@ -63,6 +63,12 @@ type PageRow = Awaited<ReturnType<typeof listPages>>[number];
 type PipelineStatus = "images_ready" | "in_progress" | "not_started" | "error";
 type FilterKey = "all" | PipelineStatus;
 
+// "Generate All"'s per-click page-analysis cap -- passed straight
+// through to runFullPipeline's maxAnalyze param below, and read by the
+// button's tooltip so the disclosure can never silently drift from the
+// actual call.
+const GENERATE_ALL_MAX_ANALYZE = 25;
+
 function PagesPage({ search }: { search: string }) {
   const qc = useQueryClient();
   const { selectedSiteId, selectedSite } = useSiteContext();
@@ -105,8 +111,12 @@ function PagesPage({ search }: { search: string }) {
   // this exact call, even though the client can't see which one it's on
   // at a given instant -- an honest batch-level signal, not a
   // decorative animation.
+  //
+  // GENERATE_ALL_MAX_ANALYZE is named (not just an inline 25) so the
+  // button's tooltip below can state the real per-click page cap
+  // instead of a second literal that could drift from the actual call.
   const pipelineM = useMutation({
-    mutationFn: () => pipeline({ data: { maxAnalyze: 25, maxBriefs: 15, maxImages: 30 } }),
+    mutationFn: () => pipeline({ data: { maxAnalyze: GENERATE_ALL_MAX_ANALYZE, maxBriefs: 15, maxImages: 30 } }),
     onSuccess: (r: { analyzed: number; briefsFor: number; imagesQueued: number }) => {
       toast.success(`Generated: analyzed ${r.analyzed}, briefs for ${r.briefsFor}, queued ${r.imagesQueued} images`);
       invalidate();
@@ -153,35 +163,41 @@ function PagesPage({ search }: { search: string }) {
             {active.length} page{active.length === 1 ? "" : "s"} · {withImages} with images · {siteDomain}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            type="button"
-            title={selectedSiteId ? undefined : "Select a site to crawl"}
-            onClick={() => crawlM.mutate()}
-            disabled={crawlM.isPending || !selectedSiteId}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
-              border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: PIN.textPrimary,
-              fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: selectedSiteId ? "pointer" : "not-allowed",
-              opacity: !selectedSiteId ? 0.5 : 1,
-            }}
-          >
-            {crawlM.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Crawl now
-          </button>
-          <button
-            type="button"
-            onClick={() => { if (guard() && styleGuard()) pipelineM.mutate(); }}
-            disabled={pipelineM.isPending}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
-              border: "none", background: PIN.accent, color: "#fff",
-              fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: "pointer",
-            }}
-          >
-            {pipelineM.isPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-            Generate All
-          </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              title={selectedSiteId ? undefined : "Select a site to crawl"}
+              onClick={() => crawlM.mutate()}
+              disabled={crawlM.isPending || !selectedSiteId}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
+                border: `1px solid ${PIN.borderStrong}`, background: PIN.card, color: PIN.textPrimary,
+                fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: selectedSiteId ? "pointer" : "not-allowed",
+                opacity: !selectedSiteId ? 0.5 : 1,
+              }}
+            >
+              {crawlM.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Crawl now
+            </button>
+            <button
+              type="button"
+              title={`Analyzes up to ${GENERATE_ALL_MAX_ANALYZE} not-yet-analyzed pages per click and generates pins from them, using your own API keys.`}
+              onClick={() => { if (guard() && styleGuard()) pipelineM.mutate(); }}
+              disabled={pipelineM.isPending}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,
+                border: "none", background: PIN.accent, color: "#fff",
+                fontFamily: PIN_FONT, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              {pipelineM.isPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+              Generate All
+            </button>
+          </div>
+          <span style={{ fontFamily: PIN_FONT, fontSize: 11, color: PIN.textMuted }}>
+            {`Up to ${GENERATE_ALL_MAX_ANALYZE} pages per click, using your own API keys`}
+          </span>
         </div>
       </header>
 

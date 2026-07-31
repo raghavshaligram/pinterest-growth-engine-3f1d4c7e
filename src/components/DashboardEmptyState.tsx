@@ -26,7 +26,9 @@ import { Sparkles, Globe, Wand2, Send, Loader2, Info, ChevronDown, X } from "luc
 import { toast } from "sonner";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 import { PinspiderMark } from "@/components/PinspiderMark";
-import { useSetupStatus, useSetupGate, useGenerateFirstBatch } from "@/lib/onboarding-gate";
+import {
+  useSetupStatus, useSetupGate, useGenerateFirstBatch, FIRST_BATCH_MAX_ANALYZE, FIRST_BATCH_MAX_IMAGES,
+} from "@/lib/onboarding-gate";
 import { SETUP_STEPS, type SetupStatus, type SetupStepMeta } from "@/lib/onboarding.functions";
 import { STEP_LABELS, getMissingRequiredSteps } from "@/lib/setup-checklist-copy";
 
@@ -408,7 +410,7 @@ function EmptyFeedIllustration({ onGenerate, pending }: { onGenerate: () => void
       <div>
         <div style={{ fontFamily: PIN_FONT, fontSize: 15, fontWeight: 700, color: PIN.textPrimary }}>Your pins will show up here</div>
         <div style={{ fontFamily: PIN_FONT, fontSize: 13, color: PIN.textSecondary, marginTop: 4, maxWidth: 360 }}>
-          Generate your first batch and this feed fills in with real pin images, ready to review and schedule.
+          {`Analyzes your first ${FIRST_BATCH_MAX_ANALYZE} pages and generates pins from them, using your own API keys. Up to ${FIRST_BATCH_MAX_IMAGES} images render right away -- the rest continue shortly after. You can always generate more from Pages.`}
         </div>
       </div>
       <button

@@ -48,13 +48,23 @@ export function useSetupGate() {
   return { guard, status: data, statusLoading: isLoading };
 }
 
-// "Generate your first batch" -- the one action shared by the
-// onboarding wizard's step 5 and the empty-state Dashboard's CTA.
-// Chains the same two calls Pages' "Generate All" button uses
-// (runFullPipeline to analyze/brief/queue images, then one pass of
-// runImageWorker to actually render a first handful of them) so a
-// brand-new account sees real pin images shortly after clicking,
-// instead of only a queued job that waits for the nightly cron.
+// "Generate your first batch" -- the Dashboard empty-state's own CTA
+// (DashboardEmptyState.tsx). The onboarding wizard's crawl step used to
+// share this exact mutation but now runs its own smaller, page-scoped,
+// cancellable batch instead (see FIRST_BATCH_PAGE_CAP/StepCrawlPreview
+// in routes/onboarding.tsx) -- this hook's scope below is specific to
+// the Dashboard button alone. Chains the same two calls Pages' "Generate
+// All" button uses (runFullPipeline to analyze/brief/queue images, then
+// one pass of runImageWorker to actually render a first handful of
+// them) so a brand-new account sees real pin images shortly after
+// clicking, instead of only a queued job that waits for the nightly
+// cron. Values named (not just inline literals) so DashboardEmptyState's
+// disclosure copy can state the real numbers this call uses, rather
+// than a second hardcoded literal that could silently drift from it.
+export const FIRST_BATCH_MAX_ANALYZE = 25;
+export const FIRST_BATCH_MAX_BRIEF_PAGES = 10;
+export const FIRST_BATCH_MAX_IMAGES = 20;
+
 export function useGenerateFirstBatch() {
   const qc = useQueryClient();
   const pipelineFn = useServerFn(runFullPipeline);
@@ -62,7 +72,9 @@ export function useGenerateFirstBatch() {
 
   return useMutation({
     mutationFn: async () => {
-      const pipeline = await pipelineFn({ data: { maxAnalyze: 25, maxBriefs: 10, maxImages: 20 } });
+      const pipeline = await pipelineFn({
+        data: { maxAnalyze: FIRST_BATCH_MAX_ANALYZE, maxBriefs: FIRST_BATCH_MAX_BRIEF_PAGES, maxImages: FIRST_BATCH_MAX_IMAGES },
+      });
       const worker = await workerFn();
       return { pipeline, worker };
     },
