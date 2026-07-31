@@ -95,17 +95,23 @@ export async function getDecryptedConnection(
   }
 }
 
-// Account-wide "give me a working key for this provider" lookup, used
-// by consumers that aren't part of the per-site Image/Copy Generation
-// resolution chain at all -- keywords.functions.ts's SERP-pattern
-// summarizer and pages.functions.ts's page analyzer both just want
-// "this account's OpenAI key," not a site-specific resolution. Picks
+// Account-wide "give me a working key for this provider" lookup. Picks
 // the EARLIEST-connected connection for that provider (i.e. whichever
 // one would have been "My key" from the original single-key
 // migration, if one exists) -- a stable, deterministic choice rather
-// than an arbitrary one. Also used as provider-resolution.server.ts's
-// own last-resort fallback when neither a site override nor an
-// account default connection resolves to anything usable.
+// than an arbitrary one. Two callers: onboarding.functions.ts's
+// hasTextProviderCredential, which needs a plain per-provider
+// existence check (not a full resolution) to answer "is ANY text
+// provider connected at all"; and provider-resolution.server.ts's
+// resolve(), as its own last-resort fallback -- tried once per
+// provider in its ordered fallback list -- when neither a site
+// override nor an account default connection resolves to anything
+// usable. Page analysis (pages.functions.ts), copy generation
+// (briefs.functions.ts), and the SERP-pattern summarizer
+// (keywords.functions.ts) no longer call this directly -- all three go
+// through resolveCopyConnection (provider-resolution.server.ts) so
+// they resolve to whichever text provider the account actually has
+// configured, not a hardcoded one.
 export async function earliestConnectionForProvider(
   userId: string,
   provider: ApiKeyProvider,

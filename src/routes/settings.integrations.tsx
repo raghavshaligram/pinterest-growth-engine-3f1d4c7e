@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { useState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus, FlaskConical } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
+import { ProviderPicker } from "@/components/ProviderPicker";
 
 type Provider =
   | "openai" | "replicate" | "apify" | "pinterest"
@@ -219,6 +220,7 @@ function IntegrationsPage() {
           onChanged={invalidateConnections}
           currentDefaultConnectionId={providerDefaults?.default_image_connection_id}
           onSetDefault={(connectionId) => setDefaultMut.mutate({ kind: "image", connectionId })}
+          recommendedProvider="openai"
         />
         <GenerationProvidersCard
           title="Copy Generation"
@@ -389,6 +391,10 @@ export type GenProviderMeta = {
   // in practice every provider checked here does support it.
   compositingNote?: string;
   defaultNote?: string;
+  // Where to actually go get a key for this provider -- only populated
+  // on COPY_GEN_PROVIDERS today (onboarding's text-provider choice
+  // links out to it), left undefined elsewhere rather than guessed at.
+  keyUrl?: string;
 };
 
 // Image Generation providers. "replicate" here is specifically Nano
@@ -449,8 +455,16 @@ export const IMAGE_GEN_PROVIDERS: GenProviderMeta[] = [
 // independently, expanding either row lists the same underlying
 // connections.
 export const COPY_GEN_PROVIDERS: GenProviderMeta[] = [
-  { provider: "openai", title: "OpenAI", fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }] },
-  { provider: "anthropic", title: "Anthropic (Claude)", fields: [{ name: "api_key", label: "API key", placeholder: "sk-ant-…", type: "password" }] },
+  {
+    provider: "openai", title: "OpenAI",
+    fields: [{ name: "api_key", label: "API key", placeholder: "sk-…", type: "password" }],
+    keyUrl: "https://platform.openai.com/api-keys",
+  },
+  {
+    provider: "anthropic", title: "Anthropic (Claude)",
+    fields: [{ name: "api_key", label: "API key", placeholder: "sk-ant-…", type: "password" }],
+    keyUrl: "https://console.anthropic.com/settings/keys",
+  },
 ];
 
 // One row per CONNECTION (a specific labeled key) -- collapsed by
@@ -831,6 +845,7 @@ function ProviderKeyGroup({
 // below, just listing ProviderKeyGroup instead of PinterestConnectionRow.
 function GenerationProvidersCard({
   title, description, providers, connections, sites, kind, onChanged, currentDefaultConnectionId, onSetDefault,
+  recommendedProvider,
 }: {
   title: string;
   description: ReactNode;
@@ -855,10 +870,30 @@ function GenerationProvidersCard({
   // they're the same provider.
   currentDefaultConnectionId?: string | null;
   onSetDefault: (connectionId: string) => void;
+  // Optional -- when set, this card's provider list renders through
+  // ProviderPicker (recommended provider surfaced, the rest behind
+  // "Show N more"), same component onboarding's image step uses,
+  // instead of the flat always-expanded list every provider row used
+  // to render as. Left unset for the Copy Generation card (2
+  // providers) -- progressive disclosure doesn't buy anything at that
+  // size, and unlike Image Generation, nothing about its today-shipped
+  // presentation is being intentionally changed.
+  recommendedProvider?: string;
 }) {
   const providerTitle: Record<string, string> = Object.fromEntries(providers.map((p) => [p.provider, p.title]));
   const relevantConnections = connections.filter((c) => providers.some((p) => p.provider === c.provider));
   const connectedCount = relevantConnections.length;
+
+  const renderProviderGroup = (p: GenProviderMeta) => (
+    <ProviderKeyGroup
+      key={p.provider}
+      meta={p}
+      connections={connections.filter((c) => c.provider === p.provider)}
+      sites={sites}
+      kind={kind}
+      onChanged={onChanged}
+    />
+  );
 
   return (
     <Card className="p-6">
@@ -888,18 +923,18 @@ function GenerationProvidersCard({
         </div>
       )}
 
-      <div className="space-y-2">
-        {providers.map((p) => (
-          <ProviderKeyGroup
-            key={p.provider}
-            meta={p}
-            connections={connections.filter((c) => c.provider === p.provider)}
-            sites={sites}
-            kind={kind}
-            onChanged={onChanged}
-          />
-        ))}
-      </div>
+      {recommendedProvider ? (
+        <ProviderPicker
+          providers={providers}
+          recommendedProvider={recommendedProvider}
+          recommendedBadge="Recommended"
+          renderProvider={renderProviderGroup}
+        />
+      ) : (
+        <div className="space-y-2">
+          {providers.map((p) => renderProviderGroup(p))}
+        </div>
+      )}
     </Card>
   );
 }

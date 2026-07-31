@@ -14,23 +14,36 @@ export type SerpPatterns = {
 };
 
 // Summarize a keyword's scraped top pins into structured "what's working"
-// patterns via OpenAI, and store them on the serp_snapshot row (the
-// `patterns` column existed in the schema but was never populated until
-// now). This is enrichment on top of the sweep, not core to it -- if the
-// user hasn't configured OpenAI, or the summarization call fails, we log
-// via markIntegration and move on rather than failing the whole sweep.
+// patterns via this account's text-generation provider, and store them on
+// the serp_snapshot row (the `patterns` column existed in the schema but
+// was never populated until now). This is enrichment on top of the sweep,
+// not core to it -- if the account has no usable text provider connected,
+// or the summarization call fails, we log via markApiKeyConnection and
+// move on rather than failing the whole sweep.
 async function summarizeAndStorePatterns(userId: string, snapshotId: string, keyword: string, topPins: TopPin[]) {
-  // Uses this account's earliest-connected OpenAI key (api_key_connections)
-  // -- this is an account-level enrichment, not tied to any one site,
-  // so it isn't part of the per-site image/copy override resolution
-  // chain at all; it just needs "a working OpenAI key for this
-  // account," same as before the multi-connection restructure.
-  const { earliestConnectionForProvider, markApiKeyConnection } = await import("./api-key-connections.server");
-  const { openaiJSON } = await import("./openai.server");
+  // Same account-level text-generation connection analyzePage/
+  // generateBriefs use (resolveCopyConnection(userId, null) -- see
+  // pages.functions.ts's own comment on why null, not a site override:
+  // this is an account-level enrichment, not tied to any one site). Its
+  // "no usable connection at all" case is a thrown Error, unlike the old
+  // single-provider earliestConnectionForProvider lookup which returned
+  // null -- caught here and turned back into the same quiet skip this
+  // always did, since an account with no text provider connected yet
+  // isn't a failure, it's just nothing to enrich with.
+  const { markApiKeyConnection } = await import("./api-key-connections.server");
+  const { resolveCopyConnection } = await import("./provider-resolution.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-  const conn = await earliestConnectionForProvider(userId, "openai");
-  if (!conn) return; // optional enrichment -- no key configured, skip quietly
+  let conn: Awaited<ReturnType<typeof resolveCopyConnection>>;
+  try {
+    conn = await resolveCopyConnection(userId, null);
+  } catch {
+    return; // optional enrichment -- no text provider connected, skip quietly
+  }
+  const generateJSON = conn.provider === "anthropic"
+    ? (await import("./anthropic.server")).anthropicJSON
+    : (await import("./openai.server")).openaiJSON;
+  const model = conn.provider === "anthropic" ? "claude-sonnet-5" : "gpt-4o-mini";
 
   const pinsForPrompt = topPins
     .filter((p) => p.title)
@@ -44,9 +57,9 @@ async function summarizeAndStorePatterns(userId: string, snapshotId: string, key
       high_performers: { title: string; saves: number | null }[];
       summary: string;
     };
-    const resp = await openaiJSON<PatternsResp>({
+    const resp = await generateJSON<PatternsResp>({
       apiKey: conn.apiKey,
-      model: "gpt-4o-mini",
+      model,
       system: `You are a Pinterest competitive-research analyst. You'll be given the top-ranking pins currently showing for a Pinterest search. Return strict JSON summarizing PATTERNS ACROSS them, not a description of any single pin:
 - title_patterns: 3-6 short strings describing recurring TITLE FORMATS ("N ways to ___", "X vs Y comparisons", "question-format hooks", "before/after framing"). Describe the pattern, don't copy a title verbatim.
 - themes: 3-6 short strings describing recurring THEMES/ANGLES in the descriptions.

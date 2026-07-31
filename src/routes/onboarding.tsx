@@ -17,7 +17,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X,
+  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X, ExternalLink,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,9 +41,11 @@ import { listIntegrations } from "@/lib/integrations.functions";
 import { listApiKeyConnections } from "@/lib/api-key-connections.functions";
 import { getPublishingProfile } from "@/lib/publishing-profile.functions";
 import {
-  PinterestConnectButton, PublishingAgePrompt, FirstApiKeySetup, IMAGE_GEN_PROVIDERS,
-  GoogleConnectionsCard,
+  PinterestConnectButton, PublishingAgePrompt, FirstApiKeySetup, IMAGE_GEN_PROVIDERS, COPY_GEN_PROVIDERS,
+  GoogleConnectionsCard, type GenProviderMeta,
 } from "@/routes/settings.integrations";
+import type { ApiKeyConnectionSummary } from "@/lib/api-key-connections.server";
+import { ProviderPicker } from "@/components/ProviderPicker";
 import { PinStyleSetupPanel } from "@/components/PinStyleSetupPanel";
 
 export const Route = createFileRoute("/onboarding")({
@@ -491,52 +493,72 @@ function StepApiKeys({
   const qc = useQueryClient();
   const { data: setupStatus } = useSetupStatus();
   // Land on whichever sub-tab is actually still relevant instead of
-  // always "openai" -- an account that already has OpenAI connected
-  // should open straight on the image-provider choice, not force a
-  // replay of an already-done sub-step. Computed once at mount from
-  // whatever's already cached (this component's parent already fetched
-  // the same query, so it's normally available immediately, not a
-  // loading flash).
-  const [sub, setSub] = useState<"openai" | "imagegen">(() => {
-    if (!setupStatus) return "openai";
-    return setupStatus.steps.text_provider_connected ? "imagegen" : "openai";
+  // always "textprovider" -- an account that already has a text
+  // provider connected should open straight on the image-provider
+  // choice, not force a replay of an already-done sub-step. Computed
+  // once at mount from whatever's already cached (this component's
+  // parent already fetched the same query, so it's normally available
+  // immediately, not a loading flash).
+  const [sub, setSub] = useState<"textprovider" | "imagegen">(() => {
+    if (!setupStatus) return "textprovider";
+    return setupStatus.steps.text_provider_connected ? "imagegen" : "textprovider";
   });
   const listConns = useServerFn(listApiKeyConnections);
   const { data: connections } = useQuery({ queryKey: ["api-key-connections"], queryFn: () => listConns() });
   const setAccountDefault = useServerFn(setAccountProviderDefault);
 
-  const [imageProvider, setImageProvider] = useState<"openai" | "replicate">("openai");
-  // Seeds from the account-level default CONNECTION's provider (not a
-  // per-site value -- this step sets the account default now, see
-  // saveProviderMut below) so revisiting this step shows whatever was
-  // already chosen. Only openai/replicate are offered on this sub-tab
-  // (see the fixed 2-item list below) -- a default connection for one
-  // of the other 5 providers (set later via Settings) just leaves this
-  // toggle on openai rather than forcing a mismatched selection here.
+  // Text provider: deliberately starts unselected, not defaulted to
+  // OpenAI -- OpenAI is marked "Most common" in the UI below as a soft
+  // hint, not preselected or gated on, so choosing Anthropic is exactly
+  // as fast as choosing OpenAI. Only overridden by the effect below if
+  // the account already has an explicit copy default set (a returning
+  // user revisiting this step should see their real choice, not a blank
+  // one).
+  const [textProvider, setTextProvider] = useState<"openai" | "anthropic" | null>(null);
+  const [imageProvider, setImageProvider] = useState<string>("openai");
   const getDefaults = useServerFn(getAccountProviderDefaults);
   const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
   useEffect(() => {
-    const defaultConn = (connections ?? []).find((c) => c.id === providerDefaults?.default_image_connection_id);
-    if (defaultConn?.provider === "openai" || defaultConn?.provider === "replicate") {
-      setImageProvider(defaultConn.provider);
+    const defaultCopyConn = (connections ?? []).find((c) => c.id === providerDefaults?.default_copy_connection_id);
+    if (defaultCopyConn?.provider === "openai" || defaultCopyConn?.provider === "anthropic") {
+      setTextProvider(defaultCopyConn.provider);
     }
+  }, [providerDefaults?.default_copy_connection_id, connections]);
+  useEffect(() => {
+    const defaultImageConn = (connections ?? []).find((c) => c.id === providerDefaults?.default_image_connection_id);
+    if (defaultImageConn) setImageProvider(defaultImageConn.provider);
   }, [providerDefaults?.default_image_connection_id, connections]);
 
   const openaiConnections = (connections ?? []).filter((c) => c.provider === "openai");
-  const replicateConnections = (connections ?? []).filter((c) => c.provider === "replicate");
+  const anthropicConnections = (connections ?? []).filter((c) => c.provider === "anthropic");
+  const textConnections = textProvider === "anthropic" ? anthropicConnections : openaiConnections;
+  const imageConnections = (connections ?? []).filter((c) => c.provider === imageProvider);
+  const anyTextConnected = openaiConnections.length > 0 || anthropicConnections.length > 0;
+  const anyImageConnected = (connections ?? []).some((c) => IMAGE_GEN_PROVIDERS.some((p) => p.provider === c.provider));
 
-  const saveProviderMut = useMutation({
+  const saveTextProviderMut = useMutation({
+    mutationFn: () => {
+      const conn = textConnections[0];
+      if (!conn || !textProvider) throw new Error("Add and save a key above first.");
+      return setAccountDefault({ data: { kind: "copy", connectionId: conn.id } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      qc.invalidateQueries({ queryKey: ["account-provider-defaults"] });
+      setSub("imagegen");
+    },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+
+  const saveImageProviderMut = useMutation({
     // Sets the ACCOUNT-level default image CONNECTION (not this
     // specific site) -- image_provider is no longer a per-site column
     // at all, and the account default is now a specific connection id,
-    // not a provider name. Onboarding always operates on this
-    // account's first/only connection for whichever of the two
-    // providers is selected here (a brand-new account can't have a
-    // second key for the same provider yet).
+    // not a provider name.
     mutationFn: () => {
-      const conns = imageProvider === "openai" ? openaiConnections : replicateConnections;
-      const conn = conns[0];
-      if (!conn) throw new Error(`Add ${imageProvider === "openai" ? "an OpenAI" : "a Replicate"} key above first.`);
+      const conn = imageConnections[0];
+      const providerTitle = IMAGE_GEN_PROVIDERS.find((p) => p.provider === imageProvider)?.title ?? imageProvider;
+      if (!conn) throw new Error(`Add a ${providerTitle} key above first.`);
       return setAccountDefault({ data: { kind: "image", connectionId: conn.id } });
     },
     onSuccess: () => {
@@ -554,36 +576,68 @@ function StepApiKeys({
     qc.invalidateQueries({ queryKey: ["setup-status"] });
   };
 
-  const openaiMeta = IMAGE_GEN_PROVIDERS.find((p) => p.provider === "openai")!;
-  const replicateMeta = IMAGE_GEN_PROVIDERS.find((p) => p.provider === "replicate")!;
-
   return (
     <div className="space-y-6">
       <SubStepTabs
         sub={sub}
         onChange={setSub}
         items={[
-          { key: "openai", label: "OpenAI", done: openaiConnections.length > 0 },
-          { key: "imagegen", label: "Image generation", done: openaiConnections.length > 0 || replicateConnections.length > 0 },
+          { key: "textprovider", label: "Text provider", done: anyTextConnected },
+          { key: "imagegen", label: "Image generation", done: anyImageConnected },
         ]}
       />
 
-      {sub === "openai" && (
+      {sub === "textprovider" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Powers page analysis and pin copy by default. Prefer Claude? Connect Anthropic instead from Settings → Integrations and set it as your text provider default.
+            Powers reading your pages and writing your pin copy. Pick whichever provider you already have a key for, or connect a new one below.
           </p>
-          <FirstApiKeySetup meta={openaiMeta} connections={openaiConnections} onChanged={invalidateIntegrations} />
+          <div className="flex gap-2">
+            {COPY_GEN_PROVIDERS.map((meta) => (
+              <button
+                key={meta.provider}
+                type="button"
+                onClick={() => setTextProvider(meta.provider as "openai" | "anthropic")}
+                className="flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium"
+                style={{
+                  borderColor: textProvider === meta.provider ? "#E60023" : "#E5E5E5",
+                  background: textProvider === meta.provider ? "#FCE9EA" : "transparent",
+                  color: textProvider === meta.provider ? "#E60023" : undefined,
+                }}
+              >
+                {meta.title}
+                {meta.provider === "openai" && (
+                  <span className="text-[10px] font-normal text-muted-foreground">Most common</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {textProvider && (() => {
+            const meta = COPY_GEN_PROVIDERS.find((p) => p.provider === textProvider)!;
+            return (
+              <div className="space-y-2">
+                {meta.keyUrl && (
+                  <a
+                    href={meta.keyUrl} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Get your {meta.title} key <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                <FirstApiKeySetup meta={meta} connections={textConnections} onChanged={invalidateIntegrations} />
+              </div>
+            );
+          })()}
           <div className="flex justify-between pt-2">
             <Button type="button" variant="outline" onClick={onBack}>Back</Button>
             <Button
               type="button"
               className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-              onClick={() => setSub("imagegen")}
-              disabled={openaiConnections.length === 0}
-              title={openaiConnections.length === 0 ? "Add and save an OpenAI key to continue, or connect Anthropic instead from Settings → Integrations first." : undefined}
+              onClick={() => saveTextProviderMut.mutate()}
+              disabled={saveTextProviderMut.isPending || !textProvider || textConnections.length === 0}
+              title={!textProvider ? "Choose a provider above first." : textConnections.length === 0 ? "Add and save a key above to continue." : undefined}
             >
-              Next →
+              {saveTextProviderMut.isPending ? "Saving…" : "Next →"}
             </Button>
           </div>
         </div>
@@ -594,51 +648,68 @@ function StepApiKeys({
           <p className="text-sm text-muted-foreground">
             Choose which model renders your pin images by default. Any site can be pinned to a specific key instead later, from that key's row in Settings → Integrations.
           </p>
-          <div className="flex gap-2">
-            {/* Deliberately its own fixed 2-item list, NOT a map over the
-                full IMAGE_GEN_PROVIDERS array (which has 7 entries for
-                the consolidated Image Generation card) -- this onboarding
-                step's whole flow (the "openai" sub-tab above being a
-                required first step, this sub-tab's two-way
-                openai/replicate branching just below) is built
-                specifically around those two providers. The other 5 are
-                connectable in Settings -> Integrations immediately after
-                onboarding, where each key's row offers a "Used by" site
-                picker -- the real, un-truncated way to pin a specific
-                site to a specific key (the Sites page's own Connections
-                section is read-only and just links back there). */}
-            {(["openai", "replicate"] as const).map((p) => (
-              <button
-                key={p} type="button" onClick={() => setImageProvider(p)}
-                className="rounded-full border px-4 py-1.5 text-sm font-medium"
-                style={{
-                  borderColor: imageProvider === p ? "#E60023" : "#E5E5E5",
-                  background: imageProvider === p ? "#FCE9EA" : "transparent",
-                  color: imageProvider === p ? "#E60023" : undefined,
-                }}
-              >
-                {p === "openai" ? "OpenAI" : "Replicate (Nano Banana)"}
-              </button>
-            ))}
-          </div>
-          {imageProvider === "openai" ? (
-            openaiConnections.length > 0
-              ? <p className="text-xs text-emerald-600">Using the OpenAI key you connected in the previous step.</p>
-              : <p className="text-xs text-amber-700">Add your OpenAI key in the previous step first.</p>
-          ) : (
-            <FirstApiKeySetup meta={replicateMeta} connections={replicateConnections} onChanged={invalidateIntegrations} />
-          )}
+          <ProviderPicker
+            providers={IMAGE_GEN_PROVIDERS}
+            recommendedProvider="openai"
+            recommendedBadge="Recommended"
+            renderProvider={(meta) => (
+              <ImageProviderChoice
+                meta={meta}
+                connections={(connections ?? []).filter((c) => c.provider === meta.provider)}
+                selected={imageProvider === meta.provider}
+                onSelect={() => setImageProvider(meta.provider)}
+                onChanged={invalidateIntegrations}
+              />
+            )}
+          />
           <div className="flex justify-between pt-2">
-            <Button type="button" variant="outline" onClick={() => setSub("openai")}>Back</Button>
+            <Button type="button" variant="outline" onClick={() => setSub("textprovider")}>Back</Button>
             <Button
               type="button"
               className="bg-[#E60023] text-white hover:bg-[#E60023]/90"
-              onClick={() => saveProviderMut.mutate()}
-              disabled={saveProviderMut.isPending || (imageProvider === "openai" ? openaiConnections.length === 0 : replicateConnections.length === 0)}
+              onClick={() => saveImageProviderMut.mutate()}
+              disabled={saveImageProviderMut.isPending || imageConnections.length === 0}
             >
-              {saveProviderMut.isPending ? "Saving…" : "Next →"}
+              {saveImageProviderMut.isPending ? "Saving…" : "Next →"}
             </Button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One provider's row inside the image-generation ProviderPicker -- a
+// select pill, and (once selected) the same FirstApiKeySetup form every
+// other provider entry point in the app uses. No per-provider custom
+// UI beyond the pill label; ProviderPicker itself decides which
+// providers are even visible without opening "Show more".
+function ImageProviderChoice({
+  meta, connections, selected, onSelect, onChanged,
+}: {
+  meta: GenProviderMeta;
+  connections: ApiKeyConnectionSummary[];
+  selected: boolean;
+  onSelect: () => void;
+  onChanged: () => void;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="rounded-full border px-4 py-1.5 text-sm font-medium"
+        style={{
+          borderColor: selected ? "#E60023" : "#E5E5E5",
+          background: selected ? "#FCE9EA" : "transparent",
+          color: selected ? "#E60023" : undefined,
+        }}
+      >
+        {meta.title}
+      </button>
+      {selected && (
+        <div className="mt-2">
+          <FirstApiKeySetup meta={meta} connections={connections} onChanged={onChanged} />
         </div>
       )}
     </div>
@@ -746,8 +817,8 @@ function SubStepTabs({
   sub, onChange, items,
 }: {
   sub: string;
-  onChange: (v: "openai" | "imagegen") => void;
-  items: { key: "openai" | "imagegen"; label: string; done: boolean }[];
+  onChange: (v: "textprovider" | "imagegen") => void;
+  items: { key: "textprovider" | "imagegen"; label: string; done: boolean }[];
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">

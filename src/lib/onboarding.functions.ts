@@ -127,6 +127,18 @@ export type SetupStatus = {
   // false, so returning an optional step's wizardStep here can never
   // force-block a pipeline action on something optional -- see firstMissing().
   firstMissingWizardStep: 1 | 2 | 3 | 4 | 5 | 6 | null;
+  // Which text provider actually resolves for this account right now --
+  // "openai" | "anthropic" if text_provider_connected is done, null if
+  // it isn't. Computed via the exact same resolveCopyConnection
+  // (provider-resolution.server.ts) analyzePage/generateBriefs/the SERP
+  // summarizer call at generation time, not a separate approximation --
+  // so this can't disagree with which provider a real generation call
+  // would actually use. Purely a display concern (the Dashboard
+  // checklist's completed row -- see components/DashboardEmptyState.tsx
+  // -- shows "Text provider -- OpenAI"/"-- Anthropic" instead of a
+  // generic checkmark); nothing here gates readyToGenerate or any other
+  // boolean above.
+  textProviderInUse: "openai" | "anthropic" | null;
 };
 
 // Same has_value computation integrations.functions.ts:listIntegrations
@@ -178,7 +190,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SetupStatus> => {
     const s = context.supabase;
 
-    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, textProviderConnected, googleConnectionsRes] = await Promise.all([
+    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, textProviderConnected, googleConnectionsRes, textProviderInUse] = await Promise.all([
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
@@ -190,6 +202,23 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       // hasTextProviderCredential). No per-property validation; that's
       // what the Insights page's own GA4 property picker is for.
       s.from("google_connections").select("id", { count: "exact", head: true }),
+      // Real resolution (not just an existence check), for display only
+      // -- see the SetupStatus.textProviderInUse doc comment above.
+      // resolveCopyConnection(userId, null) mirrors analyzePage's own
+      // call exactly (no site override -- this is an account-wide
+      // question). Throws when nothing resolves at all, which is a
+      // completely normal state here (a brand-new account with no text
+      // provider connected yet), so it's caught and turned into null
+      // rather than failing the whole setup-status fetch over it.
+      (async () => {
+        const { resolveCopyConnection } = await import("./provider-resolution.server");
+        try {
+          const conn = await resolveCopyConnection(context.userId, null);
+          return conn.provider === "anthropic" ? "anthropic" as const : "openai" as const;
+        } catch {
+          return null;
+        }
+      })(),
     ]);
 
     const sites = sitesRes.data ?? [];
@@ -243,6 +272,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       isFullyOnboarded,
       dismissedOnboarding: onboardingRes.data?.dismissed_onboarding_prompt ?? false,
       firstMissingWizardStep: firstMissing(steps),
+      textProviderInUse,
     };
   });
 

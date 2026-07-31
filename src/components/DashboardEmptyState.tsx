@@ -29,6 +29,15 @@ import { PinspiderMark } from "@/components/PinspiderMark";
 import { useSetupStatus, useSetupGate, useGenerateFirstBatch } from "@/lib/onboarding-gate";
 import { SETUP_STEPS, type SetupStatus, type SetupStepMeta } from "@/lib/onboarding.functions";
 import { STEP_LABELS, getMissingRequiredSteps } from "@/lib/setup-checklist-copy";
+
+// Short display names for the checklist's one "which option did you
+// pick" row (text_provider_connected) -- deliberately not COPY_GEN_PROVIDERS'
+// own .title ("Anthropic (Claude)"), which is right for a settings list
+// but too long next to "Text provider —" here.
+const TEXT_PROVIDER_TITLES: Record<"openai" | "anthropic", string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+};
 import { getErrorMessage } from "@/lib/error-message";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -132,12 +141,24 @@ function SetupChecklistCard({
         {SETUP_STEPS.map((s) => {
           const rowDone = status?.steps[s.id] ?? false;
           const isNext = !rowDone && nextStep?.id === s.id;
+          // The one step whose completed row shows WHICH option was
+          // chosen, not just a generic checkmark -- text_provider_connected
+          // is satisfiable by either OpenAI or Anthropic, so "Connect a
+          // text provider" struck through doesn't actually tell an
+          // account which one is live. Every other step here is either
+          // binary (connected/not) or doesn't have this kind of choice,
+          // so this stays a one-off rather than a new field every
+          // SetupStepMeta entry has to carry.
+          const doneLabel = s.id === "text_provider_connected" && rowDone && status?.textProviderInUse
+            ? `Text provider — ${TEXT_PROVIDER_TITLES[status.textProviderInUse]}`
+            : undefined;
           return (
             <ChecklistRow
               key={s.id}
               step={s}
               done={rowDone}
               isNext={isNext}
+              doneLabel={doneLabel}
               onAction={() => onStepClick(s.wizardStep)}
             />
           );
@@ -148,14 +169,20 @@ function SetupChecklistCard({
 }
 
 function ChecklistRow({
-  step, done, isNext, onAction,
+  step, done, isNext, doneLabel, onAction,
 }: {
   step: SetupStepMeta;
   done: boolean;
   isNext: boolean;
+  // Overrides the displayed label when done, e.g. "Text provider —
+  // Anthropic" instead of the generic step title -- undefined for every
+  // step except text_provider_connected, which falls back to the usual
+  // STEP_LABELS title exactly as before.
+  doneLabel?: string;
   onAction: () => void;
 }) {
   const label = STEP_LABELS[step.id];
+  const displayLabel = done && doneLabel ? doneLabel : label;
   return (
     <div
       style={{
@@ -179,7 +206,7 @@ function ChecklistRow({
       <div style={{ flex: 1, minWidth: 0, fontFamily: PIN_FONT }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: done ? PIN.textSecondary : PIN.textPrimary, textDecoration: done ? "line-through" : "none" }}>
-            {label}
+            {displayLabel}
           </span>
           {step.optional && <span style={{ fontSize: 11, fontWeight: 400, color: PIN.textMuted }}>· optional</span>}
           {isNext && <Badge className="h-4 px-1.5 text-[10px] leading-none">Next</Badge>}
