@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useSetupStatus } from "@/lib/onboarding-gate";
-import { SETUP_STEPS } from "@/lib/onboarding.functions";
+import { getMissingRequiredSteps, STEP_LABELS } from "@/lib/setup-checklist-copy";
 import { PIN, PIN_FONT } from "@/lib/pin-shell-tokens";
 
 const DISMISS_KEY = "pinspider:setup-banner-dismissed";
@@ -40,7 +40,7 @@ export function FinishSetupBanner() {
 
   if (!data || !data.dismissedOnboarding || data.isFullyOnboarded || dismissed) return null;
 
-  const missing = SETUP_STEPS.filter((s) => !s.optional && !data.steps[s.id]);
+  const missing = getMissingRequiredSteps(data);
   if (!missing.length) return null;
   const next = missing[0]!;
 
@@ -55,7 +55,7 @@ export function FinishSetupBanner() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: PIN.textPrimary }}>Finish setting up Pinspider — </span>
         <span style={{ fontSize: 13, color: PIN.textSecondary }}>
-          {missing.length === 1 ? next.title : `${missing.length} steps left, next: ${next.title.toLowerCase()}`}
+          {missing.length === 1 ? STEP_LABELS[next.id] : `${missing.length} steps left, next: ${STEP_LABELS[next.id].toLowerCase()}`}
         </span>
       </div>
       <Link

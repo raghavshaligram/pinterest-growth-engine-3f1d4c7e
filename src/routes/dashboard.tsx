@@ -18,7 +18,7 @@ import { useSiteContext } from "@/lib/site-context";
 import { PinShell } from "@/components/PinShell";
 import { TopBar } from "@/components/PinTopBar";
 import { PinDetailDialog } from "@/components/PinDetailDialog";
-import { DashboardEmptyState } from "@/components/DashboardEmptyState";
+import { DashboardEmptyState, SetupSummaryBar } from "@/components/DashboardEmptyState";
 import { useSetupStatus } from "@/lib/onboarding-gate";
 import { PIN, PIN_FONT, boardColor, formatPinTimestamp, hostOf } from "@/lib/pin-shell-tokens";
 import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
@@ -171,6 +171,17 @@ function DashboardContent({ userEmail }: { userEmail?: string | null }) {
 
   return (
     <>
+      {/* State C: hasFirstBatch is true, so the checklist itself is gone
+          and the feed below is primary -- but isFullyOnboarded doesn't
+          require Pinterest, so an account can land here with it still
+          unconnected. This is the same thin bar State B collapses to
+          (components/DashboardEmptyState.tsx); it renders nothing at all
+          once there's truly nothing required left, which is what makes
+          "feed takes the page" true for a fully set-up account. Sits
+          where FinishSetupBanner used to (PinShell suppresses that
+          banner on this route now, so this replaces it instead of
+          stacking a second one on top). */}
+      <SetupSummaryBar status={setupStatus} style={{ margin: "12px 24px 0" }} />
       <TopBar search={search} onSearch={setSearch} placeholder="Search your pins...">
         <Link
           to="/pins"

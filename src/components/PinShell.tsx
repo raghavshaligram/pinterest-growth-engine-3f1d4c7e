@@ -183,7 +183,13 @@ export function PinShell({
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <OnboardingRedirectGuard />
           <HelpMenu />
-          <FinishSetupBanner />
+          {/* Dashboard builds its own in-page setup nudges now (full
+              checklist in State A, thin SetupSummaryBar in States B/C --
+              see components/DashboardEmptyState.tsx) -- showing this
+              banner too there would just be a second, competing "finish
+              setup" CTA stacked on top of the first. Every other route
+              still gets it exactly as before. */}
+          {active !== "dashboard" && <FinishSetupBanner />}
           {children}
         </div>
       </div>
