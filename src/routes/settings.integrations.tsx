@@ -965,11 +965,23 @@ function PinterestConnectionsCard() {
   const list = useServerFn(listPinterestConnections);
   const startOAuth = useServerFn(startPinterestConnectionOAuth);
   const disconnect = useServerFn(disconnectPinterestConnection);
+  const checkSandboxEnabled = useServerFn(isSandboxToolsEnabled);
 
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["pinterest-connections"], queryFn: () => list() });
 
+  // Same query/queryKey ManualSandboxConnectionForm below already uses --
+  // react-query dedupes the two, so this doesn't add a second network
+  // call. Drives whether the environment picker next to "Connect
+  // another Pinterest account" renders at all: a real deployment with
+  // PINTEREST_SANDBOX_TOOLS_ENABLED unset never shows it, and the
+  // button behaves exactly as it always has (production only). The
+  // real gate is still server-side in startPinterestConnectionOAuth --
+  // this only controls whether the picker renders.
+  const { data: sandboxGate } = useQuery({ queryKey: ["pinterest-sandbox-tools-enabled"], queryFn: () => checkSandboxEnabled() });
+  const [connectEnvironment, setConnectEnvironment] = useState<"production" | "sandbox">("production");
+
   const connectMut = useMutation({
-    mutationFn: () => startOAuth(),
+    mutationFn: () => startOAuth({ data: { environment: connectEnvironment } }),
     onSuccess: (r) => { window.location.href = r.authorizeUrl; },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
@@ -1039,10 +1051,28 @@ function PinterestConnectionsCard() {
         </div>
       )}
 
-      <Button type="button" size="sm" variant="outline" onClick={() => connectMut.mutate()} disabled={connectMut.isPending}>
-        <Plus className="mr-1 h-4 w-4" />
-        {connectMut.isPending ? "Redirecting…" : "Connect another Pinterest account"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={() => connectMut.mutate()} disabled={connectMut.isPending}>
+          <Plus className="mr-1 h-4 w-4" />
+          {connectMut.isPending ? "Redirecting…" : "Connect another Pinterest account"}
+        </Button>
+        {/* Only shown when sandbox tooling is on for this deployment --
+            real customers connecting their own site's Pinterest account
+            should never see or need this; the button always means
+            "production" for them, unchanged from before this picker
+            existed. */}
+        {sandboxGate?.enabled && (
+          <Select value={connectEnvironment} onValueChange={(v) => setConnectEnvironment(v as "production" | "sandbox")}>
+            <SelectTrigger className="h-8 w-[130px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="production">Production</SelectItem>
+              <SelectItem value="sandbox">Sandbox</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
       <ManualSandboxConnectionForm />
     </Card>

@@ -37,13 +37,15 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
           // used to build the authorize URL. Throws (caught below) if the
           // server isn't configured with PINTEREST_APP_ID/APP_SECRET/REDIRECT_URI.
           const { appId, appSecret, redirectUri } = pinterestAppConfig();
-          // Both the legacy single-account flow and the new multi-
-          // connection "Connect another Pinterest account" flow always
-          // exchange against production -- sandbox connections are only
-          // ever created through the separate dev-gated manual-token
-          // form (addManualPinterestConnection), not this OAuth
-          // redirect, so there is no environment choice to make here.
-          const tokens = await exchangeCode({ appId, appSecret, code, redirectUri, environment: "production" });
+          // environment comes from the signed state, not a hardcoded
+          // value -- it was captured before the redirect to Pinterest
+          // (see startPinterestConnectionOAuth), since the authorize
+          // page itself has no sandbox variant to reflect it back to us.
+          // The legacy flow's signState call never passes an
+          // environment, so verified.environment is always "production"
+          // for it (see signState's default param) -- this one exchange
+          // call correctly serves both flows without a branch.
+          const tokens = await exchangeCode({ appId, appSecret, code, redirectUri, environment: verified.environment });
 
           if (verified.mode === "connection") {
             // New multi-connection flow ("Connect another Pinterest
@@ -54,7 +56,7 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
             if (!tokens.refresh_token) {
               throw new Error("Pinterest didn't return a refresh token — please try connecting again.");
             }
-            const username = await fetchPinterestUsername(tokens.access_token, "production");
+            const username = await fetchPinterestUsername(tokens.access_token, verified.environment);
             const { encrypt } = await import("@/lib/crypto.server");
             const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
             const now = Date.now();
@@ -72,10 +74,13 @@ export const Route = createFileRoute("/api/public/pinterest/callback")({
               pinterest_username: username,
               token_ciphertext: encrypt(JSON.stringify(storedTokens)),
               refresh_token_expires_at: refreshExpiresAt,
-              // Explicit, not relying on the column default -- every
-              // real OAuth connect through this route is production/
-              // oauth by construction (see the exchangeCode call above).
-              environment: "production",
+              // From the signed state (see the exchangeCode call above),
+              // not hardcoded -- this is what actually makes an OAuth
+              // sandbox connection possible. token_source is still
+              // unconditionally "oauth": this whole branch is the OAuth
+              // path by construction, regardless of which environment
+              // was chosen before the redirect.
+              environment: verified.environment,
               token_source: "oauth",
             });
             if (error) throw error;

@@ -55,34 +55,60 @@ export type OAuthReturnTo = "settings" | "onboarding";
 // and behaves exactly as before.
 export type OAuthMode = "legacy" | "connection";
 
-export function signState(userId: string, returnTo: OAuthReturnTo = "settings", mode: OAuthMode = "legacy"): string {
+// Folded into the signed state for the same reason returnTo/mode are:
+// the environment choice has to be captured BEFORE redirecting to
+// Pinterest, since the authorize page itself has no sandbox variant
+// (see buildAuthorizeUrl's comment) -- only the token exchange that
+// happens after the user comes back knows which host to hit. Signing
+// it prevents someone from tampering with the callback URL to claim a
+// sandbox connection as production or vice versa. Defaults to
+// "production" so every existing signState call site (including the
+// legacy flow, which never passes this) keeps producing exactly the
+// state shape/behavior it always has.
+export function signState(
+  userId: string,
+  returnTo: OAuthReturnTo = "settings",
+  mode: OAuthMode = "legacy",
+  environment: PinterestEnvironment = "production",
+): string {
   const nonce = b64url(randomBytes(12));
-  const payload = `${userId}.${nonce}.${returnTo}.${mode}`;
+  const payload = `${userId}.${nonce}.${returnTo}.${mode}.${environment}`;
   const sig = b64url(createHmac("sha256", stateSecret()).update(payload).digest());
   return `${payload}.${sig}`;
 }
 
-export function verifyState(state: string): { userId: string; returnTo: OAuthReturnTo; mode: OAuthMode } | null {
+export function verifyState(
+  state: string,
+): { userId: string; returnTo: OAuthReturnTo; mode: OAuthMode; environment: PinterestEnvironment } | null {
   const parts = state.split(".");
-  // 4 parts = pre-existing state format (userId.nonce.returnTo.sig),
-  // still accepted so an in-flight redirect issued right before this
-  // field was added doesn't fail on return. 5 parts = current format
-  // with an explicit mode.
-  if (parts.length !== 4 && parts.length !== 5) return null;
-  const hasMode = parts.length === 5;
-  const [userId, nonce, returnToRaw, modeRawOrSig, maybeSig] = parts;
-  const sig = hasMode ? maybeSig : modeRawOrSig;
-  const signedPayload = hasMode
-    ? `${userId}.${nonce}.${returnToRaw}.${modeRawOrSig}`
-    : `${userId}.${nonce}.${returnToRaw}`;
+  // 4 parts = original format (userId.nonce.returnTo.sig). 5 parts =
+  // format with mode added (userId.nonce.returnTo.mode.sig). 6 parts =
+  // current format with environment added too
+  // (userId.nonce.returnTo.mode.environment.sig). Older formats are
+  // still accepted so an in-flight redirect issued right before a field
+  // was added doesn't fail on return -- environment (and mode) default
+  // to their safe values (production/legacy) when absent, never to
+  // sandbox, so an old-format state can never be upgraded into
+  // something more privileged than what it was actually signed for.
+  if (parts.length < 4 || parts.length > 6) return null;
+  const hasMode = parts.length >= 5;
+  const hasEnvironment = parts.length === 6;
+  const [userId, nonce, returnToRaw, modeRawMaybe, envRawMaybe, sigMaybe] = parts;
+  const sig = hasEnvironment ? sigMaybe : hasMode ? envRawMaybe : modeRawMaybe;
+  const signedPayload = hasEnvironment
+    ? `${userId}.${nonce}.${returnToRaw}.${modeRawMaybe}.${envRawMaybe}`
+    : hasMode
+      ? `${userId}.${nonce}.${returnToRaw}.${modeRawMaybe}`
+      : `${userId}.${nonce}.${returnToRaw}`;
   const expected = b64url(createHmac("sha256", stateSecret()).update(signedPayload).digest());
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return null;
   if (!timingSafeEqual(a, b)) return null;
   const returnTo: OAuthReturnTo = returnToRaw === "onboarding" ? "onboarding" : "settings";
-  const mode: OAuthMode = hasMode && modeRawOrSig === "connection" ? "connection" : "legacy";
-  return { userId, returnTo, mode };
+  const mode: OAuthMode = hasMode && modeRawMaybe === "connection" ? "connection" : "legacy";
+  const environment: PinterestEnvironment = hasEnvironment && envRawMaybe === "sandbox" ? "sandbox" : "production";
+  return { userId, returnTo, mode, environment };
 }
 
 // Deliberately NOT routed through pinterestApiBaseUrl -- confirmed

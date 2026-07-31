@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { PinterestConnectionSummary } from "./pinterest-connections.server";
+import type { PinterestEnvironment } from "./pinterest-environment";
 
 // New multi-connection Pinterest surface -- separate from
 // integrations.functions.ts's startPinterestOAuth (the original single-
@@ -11,12 +12,27 @@ import type { PinterestConnectionSummary } from "./pinterest-connections.server"
 // route (api/public/pinterest.callback.ts) INSERTs a new
 // pinterest_connections row instead of upserting the legacy integrations
 // row.
+//
+// environment defaults to "production" -- the only way to reach
+// "sandbox" is an explicit input AND PINTEREST_SANDBOX_TOOLS_ENABLED
+// being "true" server-side, same real gate addManualPinterestConnection
+// already enforces for the manual-token path below. The client-side
+// picker that lets a user choose "sandbox" here is hidden unless
+// isSandboxToolsEnabled says so too, but (as with the manual path) that
+// alone is a UX nicety, not the security boundary -- this handler
+// re-checks the env var itself regardless of what the client sends.
 export const startPinterestConnectionOAuth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i?: { environment?: PinterestEnvironment }) =>
+    z.object({ environment: z.enum(["production", "sandbox"]).default("production") }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    if (data.environment === "sandbox" && process.env.PINTEREST_SANDBOX_TOOLS_ENABLED !== "true") {
+      throw new Error("Sandbox tools are not enabled in this environment.");
+    }
     const { pinterestAppConfig, signState, buildAuthorizeUrl } = await import("./pinterest-oauth.server");
     const { appId, redirectUri } = pinterestAppConfig();
-    const state = signState(context.userId, "settings", "connection");
+    const state = signState(context.userId, "settings", "connection", data.environment);
     return { authorizeUrl: buildAuthorizeUrl({ appId, redirectUri, state }) };
   });
 
