@@ -72,6 +72,18 @@ export const Route = createFileRoute("/learn")({
 // installed to confirm whether TanStack Router's head() API supports an
 // inline "scripts" entry, so this is the framework-agnostic, definitely-safe
 // path.
+// Single source of truth for horizontal centering/width/padding, shared by
+// the page header (logo/nav), the breadcrumb bar, the article column, and
+// the TOC sidebar -- so none of them can drift out of alignment with each
+// other if the width or padding changes later.
+//
+// max-w-[1168px] is sized so the article (flex-1, uncapped) lands at
+// ~820px of its own on very wide screens without capping the article
+// itself, per the fixed pieces around it at the md: breakpoint:
+//   1168 container - 80 (px-10 both sides) - 48 (article/TOC gap)
+//   - 220 (TOC's fixed box width) = 820px left for the article.
+const LEARN_CONTAINER_CLASSNAME = "mx-auto max-w-[1168px] px-4 md:px-10";
+
 const ARTICLE_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Article",
@@ -91,7 +103,7 @@ function LearnPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ARTICLE_JSON_LD) }}
       />
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className={`${LEARN_CONTAINER_CLASSNAME} flex items-center justify-between py-4`}>
           <Link to="/">
             <Logo size={28} withWordmark />
           </Link>
@@ -124,14 +136,6 @@ const BLOG_TOC = [
   { id: "mistakes", label: "Common mistakes to avoid" },
   { id: "action", label: "Your action plan" },
 ];
-
-// Single source of truth for horizontal centering/width/padding, shared by
-// the breadcrumb bar, the article column, and the TOC sidebar -- so they
-// can't drift out of alignment with each other if the width or padding
-// changes later. The breadcrumb bar's own border stays full-width (it wraps
-// this container rather than using it directly); article/TOC compose it
-// directly as their row wrapper.
-const BLOG_CONTAINER_CLASSNAME = "mx-auto max-w-[1040px] px-4 md:px-10";
 
 function BlogTag({ children, color = "#E60023", bg = "#FFF5F6" }: { children: ReactNode; color?: string; bg?: string }) {
   return (
@@ -222,11 +226,11 @@ function BlogView() {
     <div style={{ backgroundColor: "#fff" }}>
 
       {/* Top bar -- the border spans full width, but its contents sit inside
-          the same BLOG_CONTAINER_CLASSNAME as the article/TOC row below, so
+          the same LEARN_CONTAINER_CLASSNAME as the article/TOC row below, so
           the breadcrumb starts at the same left edge as the article text
           and the tags end at the same right edge as the TOC sidebar. */}
       <div style={{ borderBottom: "1px solid #F3F3F3" }}>
-        <div className={`${BLOG_CONTAINER_CLASSNAME} flex flex-wrap items-center gap-2.5 py-3`}>
+        <div className={`${LEARN_CONTAINER_CLASSNAME} flex flex-wrap items-center gap-2.5 py-3`}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pinspider</span>
             <span style={{ color: "#D1D5DB" }}>›</span>
@@ -248,9 +252,9 @@ function BlogView() {
           its own space while the TOC anchored to the viewport edge,
           leaving a gap between them on wide screens. Column on mobile,
           row from md: up. */}
-      <div className={`${BLOG_CONTAINER_CLASSNAME} flex flex-col md:flex-row md:items-start md:gap-10`}>
+      <div className={`${LEARN_CONTAINER_CLASSNAME} flex flex-col md:flex-row md:items-start md:gap-12`}>
 
-        {/* Article -- horizontal inset now comes from BLOG_CONTAINER_CLASSNAME
+        {/* Article -- horizontal inset now comes from LEARN_CONTAINER_CLASSNAME
             on the row above, not its own padding, so its text lines up with
             the breadcrumb. */}
         <div className="flex-1 min-w-0">
