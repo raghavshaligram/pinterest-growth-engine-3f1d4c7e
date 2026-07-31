@@ -18,9 +18,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
 import { useSetupGate } from "@/lib/onboarding-gate";
 import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
-import { publishBriefNow } from "@/lib/schedule.functions";
+import { scheduleBrief } from "@/lib/schedule.functions";
 import { toast } from "sonner";
-import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap, Send, ExternalLink } from "lucide-react";
+import { ChevronLeft, Sparkles, Wand2, ImageIcon, RefreshCw, Trash2, AlertTriangle, Loader2, Zap, CalendarPlus, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SerpTraceBadge } from "@/components/SerpTraceBadge";
@@ -614,14 +614,24 @@ function bucketIntoMasonryColumns(briefs: Brief[], columnCount: number): Brief[]
   return columns;
 }
 
+// Formats a scheduled_at ISO string the way the Schedule calendar labels
+// a slot, so the confirmation names the same time the user will find there.
+function formatSlot(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
 function BriefCard({ b }: { b: Brief }) {
   const qc = useQueryClient();
   const rerender = useServerFn(rerenderBrief);
   const del = useServerFn(deleteBrief);
-  const publish = useServerFn(publishBriefNow);
+  const schedule = useServerFn(scheduleBrief);
   const [url, setUrl] = useState<string | null>(null);
-  const [publishResult, setPublishResult] = useState<string | null>(null); // pinterest_pin_id from the most recent publish-now on this card
-  const [publishError, setPublishError] = useState<string | null>(null);
+  // Slot this card's pin was last booked into, for the inline confirmation.
+  const [scheduleResult, setScheduleResult] = useState<
+    { scheduledAt: string; boardName: string | null; alreadyScheduled: boolean } | null
+  >(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   // Reserve a "2 / 3" guess so there's no zero-height flash while the
   // signed URL and image are still loading, then correct to the real
   // proportions once known -- same self-correcting approach as
@@ -655,12 +665,22 @@ function BriefCard({ b }: { b: Brief }) {
     onSuccess: () => { toast.success("Pin deleted"); qc.invalidateQueries(); },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
-  const publishMut = useMutation({
-    mutationFn: () => publish({ data: { briefId: b.id } }),
-    onMutate: () => { setPublishError(null); },
+  // Schedules only -- nothing on this card publishes. The pin lands on
+  // the Schedule calendar as a draft and goes out from there.
+  const scheduleMut = useMutation({
+    mutationFn: () => schedule({ data: { briefId: b.id } }),
+    onMutate: () => { setScheduleError(null); setScheduleResult(null); },
     onSuccess: (result) => {
-      toast.success("Published to Pinterest");
-      setPublishResult(result.pinterestPinId ?? null);
+      toast.success(
+        result.alreadyScheduled
+          ? `Already scheduled for ${formatSlot(result.scheduledAt)}`
+          : `Scheduled for ${formatSlot(result.scheduledAt)}${result.boardName ? ` on ${result.boardName}` : ""}`,
+      );
+      setScheduleResult({
+        scheduledAt: result.scheduledAt,
+        boardName: result.boardName ?? null,
+        alreadyScheduled: result.alreadyScheduled,
+      });
       qc.invalidateQueries({ queryKey: ["page"] });
       qc.invalidateQueries({ queryKey: ["briefs"] });
       qc.invalidateQueries();
@@ -668,7 +688,7 @@ function BriefCard({ b }: { b: Brief }) {
     onError: (e) => {
       const message = getErrorMessage(e);
       toast.error(message);
-      setPublishError(message);
+      setScheduleError(message);
     },
   });
   const [open, setOpen] = useState(false);
@@ -740,15 +760,17 @@ function BriefCard({ b }: { b: Brief }) {
             >
               <Trash2 size={12} style={{ color: COLOR_ERROR }} />
             </button>
+            {/* Schedules into the next safe slot -- it does not publish.
+                Publishing happens from the Schedule screen. */}
             {!isPublished && (
               <button
                 type="button"
-                title="Publish now"
-                onClick={(e) => { e.stopPropagation(); publishMut.mutate(); }}
-                disabled={publishMut.isPending || !path}
+                title="Schedule — book this pin into the next available slot"
+                onClick={(e) => { e.stopPropagation(); scheduleMut.mutate(); }}
+                disabled={scheduleMut.isPending || !path}
                 style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
               >
-                {publishMut.isPending ? <Loader2 size={12} className="animate-spin" style={{ color: TEXT_LABEL }} /> : <Send size={12} style={{ color: TEXT_LABEL }} />}
+                {scheduleMut.isPending ? <Loader2 size={12} className="animate-spin" style={{ color: TEXT_LABEL }} /> : <CalendarPlus size={12} style={{ color: TEXT_LABEL }} />}
               </button>
             )}
           </div>
@@ -780,21 +802,24 @@ function BriefCard({ b }: { b: Brief }) {
               serpPatternsCapturedAt={b.serp_patterns_captured_at}
             />
           </div>
-          {publishError && (
+          {scheduleError && (
             <span style={{ display: "block", fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, color: COLOR_ERROR }}>
-              {publishError}
+              {scheduleError}
             </span>
           )}
-          {publishResult && (
-            <a
-              href={`https://www.pinterest.com/pin/${publishResult}/`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, color: COLOR_SUCCESS }}
-            >
-              Published — view pin {publishResult}<ExternalLink size={11} />
-            </a>
+          {scheduleResult && (
+            <span style={{ display: "block", fontFamily: PIN_FONT, fontSize: 11.5, fontWeight: 600, color: COLOR_SUCCESS }}>
+              {scheduleResult.alreadyScheduled ? "Already scheduled — " : "Scheduled — "}
+              {formatSlot(scheduleResult.scheduledAt)}
+              {scheduleResult.boardName ? ` on ${scheduleResult.boardName}` : ""}.{" "}
+              <Link
+                to="/schedule"
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "underline" }}
+              >
+                View in Schedule<ExternalLink size={11} />
+              </Link>
+            </span>
           )}
         </div>
       </div>

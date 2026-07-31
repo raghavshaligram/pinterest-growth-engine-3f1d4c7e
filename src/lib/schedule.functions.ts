@@ -8,12 +8,13 @@ import { getErrorMessage } from "@/lib/error-message";
 
 type AppSupabaseClient = SupabaseClient<Database>;
 
-// Shared by publishNow (below -- the Dashboard/Schedule calendar's
-// existing "Publish now", which always operates on an existing
-// scheduled_pins row) and publishBriefNow (the new Pins/Pages "Publish
-// now", which may create that row first). One publish code path, not
-// two: both funnel through processDuePinsForUser, the exact function
-// the nightly cron uses.
+// Guard for publishNow (below) -- the Dashboard/Schedule calendar's
+// "Publish now", which always operates on an existing scheduled_pins
+// row. That is the ONLY user-initiated publish path in the app: the
+// Pins/Pages per-pin button schedules (see scheduleBrief) and never
+// publishes, so publishing happens exclusively from the Schedule
+// screen or the nightly cron, both of which funnel through
+// processDuePinsForUser.
 //
 // Runs the daily-cap check FIRST, before touching the row at all, so a
 // capped-out account gets a clear "daily limit reached" error instead
@@ -45,11 +46,10 @@ async function assertDailyCapNotExceeded(userId: string, supabase: AppSupabaseCl
   }
 }
 
-// The actual "publish this one scheduled_pins row right now" logic,
-// extracted so publishNow and publishBriefNow both call the exact same
-// thing instead of two copies. See the comment on the exported
-// publishNow below for why this checks and throws on failure instead
-// of trusting processDuePinsForUser's always-resolving summary.
+// The actual "publish this one scheduled_pins row right now" logic.
+// See the comment on the exported publishNow below for why this checks
+// and throws on failure instead of trusting processDuePinsForUser's
+// always-resolving summary.
 async function runPublishNow(
   scheduledPinId: string,
   userId: string,
@@ -114,6 +114,201 @@ export const listScheduled = createServerFn({ method: "GET" })
   });
 
 
+// ---------------------------------------------------------------------
+// Shared scheduling planner
+//
+// ONE implementation of "which board may this pin go to, and which slot
+// is free" -- used by both the bulk autoSchedule() tool and the
+// single-pin scheduleBrief() action behind the Pins/Pages "Schedule"
+// button.
+//
+// An earlier pickBoardForSite() helper reimplemented board eligibility
+// separately for the single-pin case, which meant two code paths that
+// could (and did) disagree about which boards belong to a site's
+// Pinterest connection -- handing back a board owned by a different
+// connection, which Pinterest then correctly 403s at publish time. Both
+// user-facing scheduling paths now go through buildPlanner /
+// findPlacement below.
+//
+// NOT yet shared: the nightly lane-aware materializer
+// (routes/api/public/cron/materialize.ts) still carries its own copy of
+// boardIdsForSite + slot walk, currently identical to this one but
+// free to drift. Folding it in here is the obvious next step; it is out
+// of scope for this change because it also owns tier-cap resolution.
+// ---------------------------------------------------------------------
+
+// `slotsPerDay` is grid RESOLUTION -- how finely the day is probed for a
+// free time -- and is deliberately independent of the per-day caps in
+// `limits`. autoSchedule sets it to the cadence the user asked for
+// (one probe per pin it intends to place); the single-pin path sets it
+// much finer, so it can find a gap BETWEEN pins an earlier bulk run
+// already booked. The account/board/page caps are what actually limit
+// volume; a fine grid just means "check more possible times".
+export type PlannerWindow = { days: number; slotsPerDay: number; hoursStart: number; hoursEnd: number };
+
+type Planner = {
+  state: ReturnType<typeof buildScheduleState>;
+  limits: typeof SAFETY;
+  slotsPerDay: number;
+  days: number;
+  // Boards this site's Pinterest connection may publish to, scoped-first
+  // then universal (see the ordering note inside).
+  boardIdsForSite: (siteId: string | null) => string[];
+  // Stable key for a site's board pool, so per-pool round-robin cursors
+  // don't collide across sites sharing one connection.
+  boardPoolKey: (siteId: string | null) => string;
+  // Absolute ms timestamp for the (day, slot) coordinate, or null past
+  // the end of the planning window.
+  slotAt: (day: number, slot: number) => number | null;
+};
+
+// Loads boards, the site -> Pinterest-connection map, and the existing
+// scheduled/published history in the planning window, and returns the
+// planner both callers walk. Returns a reason instead of throwing for
+// the two "you haven't set this up yet" cases, so autoSchedule can
+// surface them as a no-op result and scheduleBrief as an error.
+async function buildPlanner(
+  userId: string,
+  window: PlannerWindow,
+  opts: { perPageCap: number },
+): Promise<{ ok: true; planner: Planner } | { ok: false; reason: string }> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  const { data: boards } = await supabaseAdmin
+    .from("boards").select("id, pinterest_connection_id").eq("user_id", userId);
+  if (!boards?.length) return { ok: false, reason: "Add at least one board first" };
+
+  // Map each site to the Pinterest connection it actually publishes
+  // through, so board selection is scoped the same way
+  // publisher.server.ts already scopes token resolution at publish time.
+  const { data: sitesForConn } = await supabaseAdmin
+    .from("sites").select("id, pinterest_connection_id").eq("user_id", userId);
+  const siteConnectionMap = new Map<string, string | null>(
+    (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
+  );
+
+  // Boards never tagged with a connection (manually added, or synced
+  // before this column existed) are treated as usable by any site --
+  // same "no assignment = universal" convention boards.site_ids already
+  // uses. Boards tagged with a specific connection are only ever
+  // eligible for a site mapped to that exact connection.
+  //
+  // Order matters: scoped-first, universal-fallback-second, and NOT
+  // filter() order over the raw rows, which interleaves them arbitrarily
+  // as returned by the DB. findSafeBoard walks the array from boardIdx
+  // onward, so an untagged universal board could otherwise be tried and
+  // picked ahead of a board actually scoped to this site's own
+  // connection -- and if that universal board belongs to a different
+  // Pinterest account, the pin-create call 403s at publish time.
+  const universalBoardIds = boards
+    .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
+    .map((b) => b.id);
+  const scopedCache = new Map<string, string[]>();
+  const connectionForSite = (siteId: string | null): string | null =>
+    siteId ? (siteConnectionMap.get(siteId) ?? null) : null;
+  const boardIdsForSite = (siteId: string | null): string[] => {
+    const connectionId = connectionForSite(siteId);
+    if (!connectionId) return universalBoardIds;
+    const cached = scopedCache.get(connectionId);
+    if (cached) return cached;
+    const scoped = boards
+      .filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
+      .map((b) => b.id);
+    const combined = [...scoped, ...universalBoardIds];
+    scopedCache.set(connectionId, combined);
+    return combined;
+  };
+  const boardPoolKey = (siteId: string | null): string => connectionForSite(siteId) ?? "universal";
+
+  // Existing scheduled/published pins around the planning window --
+  // enforce gaps against real history, not just what this run planned.
+  const windowEnd = new Date(Date.now() + (window.days + SAFETY.sameUrlBoardGapDays) * 86400_000);
+  const { data: existing } = await supabaseAdmin
+    .from("scheduled_pins")
+    .select("scheduled_at, board_id, brief_id, image_id, pin_briefs(page_id, pages(url))")
+    .eq("user_id", userId)
+    .in("status", ["draft", "queued", "publishing", "published", "exported"])
+    .gte("scheduled_at", new Date(Date.now() - SAFETY.sameUrlBoardGapDays * 86400_000).toISOString())
+    .lte("scheduled_at", windowEnd.toISOString());
+
+  const history: ExistingRow[] = (existing ?? []).map((e) => ({
+    when: new Date(e.scheduled_at).getTime(),
+    boardId: e.board_id,
+    url: ((e as { pin_briefs?: { pages?: { url?: string } } }).pin_briefs?.pages?.url) ?? "",
+    imageId: e.image_id,
+    pageId: ((e as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id) ?? null,
+  }));
+
+  // Spread the day's slots evenly (in minutes) across the window so
+  // cadences like 20/day don't stack into a single hour. gapMin never
+  // drops below the account-wide minimum gap -- probing finer than that
+  // could only ever produce candidates findSafeBoard rejects anyway.
+  const totalMinutes = Math.max(60, (window.hoursEnd - window.hoursStart) * 60);
+  const slotsPerDay = Math.max(1, window.slotsPerDay);
+  const gapMin = Math.max(SAFETY.minMinutesBetweenPins, Math.floor(totalMinutes / slotsPerDay));
+
+  const slotAt = (day: number, slot: number): number | null => {
+    if (day >= window.days) return null;
+    const minuteOffset = slot * gapMin + Math.floor(Math.random() * Math.min(15, gapMin));
+    const at = new Date();
+    at.setUTCDate(at.getUTCDate() + day);
+    at.setUTCHours(window.hoursStart, minuteOffset, 0, 0);
+    return at.getTime();
+  };
+
+  return {
+    ok: true,
+    planner: {
+      state: buildScheduleState(history),
+      limits: { ...SAFETY, maxPerPagePerDay: opts.perPageCap },
+      slotsPerDay,
+      days: window.days,
+      boardIdsForSite,
+      boardPoolKey,
+      slotAt,
+    },
+  };
+}
+
+// A (day, slot) walk position. Mutated in place as findPlacement
+// consumes candidate slots, so a bulk run can carry one cursor across
+// every brief and never retry a slot it already rejected.
+type PlacementCursor = { day: number; slot: number };
+
+// Walks candidate slots from `cursor` forward and returns the first
+// (slot, board) pair that clears every safety gate, or null if the whole
+// remaining window is exhausted. Does NOT commit -- the caller calls
+// commitPlacement() once it decides to take the slot.
+function findPlacement(
+  planner: Planner,
+  cursor: PlacementCursor,
+  candidate: { pageId: string; pageUrl: string; boardIds: string[]; boardIdx: number; notBefore?: number },
+): { when: number; boardId: string; nextBoardIdx: number } | null {
+  const maxTries = planner.days * planner.slotsPerDay * Math.max(1, candidate.boardIds.length);
+  for (let tries = 0; tries < maxTries; tries++) {
+    const when = planner.slotAt(cursor.day, cursor.slot);
+    if (when === null) return null;
+    // Advance before evaluating, so a rejected slot is never re-tried.
+    cursor.slot++;
+    if (cursor.slot >= planner.slotsPerDay) { cursor.slot = 0; cursor.day++; }
+
+    // Single-pin callers pass notBefore so "next available slot" can
+    // never resolve to a time that has already passed today (which would
+    // make the next publisher run fire it immediately).
+    if (candidate.notBefore !== undefined && when < candidate.notBefore) continue;
+
+    const found = findSafeBoard(planner.state, planner.limits, {
+      when,
+      pageId: candidate.pageId,
+      pageUrl: candidate.pageUrl,
+      boardIds: candidate.boardIds,
+      boardIdx: candidate.boardIdx,
+    });
+    if (found) return { when, boardId: found.boardId, nextBoardIdx: found.nextBoardIdx };
+  }
+  return null;
+}
+
 export const autoSchedule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { days?: number; perDay?: number; hoursStart?: number; hoursEnd?: number }) =>
@@ -141,63 +336,10 @@ export const autoSchedule = createServerFn({ method: "POST" })
     if (error) throw error;
     if (!readyBriefs?.length) return { scheduled: 0, reason: "No ready briefs" };
 
-    const { data: boards } = await supabaseAdmin.from("boards").select("id, pinterest_connection_id").eq("user_id", context.userId);
-    if (!boards?.length) return { scheduled: 0, reason: "Add at least one board first" };
-
-    // Map each site to the Pinterest connection it actually publishes
-    // through, so board selection below can be scoped the same way
-    // publisher.server.ts already scopes token resolution at publish time.
-    const { data: sitesForConn } = await supabaseAdmin
-      .from("sites").select("id, pinterest_connection_id").eq("user_id", context.userId);
-    const siteConnectionMap = new Map<string, string | null>(
-      (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
-    );
-
-    // Boards never tagged with a connection (manually added, or synced
-    // before this column existed) are treated as usable by any site --
-    // same "no assignment = universal" convention boards.site_ids
-    // already uses. Boards tagged with a specific connection are only
-    // ever eligible for a site mapped to that exact connection.
-    const universalBoardIds = boards
-      .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
-      .map((b) => b.id);
-    const scopedBoardIdsCache = new Map<string, string[]>();
-    function boardIdsForSite(siteId: string | null): string[] {
-      const connectionId = siteId ? (siteConnectionMap.get(siteId) ?? null) : null;
-      if (!connectionId) return universalBoardIds;
-      const cached = scopedBoardIdsCache.get(connectionId);
-      if (cached) return cached;
-      const scoped = boards
-        .filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
-        .map((b) => b.id);
-      const combined = [...scoped, ...universalBoardIds];
-      scopedBoardIdsCache.set(connectionId, combined);
-      return combined;
-    }
     // Round-robin cursor kept per eligible board set (keyed by connection,
     // "universal" for unconnected sites) rather than one shared index --
     // each site's own board pool spreads independently.
     const boardIdxBySite = new Map<string, number>();
-
-    // Existing scheduled/published pins in the planning window — enforce gaps against real history.
-    const windowStart = new Date();
-    const windowEnd = new Date(Date.now() + (data.days + SAFETY.sameUrlBoardGapDays) * 86400_000);
-    const { data: existing } = await supabaseAdmin
-      .from("scheduled_pins")
-      .select("scheduled_at, board_id, brief_id, image_id, pin_briefs(page_id, pages(url))")
-      .eq("user_id", context.userId)
-      .in("status", ["draft", "queued", "publishing", "published", "exported"])
-      .gte("scheduled_at", new Date(Date.now() - SAFETY.sameUrlBoardGapDays * 86400_000).toISOString())
-      .lte("scheduled_at", windowEnd.toISOString());
-
-    const history: ExistingRow[] = (existing ?? []).map((e) => ({
-      when: new Date(e.scheduled_at).getTime(),
-      boardId: e.board_id,
-      url: ((e as { pin_briefs?: { pages?: { url?: string } } }).pin_briefs?.pages?.url) ?? "",
-      imageId: e.image_id,
-      pageId: ((e as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id) ?? null,
-    }));
-    const state = buildScheduleState(history);
 
     const scheduled: { id: string; scheduled_at: string; brief_id: string; image_id: string; board_id: string; user_id: string; status: "draft" }[] = [];
 
@@ -219,27 +361,23 @@ export const autoSchedule = createServerFn({ method: "POST" })
       }
     }
 
-    // Candidate slot generator: spread `perDay` slots evenly (in minutes) across
-    // the daily window so cadences like 20/day don't stack into a single hour.
-    const totalMinutes = Math.max(60, (data.hoursEnd - data.hoursStart) * 60);
-    const slotsPerDay = Math.min(data.perDay, SAFETY.maxPerAccountPerDay);
-    const gapMin = Math.max(SAFETY.minMinutesBetweenPins, Math.floor(totalMinutes / slotsPerDay));
     // If the caller wants more pins/day than the account cap allows per-page (1),
     // widen the per-page/day cap just enough that the target is reachable.
     // Example: 20/day across 15 pages -> allow up to 2 per page per day.
+    const slotsPerDay = Math.min(data.perDay, SAFETY.maxPerAccountPerDay);
     const perPageCap = Math.max(SAFETY.maxPerPagePerDay, Math.ceil(slotsPerDay / pageCount));
-    const limits = { ...SAFETY, maxPerPagePerDay: perPageCap };
 
-    function nextSlot(day: number, slot: number): { when: number; day: number; slot: number } | null {
-      if (day >= data.days) return null;
-      const minuteOffset = slot * gapMin + Math.floor(Math.random() * Math.min(15, gapMin));
-      const at = new Date();
-      at.setUTCDate(at.getUTCDate() + day);
-      at.setUTCHours(data.hoursStart, minuteOffset, 0, 0);
-      return { when: at.getTime(), day, slot };
-    }
+    const built = await buildPlanner(
+      context.userId,
+      { days: data.days, slotsPerDay, hoursStart: data.hoursStart, hoursEnd: data.hoursEnd },
+      { perPageCap },
+    );
+    if (!built.ok) return { scheduled: 0, reason: built.reason };
+    const planner = built.planner;
 
-    let day = 0, slot = 0;
+    // One cursor for the whole run: each brief picks up where the last
+    // one left off, so slots already rejected are never re-walked.
+    const cursor: PlacementCursor = { day: 0, slot: 0 };
 
     for (const brief of ordered) {
       const img = brief.pin_images?.[0];
@@ -248,42 +386,29 @@ export const autoSchedule = createServerFn({ method: "POST" })
       const siteId = (brief as { pages?: { site_id?: string } }).pages?.site_id ?? null;
       if (!img || !pageUrl) continue;
       // Never repost the exact same rendered image
-      if (state.usedImageIds.has(img.id)) continue;
+      if (planner.state.usedImageIds.has(img.id)) continue;
 
-      const boardIds = boardIdsForSite(siteId ?? null);
+      const boardIds = planner.boardIdsForSite(siteId ?? null);
       if (!boardIds.length) continue; // this site's connection has no eligible boards yet
-      const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") ?? "universal" : "universal";
-      let boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
+      const boardIdxKey = planner.boardPoolKey(siteId ?? null);
+      const boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
 
-      let placed = false;
-      let tries = 0;
-      while (!placed && tries < data.days * slotsPerDay * boardIds.length) {
-        tries++;
-        const cand = nextSlot(day, slot);
-        if (!cand) break;
-        // advance cursor for next iteration
-        slot++;
-        if (slot >= slotsPerDay) { slot = 0; day++; }
+      const placement = findPlacement(planner, cursor, { pageId, pageUrl, boardIds, boardIdx });
+      if (!placement) continue;
 
-        const when = cand.when;
-        const found = findSafeBoard(state, limits, { when, pageId, pageUrl, boardIds, boardIdx });
-        if (!found) continue;
-
-        // Commit
-        scheduled.push({
-          id: crypto.randomUUID(),
-          scheduled_at: new Date(when).toISOString(),
-          brief_id: brief.id,
-          image_id: img.id,
-          board_id: found.boardId,
-          user_id: context.userId,
-          status: "draft",
-        });
-        commitPlacement(state, { when, boardId: found.boardId, pageId, pageUrl, imageId: img.id });
-        boardIdx = found.nextBoardIdx;
-        boardIdxBySite.set(boardIdxKey, boardIdx);
-        placed = true;
-      }
+      scheduled.push({
+        id: crypto.randomUUID(),
+        scheduled_at: new Date(placement.when).toISOString(),
+        brief_id: brief.id,
+        image_id: img.id,
+        board_id: placement.boardId,
+        user_id: context.userId,
+        status: "draft",
+      });
+      commitPlacement(planner.state, {
+        when: placement.when, boardId: placement.boardId, pageId, pageUrl, imageId: img.id,
+      });
+      boardIdxBySite.set(boardIdxKey, placement.nextBoardIdx);
     }
 
     if (!scheduled.length) return { scheduled: 0, reason: "No safe slot found within limits (per-day cap, per-board cap, or same-URL gap)" };
@@ -421,11 +546,15 @@ export const runPublisher = createServerFn({ method: "POST" })
 // summary itself and throws when the one pin it asked for didn't
 // actually publish -- surfacing the real error scheduled_pins.last_error
 // already recorded, rather than letting a resolved-but-failed result
-// read as success. Also now runs the daily-cap check (see
+// read as success. Also runs the daily-cap check (see
 // assertDailyCapNotExceeded) before touching anything -- this button
-// previously bypassed the cap entirely, unlike autoSchedule/the nightly
-// materializer, which is exactly the gap publishBriefNow (below) needed
-// closed too, so it's closed here once for both.
+// previously bypassed the cap entirely, unlike autoSchedule and the
+// nightly materializer.
+//
+// This is the app's only user-initiated publish, and it lives on the
+// Schedule screen (and the Dashboard's calendar tiles, which are the
+// same PinDetailDialog). The Pins and Pages views schedule instead --
+// see scheduleBrief below.
 export const publishNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
@@ -433,97 +562,46 @@ export const publishNow = createServerFn({ method: "POST" })
     return runPublishNow(data.id, context.userId, context.supabase);
   });
 
-// Resolves a safe Pinterest board for a specific brief's site right now
-// (not a bulk round-robin planner like autoSchedule -- just "give me one
-// board this single pin can safely go to at this instant"), reusing the
-// exact same anti-ban gates (per-board cap, same-URL/board repost gap)
-// autoSchedule and the nightly materializer already enforce, via the
-// shared buildScheduleState/findSafeBoard from scheduling-safety.server.
-// Board eligibility mirrors autoSchedule's own boardIdsForSite: boards
-// tagged with this site's Pinterest connection, plus any board never
-// tagged with a connection at all ("universal").
-async function pickBoardForSite(params: {
-  siteId: string | null;
-  pageId: string | null;
-  pageUrl: string;
-  userId: string;
-}): Promise<string> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: boards } = await supabaseAdmin
-    .from("boards")
-    .select("id, pinterest_connection_id")
-    .eq("user_id", params.userId);
-  if (!boards?.length) throw new Error("No boards yet -- sync or add a board first.");
+// Planning window for the single-pin "Schedule" action.
+//
+// Same 9am-9pm posting window the Schedule screen's auto-fill uses, so a
+// pin booked here lands at the same kind of time. Two deliberate
+// differences from a bulk run:
+//
+// - slotsPerDay is the FINEST useful grid (one probe per
+//   minMinutesBetweenPins across the window) rather than a cadence. A
+//   bulk run's grid is coarse -- "Auto-fill next 14 days" probes 5 times
+//   a day -- and after such a run every one of those positions is
+//   occupied. Probing on the same coarse grid would collide with an
+//   existing pin every time and the button would report "no safe slot"
+//   on a calendar with hours of genuinely free space. The caps below,
+//   not the grid, are what limit volume.
+// - days is longer than the bulk default. perPageCap stays at the strict
+//   SAFETY value (1/page/day) -- autoSchedule widens it only so a bulk
+//   run can hit a user-requested volume target, which means nothing for
+//   one pin -- so a page that already has a pin on every day of a
+//   14-day auto-fill needs somewhere further out to land.
+const SINGLE_PIN_WINDOW: PlannerWindow = {
+  days: 30,
+  slotsPerDay: Math.floor((21 - 9) * 60 / SAFETY.minMinutesBetweenPins),
+  hoursStart: 9,
+  hoursEnd: 21,
+};
 
-  let connectionId: string | null = null;
-  if (params.siteId) {
-    const { data: site } = await supabaseAdmin
-      .from("sites")
-      .select("pinterest_connection_id")
-      .eq("id", params.siteId)
-      .maybeSingle();
-    connectionId = (site as { pinterest_connection_id: string | null } | null)?.pinterest_connection_id ?? null;
-  }
-  // Scoped-first, universal-fallback-second -- and NOT filter() order,
-  // which interleaves them arbitrarily as returned by the DB. That
-  // interleaving was a real bug: findSafeBoard walks the array starting
-  // at index 0, so an untagged "universal" board could get tried (and
-  // picked) before a board actually scoped to this site's own Pinterest
-  // connection existed further down the list. If that universal board
-  // happened to belong to a different Pinterest account/connection than
-  // the one whose token is about to be used to publish, Pinterest
-  // correctly 403s the pin-create call ("You are not permitted to
-  // access that resource") -- a permission error, not a bug on
-  // Pinterest's side. Mirrors autoSchedule's own boardIdsForSite
-  // (same file, above) exactly, for the same reason.
-  const universalBoards = boards.filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id);
-  const scopedBoards = connectionId
-    ? boards.filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
-    : [];
-  const eligible = connectionId ? [...scopedBoards, ...universalBoards] : universalBoards;
-  if (!eligible.length) {
-    throw new Error("No board is eligible for this site's Pinterest connection yet -- sync boards or map one to this connection.");
-  }
-
-  const lookback = new Date(Date.now() - SAFETY.sameUrlBoardGapDays * 86400_000);
-  const { data: existingRows } = await supabaseAdmin
-    .from("scheduled_pins")
-    .select("scheduled_at, board_id, image_id, brief_id, pin_briefs(page_id, pages(url))")
-    .eq("user_id", params.userId)
-    .in("status", ["draft", "queued", "publishing", "published", "exported"])
-    .gte("scheduled_at", lookback.toISOString());
-  const history: ExistingRow[] = (existingRows ?? []).map((e) => ({
-    when: new Date(e.scheduled_at).getTime(),
-    boardId: e.board_id,
-    url: (e as { pin_briefs?: { pages?: { url?: string } } }).pin_briefs?.pages?.url ?? "",
-    imageId: e.image_id,
-    pageId: (e as { pin_briefs?: { page_id?: string } }).pin_briefs?.page_id ?? null,
-  }));
-  const state = buildScheduleState(history);
-  const found = findSafeBoard(state, SAFETY, {
-    when: Date.now(),
-    pageId: params.pageId,
-    pageUrl: params.pageUrl,
-    boardIds: eligible.map((b) => b.id),
-    boardIdx: 0,
-  });
-  if (!found) {
-    throw new Error(
-      "No board currently clears the posting-safety limits (per-board cap or same-URL repost gap) -- try again later, or schedule it for a future slot instead.",
-    );
-  }
-  return found.boardId;
-}
-
-// "Publish now" for the Pins and Pages views, where (unlike the
-// Dashboard/Schedule calendar) a brief usually has no scheduled_pins
-// row at all yet. Reuses any existing LIVE row for this brief
-// (draft/queued/failed) instead of creating a second one -- so a pin
-// that was already sitting on the calendar gets that exact slot
-// repurposed and published now, rather than left queued to publish
-// twice. Delegates to the same runPublishNow() publishNow uses either
-// way -- there is only one publish code path.
-export const publishBriefNow = createServerFn({ method: "POST" })
+// "Schedule" for the Pins and Pages views.
+//
+// Books exactly one pin into the next available safe slot and stops
+// there. It does NOT publish: publishing is the Schedule screen's job
+// (publishNow above) and the nightly cron's. That separation is the
+// whole point of this action -- the button used to publish immediately,
+// which meant a pin could go live from a screen that shows no calendar,
+// no slot, and no cap context.
+//
+// Board assignment and slot selection come from buildPlanner /
+// findPlacement -- the exact same code autoSchedule runs -- so a pin
+// booked here is indistinguishable from one the bulk tool created, and
+// publishes down the identical path.
+export const scheduleBrief = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { briefId: string }) => z.object({ briefId: z.string().uuid() }).parse(i))
   .handler(async ({ data, context }) => {
@@ -538,9 +616,11 @@ export const publishBriefNow = createServerFn({ method: "POST" })
     if (briefErr) throw briefErr;
     if (!brief) throw new Error("Pin not found");
 
+    // Reuse any existing row for this brief rather than booking a second
+    // slot for the same pin.
     const { data: existing, error: existingErr } = await supabaseAdmin
       .from("scheduled_pins")
-      .select("id, status, pinterest_pin_id")
+      .select("id, status, scheduled_at, board_id, pinterest_pin_id, boards(name)")
       .eq("brief_id", data.briefId)
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
@@ -555,15 +635,22 @@ export const publishBriefNow = createServerFn({ method: "POST" })
         );
       }
       if (existing.status === "publishing") {
-        throw new Error("This pin is already being published -- please wait a moment and refresh.");
+        throw new Error("This pin is being published right now -- give it a moment and refresh.");
       }
-      if (existing.status === "draft" || existing.status === "queued" || existing.status === "failed") {
-        // Already scheduled (or a previously-failed attempt) -- repurpose
-        // this exact row instead of inserting a new one, so it's never
-        // left queued to publish twice.
-        return runPublishNow(existing.id, context.userId, context.supabase);
+      if (existing.status === "draft" || existing.status === "queued") {
+        // Already on the calendar. Idempotent: hand back the slot it's
+        // in so the UI can point at it, rather than double-booking or
+        // silently moving a slot the user may have set deliberately.
+        return {
+          id: existing.id,
+          scheduledAt: existing.scheduled_at,
+          boardId: existing.board_id,
+          boardName: (existing as { boards?: { name?: string } }).boards?.name ?? null,
+          alreadyScheduled: true,
+        };
       }
-      // canceled/exported -- fall through and create a fresh slot below.
+      // failed / canceled / exported -- fall through and re-slot this
+      // same row into a fresh slot below.
     }
 
     const image = brief.pin_images?.[0];
@@ -572,23 +659,95 @@ export const publishBriefNow = createServerFn({ method: "POST" })
     const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
     if (!pageUrl) throw new Error("This pin's source page has no URL.");
 
-    const boardId = await pickBoardForSite({ siteId, pageId: brief.page_id, pageUrl, userId: context.userId });
-
-    const newId = crypto.randomUUID();
-    const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert({
-      id: newId,
-      user_id: context.userId,
-      brief_id: data.briefId,
-      image_id: image.id,
-      board_id: boardId,
-      scheduled_at: new Date().toISOString(),
-      status: "draft",
+    const built = await buildPlanner(context.userId, SINGLE_PIN_WINDOW, {
+      perPageCap: SAFETY.maxPerPagePerDay,
     });
-    if (insErr) throw insErr;
+    if (!built.ok) throw new Error(built.reason);
+    const planner = built.planner;
+
+    const boardIds = planner.boardIdsForSite(siteId);
+    if (!boardIds.length) {
+      throw new Error(
+        "No board is eligible for this site's Pinterest connection yet -- sync boards, or map one to this connection.",
+      );
+    }
+
+    // notBefore: now. Day 0's slots are anchored to today at hoursStart,
+    // so without this a click after 09:00 UTC would book a slot that has
+    // already passed. (A past-dated *draft* doesn't auto-publish --
+    // processDuePinsForUser only picks up "queued" -- but it would show
+    // up behind the current day on the calendar and go out the moment
+    // anyone ran "Queue all drafts".)
+    const placement = findPlacement(planner, { day: 0, slot: 0 }, {
+      pageId: brief.page_id ?? "",
+      pageUrl,
+      boardIds,
+      boardIdx: 0,
+      notBefore: Date.now(),
+    });
+    if (!placement) {
+      throw new Error(
+        `No slot in the next ${SINGLE_PIN_WINDOW.days} days clears the posting-safety limits (per-day cap, per-board cap, or same-URL repost gap) -- try again once some scheduled pins have gone out.`,
+      );
+    }
+
+    const scheduledAt = new Date(placement.when).toISOString();
+    const rowId = existing?.id ?? crypto.randomUUID();
+    if (existing) {
+      // Status-guarded, and re-checked against the statuses we decided
+      // were re-slottable when we read the row above. Between that read
+      // and this write, "Publish now" on the Schedule screen can take a
+      // "failed" row (runPublishNow accepts failed), publish it, and
+      // write status/published_at/pinterest_pin_id. Without the guard
+      // this update would clobber the record of a pin that really did go
+      // out and re-arm it to publish the same image twice.
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from("scheduled_pins")
+        .update({
+          image_id: image.id,
+          board_id: placement.boardId,
+          scheduled_at: scheduledAt,
+          status: "draft",
+          last_error: null,
+          published_at: null,
+          pinterest_pin_id: null,
+        })
+        .eq("id", rowId)
+        .eq("user_id", context.userId)
+        .in("status", ["failed", "canceled", "exported"])
+        .select("id");
+      if (updErr) throw updErr;
+      if (!updated?.length) {
+        throw new Error("This pin changed while you were scheduling it -- refresh and try again.");
+      }
+    } else {
+      const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert({
+        id: rowId,
+        user_id: context.userId,
+        brief_id: data.briefId,
+        image_id: image.id,
+        board_id: placement.boardId,
+        scheduled_at: scheduledAt,
+        status: "draft",
+      });
+      if (insErr) throw insErr;
+    }
     await supabaseAdmin.from("pin_briefs").update({ status: "scheduled" }).eq("id", data.briefId);
 
-    return runPublishNow(newId, context.userId, context.supabase);
+    // Board name is for the confirmation copy only -- the assignment
+    // itself is already decided above.
+    const { data: board } = await supabaseAdmin
+      .from("boards").select("name").eq("id", placement.boardId).maybeSingle();
+
+    return {
+      id: rowId,
+      scheduledAt,
+      boardId: placement.boardId,
+      boardName: board?.name ?? null,
+      alreadyScheduled: false,
+    };
   });
+
 
 export const rescheduleOrCancel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
