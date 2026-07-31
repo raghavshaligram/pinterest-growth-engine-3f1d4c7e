@@ -1,9 +1,16 @@
 // Shared helper for scripts/generate-hero.ts and
 // scripts/generate-blog-images.ts -- one place for: reading the locked
 // style block out of docs/blog-image-spec.md, looking up a post's
-// heroSubject, resolving the image-generation credential through the
+// metadata, resolving the image-generation credential through the
 // app's own resolution logic, and calling the app's own image-
 // generation client. Neither CLI script duplicates any of this.
+//
+// This file's image-model path (renderBlogImage/buildHeroPrompt) is for
+// the article hero ONLY. The OG card and Pinterest pin are produced by
+// a separate, code-generated typographic template (see
+// scripts/lib/featured-image-template.ts) -- no image-model call, no
+// cost, and both need the headline rendered as legible text, which a
+// wordless AI illustration can't provide.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,28 +67,11 @@ export function requirePostMeta(slug: string): PostMeta {
   return meta;
 }
 
-/** Locked style block + this post's subject -- the hero/OG prompt. */
+/** Locked style block + this post's subject -- the hero prompt (this is
+ *  the ONLY thing the image model generates; OG/pin come from
+ *  scripts/lib/featured-image-template.ts instead). */
 export function buildHeroPrompt(meta: PostMeta): string {
   return `${readStyleBlock()}\n\n${meta.heroSubject.trim()}`;
-}
-
-/** Same as buildHeroPrompt, but for the Pinterest-pin variant: swaps the
- *  locked block's "Landscape 3:2 format." sentence for a vertical one,
- *  since Pinterest pins are vertical everywhere else in this app (see
- *  the hardcoded aspect_ratio: "2:3" in renderPinImage's Replicate
- *  branch). This is a script-level substitution done at generation
- *  time -- docs/blog-image-spec.md's own block is never edited. Flagged
- *  in scripts/generate-blog-images.ts's own output, and documented in
- *  the spec file's "OG card and Pinterest pin" section. */
-export function buildPinPrompt(meta: PostMeta): string {
-  const styleBlock = readStyleBlock();
-  const verticalStyleBlock = styleBlock.replace(/Landscape 3:2 format\.?\s*$/, "Portrait 2:3 format.");
-  if (verticalStyleBlock === styleBlock) {
-    throw new Error(
-      `Expected the locked style block to end with "Landscape 3:2 format." so it could be swapped for the Pinterest-pin variant, but didn't find it -- check docs/blog-image-spec.md hasn't changed shape.`,
-    );
-  }
-  return `${verticalStyleBlock}\n\n${meta.heroSubject.trim()}`;
 }
 
 /** Resolves the image-generation credential through the app's own

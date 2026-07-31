@@ -68,23 +68,62 @@ to the image provider.
 
 ## `npm run blog-images` -- OG card and Pinterest pin (beyond the hero)
 
-These two additional assets weren't given their own style/size spec in
-the original request, so the choices below are the script's own
-(flagged, not silently assumed):
+**Correction (superseding an earlier version of this section):** the OG
+card and Pinterest pin do NOT use the AI image model at all -- neither
+as a copy of the hero nor as a separate generation. Both need the
+headline rendered as legible text (a wordless illustration gets no
+saves as a Pinterest pin, and OG unfurls benefit from a readable
+title), which the locked style block above explicitly forbids ("no
+text, no letterforms... anywhere in the image") since it's written for
+the article hero specifically, where the H1 sits directly below.
 
-- **OG card**: reuses the hero image as-is (same landscape 1536×1024
-  file, copied to `public/blog/{slug}-og.png`). The locked block above
-  ends in "Landscape 3:2 format", so a separately-composed OG asset
-  would either contradict that fixed sentence or require guessing an
-  unspecified crop/dimension. Reusing the hero avoids both -- OG
-  platforms auto-scale/crop regardless of the exact source dimensions.
-- **Pinterest pin**: generated as a genuinely separate, vertical
-  (2:3, size `1024x1536`) image, saved to `public/blog/{slug}-pin.png`.
-  Pinterest pins are vertical everywhere else in this app (see the
-  hardcoded `aspect_ratio: "2:3"` in the Replicate branch of
-  `renderPinImage`), so reusing the landscape hero for an actual
-  Pinterest pin would look wrong on the platform it's meant for.
-  The script swaps only the locked block's final "Landscape 3:2
-  format." sentence for "Portrait 2:3 format." at generation time --
-  this file's own block is never edited; the substitution happens in
-  `scripts/lib/blog-image-gen.ts`.
+Instead, both are produced by a code-generated **typographic template**
+-- a direct TypeScript port of `generate-featured-image.py` (supplied
+by Raghav) at `scripts/lib/featured-image-template.ts`. No image-model
+call, no cost, fully deterministic. One template, two crops:
+
+- **OG card**: 1200×630, saved to `public/blog/{slug}-og.png`.
+- **Pinterest pin**: 1000×1500 (2:3), saved to `public/blog/{slug}-pin.png`.
+
+Design vocabulary is lifted from the article page itself: white ground,
+a 6px `#E60023` top bar, the same red vertical rule that precedes every
+H2 (here beside the headline), Inter Display Black for the headline
+(tight negative tracking, matching the article), an eyebrow pill above
+the headline, a keyword-pill field (matching the article's Example
+callout KeywordPill component) below it, and a footer with a red dot +
+"pinspider.com" on the left and "{n} min read" on the right.
+
+Per-post inputs -- `title`, `eyebrow`, `keywords`, and `readTimeMinutes`
+on `PostMeta` (`src/lib/blog-posts.ts`) -- drive both crops; there's no
+separate prompt to write for these two, and no AI result to judge. If
+the rendered text/keywords are wrong, the fix is those `PostMeta`
+fields, not the script.
+
+### Font files required (not shipped in this repo)
+
+The template needs the real Inter / Inter Display font files at
+generation time (same requirement `generate-featured-image.py` already
+had):
+
+- `InterDisplay-Black.ttf`
+- `Inter-Bold.ttf`
+- `Inter-SemiBold.ttf`
+
+Default location: `/root/.fonts` (matching the Python original).
+Overridable via the `BLOG_IMAGE_FONT_DIR` env var for machines where
+`/root` isn't writable or the fonts live elsewhere. Get them from
+Inter's official static distribution (rsms.me/inter or Google Fonts) --
+note the web app itself only loads "Inter" up to weight 700 from Google
+Fonts' CDN (see `__root.tsx`), not "Inter Display" or weight 900
+(Black), so these three files need to be provisioned separately; they
+aren't already present anywhere in this repo or its CDN font-loading.
+
+### New dependencies
+
+`fontkit` (text measurement, for the same greedy line-wrapping the
+Python original does with PIL's `ImageFont.getbbox`) and
+`@resvg/resvg-js` (SVG → PNG rasterization, in place of `cairosvg`) --
+both added to `package.json` devDependencies. Run `bun install` (or
+`npm install`) after applying this change before `npm run blog-images`
+will work; a patch can't install packages or update the lockfile for
+you.
