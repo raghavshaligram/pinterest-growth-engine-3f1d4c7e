@@ -1,47 +1,68 @@
-// Standalone route -- opts out of the shared _authenticated layout
-// (AppShell) so PinShell renders the Pinterest-native chrome, matching
-// Dashboard/Schedule/Boards/Sites/Pages. beforeLoad duplicates the
-// _authenticated route's auth guard; keep both in sync if that check
-// ever changes.
+// Public, unauthenticated route -- same reasoning as privacy.tsx/terms.tsx/
+// index.tsx: no beforeLoad auth guard and no ssr:false, so this renders as
+// real server-rendered HTML reachable and fully readable with no session
+// and no client-side JS required. This is a marketing/SEO page (a
+// keyword-research guide meant to be indexed and found via search), not
+// part of the authenticated app -- it was originally wired in behind
+// PinShell/the login-gated sidebar, which made it unreachable by anyone
+// without an account (and by search crawlers). Moved out to its own
+// public shell instead, matching how /privacy and /terms are served.
 //
 // Content below is a direct port of the supplied blog-layout template
-// (BLOG_TOC/BlogTag/Callout/KwPill/H2/H3/P/BlogView) -- copy, structure,
-// and inline styling values preserved exactly. Only mechanical
-// adaptations for this codebase: React.ReactNode -> ReactNode (imported
-// type, no bare `React` namespace import elsewhere in this app);
-// IcoPinterest (undefined in the source template) -> PinspiderMark, the
-// app's own mark, sized to fit the same circular badge -- the footer CTA
-// is promoting Pinspider itself, not Pinterest; the ad hoc
-// `<style>.blog-article::-webkit-scrollbar{display:none}</style>` block
-// -> the existing global .no-scrollbar utility (styles.css), applied to
-// the actual scrolling element (the template's injected rule targeted
-// `.blog-article`, but that class was on the non-scrolling inner content
-// wrapper, not the `overflowY:'auto'` outer container -- using the
-// established utility on the right element is what the template's own
-// scrollbarWidth:'none' sibling rule was already trying to achieve).
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
-import { PinShell } from "@/components/PinShell";
+// (BLOG_TOC/BlogTag/Callout/KwPill/H2/H3/P/BlogView) -- copy and inline
+// styling values preserved exactly. Structural adaptations, beyond the
+// public-route change above:
+// - React.ReactNode -> ReactNode (imported type, no bare `React`
+//   namespace import elsewhere in this app).
+// - IcoPinterest (undefined in the source template) -> PinspiderMark,
+//   the app's own mark, sized to fit the same circular badge -- the
+//   footer CTA is promoting Pinspider itself, not Pinterest.
+// - The template's fixed-height/overflow:hidden "app panel with its own
+//   internal scroll region" container (right for an embedded dashboard
+//   tab, which is what the source template assumed) doesn't make sense
+//   for a public page meant to be read, scrolled, and indexed normally --
+//   swapped for normal document flow (the whole page scrolls together,
+//   like /privacy and /terms already do), with the TOC column
+//   sticky-positioned instead of independently scrolling. No copy,
+//   color, spacing, or component design changed -- only how the
+//   article/TOC panels size and scroll.
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Logo } from "@/components/Logo";
 import { PinspiderMark } from "@/components/PinspiderMark";
+import { LegalFooter } from "@/components/LegalPageShell";
 import { useState, type ReactNode } from "react";
 
 export const Route = createFileRoute("/learn")({
-  ssr: false,
-  beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
-  },
-  head: () => ({ meta: [{ title: "Learn — Pinspider" }] }),
-  component: () => <LearnRoute />,
+  head: () => ({
+    meta: [
+      { title: "How to Find Pinterest Keywords That Actually Drive Traffic — Pinspider" },
+      { name: "description", content: "A practical guide to Pinterest keyword research: guided search, Pinterest Trends, SERP analysis, competitor board mining, and exactly where to place keywords in your pins." },
+    ],
+  }),
+  component: LearnPage,
 });
 
-function LearnRoute() {
-  const { user } = Route.useRouteContext();
+function LearnPage() {
   return (
-    <PinShell active="learn" userEmail={user?.email}>
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Link to="/">
+            <Logo size={28} withWordmark />
+          </Link>
+          <nav className="flex items-center gap-5 text-sm text-muted-foreground">
+            <Link to="/learn" className="font-medium text-foreground">Learn</Link>
+            <Link to="/privacy" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Privacy</Link>
+            <Link to="/terms" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Terms</Link>
+            <Link to="/auth" className="hover:text-foreground">Sign in</Link>
+          </nav>
+        </div>
+      </header>
+
       <BlogView />
-    </PinShell>
+
+      <LegalFooter maxWidthClassName="max-w-6xl" />
+    </div>
   );
 }
 
@@ -118,10 +139,10 @@ function BlogView() {
   const [activeSection, setActiveSection] = useState("why");
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#fff" }}>
+    <div style={{ backgroundColor: "#fff" }}>
 
       {/* Top bar */}
-      <div style={{ flexShrink: 0, borderBottom: "1px solid #F3F3F3", padding: "12px 24px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ borderBottom: "1px solid #F3F3F3", padding: "12px 24px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pinspider</span>
           <span style={{ color: "#D1D5DB" }}>›</span>
@@ -136,10 +157,10 @@ function BlogView() {
       </div>
 
       {/* Body: article + TOC */}
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "flex-start" }}>
 
         {/* Article */}
-        <div className="no-scrollbar" style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 40px 80px" }}>
 
             {/* Hero */}
@@ -326,7 +347,7 @@ function BlogView() {
             </Callout>
 
             {/* Footer */}
-            <div style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid #F3F3F3", display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid #F3F3F3", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ width: 44, height: 44, borderRadius: "50%", backgroundColor: "#FFF0F1", display: "flex", alignItems: "center", justifyContent: "center", color: "#E60023", flexShrink: 0 }}>
                 <PinspiderMark size={22} />
               </div>
@@ -334,14 +355,20 @@ function BlogView() {
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827" }}>Want Pinspider to do this research automatically?</p>
                 <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6B7280" }}>Connect your pages and let the brief generator surface keyword opportunities for every piece of content.</p>
               </div>
-              <button style={{ marginLeft: "auto", flexShrink: 0, padding: "8px 18px", borderRadius: 999, border: "none", backgroundColor: "#E60023", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Try it →</button>
+              <Link
+                to="/auth"
+                style={{ marginLeft: "auto", flexShrink: 0, padding: "8px 18px", borderRadius: 999, border: "none", backgroundColor: "#E60023", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "none", display: "inline-block" }}
+              >
+                Try it →
+              </Link>
             </div>
 
           </div>
         </div>
 
-        {/* TOC sidebar */}
-        <div style={{ width: 220, flexShrink: 0, borderLeft: "1px solid #F3F3F3", padding: "28px 20px", overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column" }}>
+        {/* TOC sidebar -- sticky instead of independently scrolling, since
+            the page now scrolls as a whole (see file-level comment). */}
+        <div style={{ width: 220, flexShrink: 0, borderLeft: "1px solid #F3F3F3", padding: "28px 20px", position: "sticky", top: 0, alignSelf: "flex-start", display: "flex", flexDirection: "column" }}>
           <p style={{ margin: "0 0 14px", fontSize: 10, fontWeight: 800, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em" }}>On this page</p>
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {BLOG_TOC.map((item) => (
@@ -363,11 +390,16 @@ function BlogView() {
             ))}
           </nav>
 
-          <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          <div style={{ marginTop: 24, paddingTop: 24 }}>
             <div style={{ borderRadius: 14, backgroundColor: "#FFF5F6", border: "1px solid #FECDD3", padding: "14px 14px" }}>
               <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 800, color: "#111827" }}>Automate this</p>
               <p style={{ margin: "0 0 10px", fontSize: 11, color: "#6B7280", lineHeight: 1.5 }}>Pinspider's brief generator does this keyword research for every page you add.</p>
-              <button style={{ width: "100%", padding: "7px 0", borderRadius: 999, border: "none", backgroundColor: "#E60023", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Open Pages →</button>
+              <Link
+                to="/auth"
+                style={{ width: "100%", padding: "7px 0", borderRadius: 999, border: "none", backgroundColor: "#E60023", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "none", display: "block", textAlign: "center" }}
+              >
+                Open Pages →
+              </Link>
             </div>
           </div>
         </div>

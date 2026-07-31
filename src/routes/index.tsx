@@ -67,12 +67,17 @@ function LandingPage() {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Logo size={28} withWordmark />
-          <Link
-            to="/auth"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent"
-          >
-            Log in
-          </Link>
+          <div className="flex items-center gap-5">
+            <Link to="/learn" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+              Learn
+            </Link>
+            <Link
+              to="/auth"
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent"
+            >
+              Log in
+            </Link>
+          </div>
         </div>
       </header>
 

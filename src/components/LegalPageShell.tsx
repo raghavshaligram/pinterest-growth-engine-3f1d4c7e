@@ -26,6 +26,7 @@ export function LegalPageShell({
             <Logo size={28} withWordmark />
           </Link>
           <nav className="flex items-center gap-5 text-sm text-muted-foreground">
+            <Link to="/learn" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Learn</Link>
             <Link to="/privacy" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Privacy</Link>
             <Link to="/terms" className="hover:text-foreground [&.active]:font-medium [&.active]:text-foreground">Terms</Link>
             <Link to="/auth" className="hover:text-foreground">Sign in</Link>
@@ -84,6 +85,7 @@ export function LegalFooter({
       <div className={`mx-auto flex ${maxWidthClassName} flex-col gap-3 px-6 py-8 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between`}>
         <span>&copy; {new Date().getFullYear()} Pinspider</span>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
+          <Link to="/learn" className="hover:text-foreground">Learn</Link>
           <Link to="/privacy" className="hover:text-foreground">Privacy Policy</Link>
           <Link to="/terms" className="hover:text-foreground">Terms of Service</Link>
           {contactEmail && (
