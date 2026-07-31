@@ -26,6 +26,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { getErrorMessage } from "@/lib/error-message";
+import { usePublishErrorToast } from "@/lib/site-mapping-gate";
 
 export const Route = createFileRoute("/schedule")({
   ssr: false,
@@ -68,6 +69,10 @@ function ScheduleContent() {
   const wipe = useServerFn(deleteAllScheduled);
   const replace = useServerFn(replaceScheduledPin);
   const publishNowFn = useServerFn(publishNow);
+  // Publish failures get their own toaster: the "site isn't mapped"
+  // case carries a deep link that a plain toast.error would render as
+  // a raw token.
+  const toastPublishError = usePublishErrorToast();
   const markPostedFn = useServerFn(markPosted);
   const duplicateFn = useServerFn(duplicateScheduledPin);
   const unscheduleFn = useServerFn(unscheduleScheduledPin);
@@ -133,7 +138,7 @@ function ScheduleContent() {
   const publishNowMut = useMutation({
     mutationFn: (id: string) => publishNowFn({ data: { id } }),
     onSuccess: () => { toast.success("Published"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(getErrorMessage(e)),
+    onError: (e) => toastPublishError(getErrorMessage(e)),
   });
   const markPostedMut = useMutation({
     mutationFn: (v: { id: string; pinterestPinId?: string; unmark?: boolean }) => markPostedFn({ data: v }),

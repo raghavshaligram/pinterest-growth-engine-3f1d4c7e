@@ -46,6 +46,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Trash2, Beaker, KeyRound, LinkIcon, Plus, FlaskConical } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
 import { ProviderPicker } from "@/components/ProviderPicker";
+import { siteConnectionsSearch, siteDisplayName } from "@/lib/site-mapping";
 
 type Provider =
   | "openai" | "replicate" | "apify" | "pinterest"
@@ -946,6 +947,85 @@ function GenerationProvidersCard({
   );
 }
 
+// Which sites publish through which Pinterest account.
+//
+// The accounts list above answers "what have I connected"; on its own
+// that reads as done the moment a row appears, which is exactly the
+// false confidence this whole pass exists to remove. A connected
+// account that no site points at does nothing at all, and a site that
+// points at no account can never publish -- neither fact was visible
+// anywhere before, and users only met it as a publish failure.
+//
+// Reads sites via the same listSites/["sites"] query this page already
+// runs (React Query dedupes), and only ever READS
+// sites.pinterest_connection_id -- mapping is still changed in exactly
+// one place, the per-site Connections picker on the Sites page.
+function PinterestMappingSummary({ connections }: { connections: { id: string; label: string }[] }) {
+  const listSitesFn = useServerFn(listSites);
+  const { data: sites } = useQuery({ queryKey: ["sites"], queryFn: () => listSitesFn() });
+
+  // Nothing connected yet -- the card's own empty state already says so,
+  // and "0 sites mapped" under it would just be noise.
+  if (!connections.length) return null;
+  if (!sites) return null;
+
+  const rows = (sites ?? []) as { id: string; brand_name: string | null; url: string | null; pinterest_connection_id: string | null }[];
+  if (!rows.length) return null;
+
+  const unmapped = rows.filter((s) => !s.pinterest_connection_id);
+
+  return (
+    <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Site mapping</p>
+      <ul className="space-y-1.5">
+        {connections.map((conn) => {
+          const mine = rows.filter((s) => s.pinterest_connection_id === conn.id);
+          return (
+            <li key={conn.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+              <span className="font-medium">{conn.label}</span>
+              {mine.length ? (
+                <span className="text-muted-foreground">
+                  {mine.map((s) => siteDisplayName(s)).join(", ")}
+                </span>
+              ) : (
+                // A connected account with zero mapped sites is inert.
+                // Flagged rather than shown as an empty list, because
+                // "no sites" reads as neutral and this isn't.
+                <span className="flex items-center gap-1 text-amber-700">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  No sites mapped — this account won't publish anything.
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {unmapped.length > 0 && (
+        <div className="mt-3 border-t border-border pt-2">
+          <p className="flex items-center gap-1 text-sm text-amber-700">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            {unmapped.length === 1 ? "1 site isn't mapped to any account:" : `${unmapped.length} sites aren't mapped to any account:`}
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            {unmapped.map((s) => (
+              <li key={s.id}>
+                <RouterLink
+                  to="/sites"
+                  search={siteConnectionsSearch(s.id)}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Map {siteDisplayName(s)} →
+                </RouterLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Multi-account Pinterest connections -- this is now the ONLY Pinterest
 // card in Settings. The original single-account card (account-wide
 // "Connect Pinterest" + API/Webhook toggle, reading/writing the legacy
@@ -1022,8 +1102,10 @@ function PinterestConnectionsCard() {
         </Badge>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Map each site to its own Pinterest account below (Sites page → that site's Connections section). Each connection has its own publish mode -- expand a row to set API vs. webhook for that specific account.
+        Each site publishes through exactly one of these accounts. Each connection has its own publish mode -- expand a row to set API vs. webhook for that specific account.
       </p>
+
+      <PinterestMappingSummary connections={connections} />
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {isError && (

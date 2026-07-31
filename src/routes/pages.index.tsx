@@ -28,6 +28,7 @@ import { TopBar } from "@/components/PinTopBar";
 import { runFullPipeline } from "@/lib/schedule.functions";
 import { useSetupGate } from "@/lib/onboarding-gate";
 import { useSiteStyleGate } from "@/lib/site-style-gate";
+import { useSiteMappingWarning } from "@/lib/site-mapping-gate";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ChevronRight, RefreshCw, Zap, Loader2, EyeOff, Eye } from "lucide-react";
@@ -77,6 +78,7 @@ function PagesPage({ search }: { search: string }) {
   const pipeline = useServerFn(runFullPipeline);
   const { guard } = useSetupGate();
   const { guard: styleGuard } = useSiteStyleGate();
+  const { warnIfUnmapped } = useSiteMappingWarning();
   const setExcluded = useServerFn(setPageExcluded);
   const autoExclude = useServerFn(autoExcludePages);
 
@@ -183,7 +185,15 @@ function PagesPage({ search }: { search: string }) {
             <button
               type="button"
               title={`Analyzes up to ${GENERATE_ALL_MAX_ANALYZE} not-yet-analyzed pages per click and generates pins from them, using your own API keys.`}
-              onClick={() => { if (guard() && styleGuard()) pipelineM.mutate(); }}
+              onClick={() => {
+                // Warn, don't block: generating for an unmapped site is
+                // legitimate (map it later, review pins first), but the
+                // user should learn about it now rather than after
+                // paying to render the images. Fires only once both
+                // real gates have passed, so it can't stack a warning
+                // on top of a redirect.
+                if (guard() && styleGuard()) { warnIfUnmapped(); pipelineM.mutate(); }
+              }}
               disabled={pipelineM.isPending}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: 36, padding: "0 16px", borderRadius: 999,

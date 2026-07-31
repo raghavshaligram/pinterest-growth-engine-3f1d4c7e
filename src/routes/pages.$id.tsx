@@ -17,6 +17,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getPage, analyzePage } from "@/lib/pages.functions";
 import { useSetupGate } from "@/lib/onboarding-gate";
+import { useSiteMappingWarning } from "@/lib/site-mapping-gate";
 import { generateBriefs, renderImagesForPage, rerenderBrief, deleteBrief, deleteBriefsForPage, TEMPLATE_LABELS, type TemplateId } from "@/lib/briefs.functions";
 import { scheduleBrief } from "@/lib/schedule.functions";
 import { toast } from "sonner";
@@ -81,6 +82,13 @@ function PageDetail() {
   const renderPage = useServerFn(renderImagesForPage);
   const delAll = useServerFn(deleteBriefsForPage);
   const { guard } = useSetupGate();
+  // Warns (never blocks) if THIS page's own site has no Pinterest
+  // account mapped -- rendering images costs the user real API credits,
+  // so the gap should surface before that, not at publish time
+  // afterwards. Scoped by the page's site_id rather than the
+  // SiteSwitcher selection, which can be a different site entirely when
+  // this page was reached by deep link.
+  const { warnIfUnmapped } = useSiteMappingWarning();
 
 
   const [tab, setTab] = useState<"all" | "ready" | "rendering" | "scheduled">("all");
@@ -210,7 +218,7 @@ function PageDetail() {
           {pendingRender > 0 && (
             <button
               type="button"
-              onClick={() => { if (guard()) imgMut.mutate(); }}
+              onClick={() => { if (guard()) { warnIfUnmapped(data?.page?.site_id); imgMut.mutate(); } }}
               disabled={imgMut.isPending}
               style={{
                 display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", borderRadius: 999,
@@ -262,7 +270,7 @@ function PageDetail() {
             {`Analyzed ${formatDate(page.last_analyzed_at)}`}
           </span>
         )}
-        <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => { if (guard()) genMut.mutate(10); }} disabled={genMut.isPending || !analyzed} />
+        <ActionButton icon={genMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} label="Generate 10 pins" onClick={() => { if (guard()) { warnIfUnmapped(data?.page?.site_id); genMut.mutate(10); } }} disabled={genMut.isPending || !analyzed} />
         {briefs.length > 0 && (
           <button
             type="button"

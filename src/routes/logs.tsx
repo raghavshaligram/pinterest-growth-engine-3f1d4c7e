@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { stripMapSiteToken } from "@/lib/site-mapping";
 import { PinShell } from "@/components/PinShell";
 
 const listLogs = createServerFn({ method: "GET" })
@@ -57,7 +58,13 @@ function LogsPage() {
           <Card key={i} className="flex items-start gap-3 p-3 text-sm">
             <Badge variant={l.level === "error" ? "destructive" : "outline"}>{l.level}</Badge>
             <div className="flex-1">
-              <div>{l.message}</div>
+              {/* Publish errors can carry a trailing [map-site:<id>]
+                  token (see lib/site-mapping.ts). A log row is a
+                  historical record with no room for an action, so this
+                  strips it rather than linkifying -- the Schedule page's
+                  toast and the pin detail dialog are where the fix is
+                  offered. */}
+              <div>{stripMapSiteToken(l.message)}</div>
               <div className="text-xs text-muted-foreground">{new Date(l.at).toLocaleString()}</div>
             </div>
           </Card>

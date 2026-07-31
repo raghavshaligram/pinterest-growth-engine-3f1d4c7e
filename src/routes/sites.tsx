@@ -40,9 +40,22 @@ import { getAccountProviderDefaults } from "@/lib/account-provider-defaults.func
 import { PinShell } from "@/components/PinShell";
 import { getErrorMessage } from "@/lib/error-message";
 import { SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
+import type { SiteFocusSearch } from "@/lib/site-mapping";
 
 export const Route = createFileRoute("/sites")({
   ssr: false,
+  // Deep link target for every "map this site" action in the app (the
+  // setup banner, the Sites-card warning, the publish error, the
+  // generation warning). ?site=<id>&section=connections scrolls that
+  // site's card into view and expands its Connections section, so a
+  // multi-site account lands on the right card instead of being dropped
+  // at the top of the page to find it. Both params are optional and
+  // ignored when they don't match anything -- a stale link degrades to
+  // a plain Sites page rather than an error.
+  validateSearch: (search: Record<string, unknown>): SiteFocusSearch => ({
+    site: typeof search.site === "string" ? search.site : undefined,
+    section: search.section === "connections" ? "connections" : undefined,
+  }),
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
@@ -181,6 +194,10 @@ function SitesPage() {
 
   const { data: sites } = useQuery({ queryKey: ["sites-overview"], queryFn: () => overviewFn() });
   const [wizardOpen, setWizardOpen] = useState(false);
+  // ?site=&section= -- see the route's validateSearch. Read here and
+  // passed down rather than read inside each card, so a card has no
+  // opinion about routing.
+  const focus = Route.useSearch();
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ["sites-overview"] });
@@ -242,6 +259,7 @@ function SitesPage() {
             onCrawl={() => crawlMut.mutate(site.id)}
             crawlPending={crawlMut.isPending}
             onSaved={invalidate}
+            focusConnections={focus.site === site.id && focus.section === "connections"}
           />
         ))}
       </div>
@@ -1100,9 +1118,11 @@ function RouterLinkToSettings() {
 }
 
 function SiteCard({
-  site, onDelete, onCrawl, crawlPending, onSaved,
+  site, onDelete, onCrawl, crawlPending, onSaved, focusConnections = false,
 }: {
   site: SiteOverviewRow; onDelete: () => void; onCrawl: () => void; crawlPending: boolean; onSaved: () => void;
+  // True when this card is the deep-link target (?site=<id>&section=connections).
+  focusConnections?: boolean;
 }) {
   const upsert = useServerFn(upsertSite);
   const [editing, setEditing] = useState(false);
@@ -1124,7 +1144,35 @@ function SiteCard({
   // ChevronDown rotate, plain boolean-gated render rather than the
   // grid-animated CollapsibleSection settings.integrations.tsx uses,
   // to match this component's own existing convention.
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [connectionsOpen, setConnectionsOpen] = useState(focusConnections);
+
+  // Deep-link arrival: expand Connections and bring this card into view.
+  // Runs on focusConnections changing rather than once on mount, so
+  // clicking a "Map now" link while already on /sites (which only
+  // changes the search params, no remount) still lands correctly.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!focusConnections) return;
+    setConnectionsOpen(true);
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusConnections]);
+
+  // Account-wide Pinterest connections, for the unmapped warning below.
+  // Same queryKey PinterestSiteConnectionCard already uses, so
+  // react-query serves both from one fetch rather than one per card.
+  const listConnsForWarning = useServerFn(listPinterestConnections);
+  const { data: pinterestConnections, isLoading: connectionsLoading } = useQuery({
+    queryKey: ["pinterest-connections"],
+    queryFn: () => listConnsForWarning(),
+  });
+  // Until this resolves, `data` is undefined and "has any connection"
+  // would read false -- which would render the "Connect an account"
+  // link on first paint for an account that already has one, sending a
+  // user who clicks fast to Settings to connect a second account they
+  // don't need. The warning text is true either way, so it shows
+  // immediately; only the action waits.
+  const hasAnyPinterestConnection = (pinterestConnections?.length ?? 0) > 0;
+  const unmapped = !site.pinterest_connection_id;
 
   const saveMut = useMutation({
     mutationFn: () => upsert({
@@ -1154,7 +1202,7 @@ function SiteCard({
   const accent = site.accent_color ?? "#8A867C";
 
   return (
-    <Card id={`site-card-${site.id}`} className="overflow-hidden p-0">
+    <Card ref={cardRef} id={`site-card-${site.id}`} className="overflow-hidden p-0">
       <div className="h-1.5 w-full" style={{ background: accent }} />
       <div className="p-5">
         <div className="mb-1 flex items-center gap-2">
@@ -1206,6 +1254,39 @@ function SiteCard({
             <button type="button" onClick={() => setStyleSetupOpen(true)} className="shrink-0 font-medium underline underline-offset-2">
               Set up now →
             </button>
+          </div>
+        )}
+
+        {/* Same amber warning treatment as the pin-style prerequisite
+            above -- deliberately identical, because it's the same kind
+            of thing: a per-site prerequisite that is invisible until it
+            bites. Unlike pin style, this one doesn't block generation,
+            only publishing, which is why the copy says "publish" rather
+            than "generate".
+
+            The action differs by whether there's anything to map TO. With
+            no connected accounts, opening the Connections picker would
+            show an empty list, so the link goes to Integrations to
+            connect one first. */}
+        {unmapped && (
+          <div className="mt-5 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span className="flex items-center gap-1.5">
+              <Link2 className="h-3.5 w-3.5 shrink-0" />
+              No Pinterest account mapped -- required before this site can publish.
+            </span>
+            {connectionsLoading ? null : hasAnyPinterestConnection ? (
+              <button
+                type="button"
+                onClick={() => setConnectionsOpen(true)}
+                className="shrink-0 font-medium underline underline-offset-2"
+              >
+                Map now →
+              </button>
+            ) : (
+              <Link to="/settings/integrations" className="shrink-0 font-medium underline underline-offset-2">
+                Connect an account →
+              </Link>
+            )}
           </div>
         )}
 

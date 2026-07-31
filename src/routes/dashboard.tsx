@@ -28,6 +28,7 @@ import {
   Pencil, CalendarOff, ImageIcon,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/error-message";
+import { usePublishErrorToast } from "@/lib/site-mapping-gate";
 
 export const Route = createFileRoute("/dashboard")({
   ssr: false,
@@ -69,6 +70,10 @@ function DashboardContent({ userEmail }: { userEmail?: string | null }) {
   const listFn = useServerFn(listScheduled);
   const statsFn = useServerFn(dashboardStats);
   const publishNowFn = useServerFn(publishNow);
+  // Publish failures get their own toaster: the "site isn't mapped"
+  // case carries a deep link that a plain toast.error would render as
+  // a raw token.
+  const toastPublishError = usePublishErrorToast();
   const rescheduleFn = useServerFn(rescheduleOrCancel);
   const duplicateFn = useServerFn(duplicateScheduledPin);
   const unscheduleFn = useServerFn(unscheduleScheduledPin);
@@ -96,7 +101,7 @@ function DashboardContent({ userEmail }: { userEmail?: string | null }) {
   const publishNowMut = useMutation({
     mutationFn: (id: string) => publishNowFn({ data: { id } }),
     onSuccess: () => { toast.success("Published"); invalidate(); setOpen(null); },
-    onError: (e) => toast.error(getErrorMessage(e)),
+    onError: (e) => toastPublishError(getErrorMessage(e)),
   });
   const rescheduleMut = useMutation({
     mutationFn: (v: { id: string; scheduled_at: string }) => rescheduleFn({ data: v }),

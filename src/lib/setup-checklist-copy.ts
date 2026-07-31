@@ -23,3 +23,33 @@ export function getMissingRequiredSteps(status: SetupStatus | null | undefined):
   if (!status) return [];
   return SETUP_STEPS.filter((s) => !s.optional && !status.steps[s.id]);
 }
+
+// Where a step's action button should actually send the user.
+//
+// Until pinterest_site_mapping existed, this was implicit and always
+// the same answer: SetupStepMeta.wizardStep, because every step was
+// resolvable inside the onboarding wizard. Mapping is the first step
+// that isn't -- it's changed on the Sites page and nowhere else -- so
+// "which screen fixes this" is now a real question with two possible
+// answers, and it gets one shared implementation rather than a
+// copy-pasted `if` in each of the three surfaces that renders a step
+// action (FinishSetupBanner, SetupSummaryBar, SetupChecklistCard).
+//
+// Without this, all three sent the user to /onboarding?step=6 -- the
+// "You're set up" completion screen -- which says nothing about mapping
+// and offers no way to do it.
+export type StepTarget =
+  | { kind: "wizard"; step: 1 | 2 | 3 | 4 | 5 | 6 }
+  // siteId is set only when exactly ONE site is unmapped, so the link
+  // can deep-link straight to that site's Connections section. With
+  // several, naming one would be arbitrary -- the Sites page lists them
+  // all, each with its own warning banner.
+  | { kind: "sites"; siteId: string | null };
+
+export function resolveStepTarget(step: SetupStepMeta, status: SetupStatus | null | undefined): StepTarget {
+  if (step.id === "pinterest_site_mapping") {
+    const unmapped = status?.unmappedSites ?? [];
+    return { kind: "sites", siteId: unmapped.length === 1 ? unmapped[0]!.id : null };
+  }
+  return { kind: "wizard", step: step.wizardStep };
+}

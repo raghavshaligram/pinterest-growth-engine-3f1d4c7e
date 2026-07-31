@@ -13,6 +13,9 @@
 // both need to read these without decrypting anything).
 import { decrypt, encrypt } from "./crypto.server";
 import { pinterestApiBaseUrl, type PinterestEnvironment } from "./pinterest-environment";
+// Pure helper module (no React/browser imports) -- the client-only hook
+// that shares these helpers lives in site-mapping-gate.ts instead.
+import { withMapSiteLink, siteDisplayName } from "./site-mapping";
 
 type StoredPinterestTokens = {
   access_token: string;
@@ -313,14 +316,23 @@ export async function getPinterestConnectionForSite(siteId: string, userId: stri
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: site, error: siteErr } = await supabaseAdmin
     .from("sites")
-    .select("id, pinterest_connection_id")
+    .select("id, pinterest_connection_id, brand_name, url")
     .eq("id", siteId)
     .eq("user_id", userId)
     .single();
   if (siteErr || !site) throw new Error("Site not found");
   if (!site.pinterest_connection_id) {
+    // Names the site and carries a deep link to that site's own
+    // Connections section rather than pointing at the Sites page in
+    // general -- on a multi-site account "go to the Sites page" leaves
+    // the user to work out which card is at fault. The trailing token
+    // is stripped and turned into a real link client-side (see
+    // lib/site-mapping.ts).
     throw new Error(
-      "This site isn't mapped to a Pinterest account yet — map it in the site's Connections section on the Sites page.",
+      withMapSiteLink(
+        `${siteDisplayName(site)} isn't mapped to a Pinterest account yet, so this pin has nowhere to publish.`,
+        site.id,
+      ),
     );
   }
   const { data: conn, error: connErr } = await supabaseAdmin

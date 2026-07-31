@@ -17,7 +17,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X, ExternalLink,
+  CheckCircle2, Loader2, FileText, KeyRound, LayoutDashboard, Check, ChevronDown, BarChart3, X, ExternalLink, Link2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Logo } from "@/components/Logo";
 import { getErrorMessage } from "@/lib/error-message";
 import { useSetupStatus, SETUP_STATUS_QUERY_KEY } from "@/lib/onboarding-gate";
+import { siteConnectionsSearch } from "@/lib/site-mapping";
 import { dismissOnboardingPrompt, type SetupStatus } from "@/lib/onboarding.functions";
 import {
   AddSiteWizard, ACCENT_PRESETS, TYPOGRAPHY_PRESETS, hostFromUrl,
@@ -1293,15 +1294,47 @@ function StepComplete({
   const googleConnected = Boolean(status?.steps.google_connected);
   const showGoogleCard = !googleConnected && !dismissed;
 
+  // Site -> Pinterest-account mapping is the one required step this
+  // wizard cannot resolve (it's changed on the Sites page and nowhere
+  // else), so the wizard must not claim setup is finished while it's
+  // outstanding. Deliberately NOT dismissible and NOT a gate on
+  // Finish: blocking here would trap the user, since there is no
+  // control on this screen -- or any wizard screen -- that could clear
+  // it. Stating it plainly and linking out is the honest option.
+  const unmappedSites = status?.unmappedSites ?? [];
+  const hasUnmapped = unmappedSites.length > 0;
+
   return (
     <div className="space-y-6 text-center">
-      <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
+      <CheckCircle2 className={`mx-auto h-10 w-10 ${hasUnmapped ? "text-amber-500" : "text-emerald-500"}`} />
       <div>
-        <h2 className="text-xl font-semibold">You're set up</h2>
+        <h2 className="text-xl font-semibold">{hasUnmapped ? "Almost set up" : "You're set up"}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Pinspider is generating pins for {site?.brand_name || (site ? hostFromUrl(site.url) : "your site")}. Here's where to go next.
         </p>
       </div>
+
+      {hasUnmapped && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-left text-sm text-amber-900">
+          <p className="flex items-center gap-1.5 font-medium">
+            <Link2 className="h-4 w-4 shrink-0" />
+            {unmappedSites.length === 1
+              ? `${unmappedSites[0]!.name} isn't mapped to a Pinterest account`
+              : `${unmappedSites.length} sites aren't mapped to a Pinterest account`}
+          </p>
+          <p className="mt-1 text-xs">
+            Pins will still generate, but they can't publish until each site is pointed at one of your connected
+            Pinterest accounts. This is set per site, on the Sites page.
+          </p>
+          <Link
+            to="/sites"
+            search={unmappedSites.length === 1 ? siteConnectionsSearch(unmappedSites[0]!.id) : {}}
+            className="mt-2 inline-block text-xs font-medium underline underline-offset-2"
+          >
+            {unmappedSites.length === 1 ? "Map it now →" : "Review sites →"}
+          </Link>
+        </div>
+      )}
       <div className="grid gap-3 text-left sm:grid-cols-2">
         <Link to="/pages" className="rounded-lg border border-border p-4 transition-colors hover:border-neutral-400">
           <FileText className="h-5 w-5 text-muted-foreground" />

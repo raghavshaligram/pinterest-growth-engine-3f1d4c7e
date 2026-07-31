@@ -14,6 +14,7 @@ import {
   Check, PinIcon, Undo2, CalendarOff, AlertTriangle,
 } from "lucide-react";
 import type { listScheduled } from "@/lib/schedule.functions";
+import { parseMapSiteError, siteConnectionsSearch } from "@/lib/site-mapping";
 
 export type PinDetailRow = Awaited<ReturnType<typeof listScheduled>>[number];
 
@@ -96,7 +97,7 @@ export function PinDetailDialog({
                   )}
                 </Field>
                 <Field label="Board"><span>{row.boards?.name ?? "—"}</span></Field>
-                {row.last_error && <Field label="Last error"><p className="whitespace-pre-wrap text-destructive">{row.last_error}</p></Field>}
+                {row.last_error && <Field label="Last error"><PublishErrorText message={row.last_error} /></Field>}
               </dl>
 
               {row.status !== "published" && row.status !== "publishing" && (
@@ -177,5 +178,30 @@ function Field({ label, icon, children }: { label: string; icon?: React.ReactNod
       <dt className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{icon}{label}</dt>
       <dd>{children}</dd>
     </div>
+  );
+}
+
+// scheduled_pins.last_error is a plain string by the time it lands here,
+// so the "this site isn't mapped to a Pinterest account" case arrives
+// with a trailing site-id token rather than any structure (see
+// lib/site-mapping.ts). This turns that token into the actual link that
+// fixes it -- deep-linked to the offending site's own Connections
+// section, since on a multi-site account "go to the Sites page" leaves
+// the user to guess which card is at fault. Every other error renders
+// exactly as it did before.
+function PublishErrorText({ message }: { message: string }) {
+  const mapping = parseMapSiteError(message);
+  if (!mapping) return <p className="whitespace-pre-wrap text-destructive">{message}</p>;
+  return (
+    <p className="whitespace-pre-wrap text-destructive">
+      {mapping.text}{" "}
+      <Link
+        to="/sites"
+        search={siteConnectionsSearch(mapping.siteId)}
+        className="font-medium underline underline-offset-2"
+      >
+        Map it now →
+      </Link>
+    </p>
   );
 }

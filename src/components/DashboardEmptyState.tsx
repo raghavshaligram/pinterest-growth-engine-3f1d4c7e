@@ -30,7 +30,9 @@ import {
   useSetupStatus, useSetupGate, useGenerateFirstBatch, FIRST_BATCH_MAX_ANALYZE, FIRST_BATCH_MAX_IMAGES,
 } from "@/lib/onboarding-gate";
 import { SETUP_STEPS, type SetupStatus, type SetupStepMeta } from "@/lib/onboarding.functions";
-import { STEP_LABELS, getMissingRequiredSteps } from "@/lib/setup-checklist-copy";
+import { STEP_LABELS, getMissingRequiredSteps, resolveStepTarget, type StepTarget } from "@/lib/setup-checklist-copy";
+import { siteConnectionsSearch } from "@/lib/site-mapping";
+import { useSiteMappingWarning } from "@/lib/site-mapping-gate";
 import { useSiteContext } from "@/lib/site-context";
 
 // Short display names for the checklist's one "which option did you
@@ -72,6 +74,7 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
   const navigate = useNavigate();
   const { data: status } = useSetupStatus();
   const { guard } = useSetupGate();
+  const { warnIfUnmapped } = useSiteMappingWarning();
   const generateFirstBatch = useGenerateFirstBatch();
   const { sites, selectedSite } = useSiteContext();
 
@@ -94,6 +97,8 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
     // redirect here. It stays in case that invariant is ever violated
     // by a future change elsewhere.
     if (!guard()) return;
+    // Non-blocking: says so now rather than after the images are paid for.
+    warnIfUnmapped();
     generateFirstBatch.mutate(undefined, {
       onSuccess: (r) => {
         toast.success(`Queued your first batch — analyzed ${r.pipeline.analyzed}, briefs for ${r.pipeline.briefsFor}, rendered ${r.worker.ok ?? 0} image${(r.worker.ok ?? 0) === 1 ? "" : "s"} so far.`);
@@ -129,7 +134,16 @@ export function DashboardEmptyState({ userEmail }: { userEmail?: string | null }
         <>
           <SetupChecklistCard
             status={status}
-            onStepClick={(wizardStep) => navigate({ to: "/onboarding", search: { step: wizardStep } })}
+            // Not every step is fixed in the wizard any more -- mapping
+            // lives on the Sites page. resolveStepTarget decides which,
+            // so this stays a dumb navigate.
+            onStepClick={(target) => {
+              if (target.kind === "sites") {
+                navigate({ to: "/sites", search: target.siteId ? siteConnectionsSearch(target.siteId) : {} });
+              } else {
+                navigate({ to: "/onboarding", search: { step: target.step } });
+              }
+            }}
           />
           <HowItWorksRow userEmail={userEmail} />
         </>
@@ -234,7 +248,7 @@ function SetupChecklistCard({
   status, onStepClick,
 }: {
   status: SetupStatus | null | undefined;
-  onStepClick: (wizardStep: SetupStepMeta["wizardStep"]) => void;
+  onStepClick: (target: StepTarget) => void;
 }) {
   const total = SETUP_STEPS.length;
   const done = status ? SETUP_STEPS.filter((s) => status.steps[s.id]).length : 0;
@@ -279,7 +293,7 @@ function SetupChecklistCard({
               done={rowDone}
               isNext={isNext}
               doneLabel={doneLabel}
-              onAction={() => onStepClick(s.wizardStep)}
+              onAction={() => onStepClick(resolveStepTarget(s, status))}
             />
           );
         })}
@@ -378,7 +392,16 @@ export function SetupSummaryBar({
 }) {
   const missing = getMissingRequiredSteps(status).filter((s) => s.id !== "first_batch");
   if (!missing.length) return null;
-  const next = missing[0]!;
+  // An unmapped site outranks step order, for the same reason
+  // FinishSetupBanner does it (see the long note there):
+  // steps.pinterest_connected reads the legacy `integrations` row while
+  // unmappedSites reads `pinterest_connections`, so ordering by
+  // `missing` alone can surface "connect Pinterest" to someone who
+  // already has an account connected from Settings, hiding the mapping
+  // gap that's actually blocking them.
+  const unmappedSites = status?.unmappedSites ?? [];
+  const next = (unmappedSites.length ? missing.find((s) => s.id === "pinterest_site_mapping") : null) ?? missing[0]!;
+  const nextTarget = resolveStepTarget(next, status);
 
   return (
     <div
@@ -389,19 +412,34 @@ export function SetupSummaryBar({
       } as React.CSSProperties}
     >
       <div style={{ fontSize: 13, color: PIN.textSecondary, minWidth: 0 }}>
-        <span style={{ fontWeight: 600, color: PIN.textPrimary }}>{STEP_LABELS[next.id]}</span>
+        <span style={{ fontWeight: 600, color: PIN.textPrimary }}>
+          {/* Mapping names the offending site instead of the generic
+              step title -- the whole point of the step is that "which
+              site is broken" is the thing the user can't otherwise see.
+              This is the Dashboard's counterpart to the same branch in
+              FinishSetupBanner (PinShell suppresses that banner here so
+              the two never stack). */}
+          {nextTarget.kind === "sites" && unmappedSites.length === 1
+            ? `${unmappedSites[0]!.name} isn't mapped to a Pinterest account`
+            : nextTarget.kind === "sites"
+              ? `${unmappedSites.length} sites aren't mapped to a Pinterest account`
+              : STEP_LABELS[next.id]}
+        </span>
         <span> — not finished yet{missing.length > 1 ? `, +${missing.length - 1} more` : ""}</span>
       </div>
-      <Link
-        to="/onboarding"
-        search={{ step: next.wizardStep }}
-        style={{
-          flexShrink: 0, fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, color: PIN.textPrimary,
-          border: `1px solid ${PIN.borderStrong}`, borderRadius: 999, padding: "6px 12px", textDecoration: "none",
-        }}
-      >
-        Continue →
-      </Link>
+      {nextTarget.kind === "sites" ? (
+        <Link
+          to="/sites"
+          search={nextTarget.siteId ? siteConnectionsSearch(nextTarget.siteId) : {}}
+          style={summaryActionStyle}
+        >
+          {nextTarget.siteId ? "Map now →" : "Review sites →"}
+        </Link>
+      ) : (
+        <Link to="/onboarding" search={{ step: nextTarget.step }} style={summaryActionStyle}>
+          Continue →
+        </Link>
+      )}
     </div>
   );
 }
@@ -538,3 +576,11 @@ function EmptyFeedIllustration({
     </div>
   );
 }
+
+// Shared by SetupSummaryBar's two possible actions (wizard vs. Sites
+// deep link) so they're visually identical -- the destination changes,
+// the affordance doesn't.
+const summaryActionStyle: React.CSSProperties = {
+  flexShrink: 0, fontFamily: PIN_FONT, fontSize: 12.5, fontWeight: 600, color: PIN.textPrimary,
+  border: `1px solid ${PIN.borderStrong}`, borderRadius: 999, padding: "6px 12px", textDecoration: "none",
+};

@@ -2,6 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
+// Pure helper module (no React/browser imports) -- safe to pull into the
+// server bundle. The client-only hook lives in site-mapping-gate.ts.
+import { siteDisplayName } from "@/lib/site-mapping";
 
 // ---------------------------------------------------------------------
 // The single canonical definition of "what does a fully set-up Pinspider
@@ -25,6 +28,7 @@ export const SETUP_STEP_IDS = [
   "image_provider_connected",
   "pinterest_connected",
   "first_batch",
+  "pinterest_site_mapping",
   "google_connected",
 ] as const;
 export type SetupStepId = (typeof SETUP_STEP_IDS)[number];
@@ -87,6 +91,33 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
     description: "Crawl a page and create your first set of pin images.",
     optional: false,
     wizardStep: 5,
+  },
+  // A DISTINCT step rather than an extra condition folded into
+  // pinterest_connected, for a concrete reason: isStepReachable(5) in
+  // the onboarding wizard (routes/onboarding.tsx) requires
+  // steps.pinterest_connected, and there is no way to map a site to an
+  // account from inside the wizard. Making pinterest_connected also
+  // mean "and mapped" would strand a user on step 4 the moment they
+  // connected an account -- unable to reach the crawl or complete
+  // steps, with nothing on screen that could fix it.
+  //
+  // Ordered after first_batch so it's the LAST required step: the
+  // banner surfaces steps in this order, and "connect an account" and
+  // "generate something" are both genuinely prior to "decide which
+  // account this site publishes through."
+  //
+  // wizardStep 6 is the Complete screen -- always reachable, so
+  // firstMissingWizardStep can never point somewhere a user can't get
+  // to. Nothing actually resolves this step inside the wizard; the
+  // banner deep-links to the Sites page instead (see
+  // FinishSetupBanner), which is why this is the one step whose
+  // wizardStep is a landing spot rather than a fix.
+  {
+    id: "pinterest_site_mapping",
+    title: "Map your sites to Pinterest accounts",
+    description: "Each site publishes through one connected Pinterest account. A site with no account mapped can generate pins but can never publish them.",
+    optional: false,
+    wizardStep: 6,
   },
   {
     id: "google_connected",
@@ -159,6 +190,20 @@ export type SetupStatus = {
   // generic checkmark); nothing here gates readyToGenerate or any other
   // boolean above.
   textProviderInUse: "openai" | "anthropic" | null;
+  // Sites with no Pinterest account mapped, while at least one account
+  // IS connected -- i.e. the gap the pinterest_site_mapping step
+  // reports. Empty when nothing is connected yet (mapping is impossible
+  // then, and pinterest_connected is the step that's actually missing),
+  // so this never nags about a prerequisite of a prerequisite.
+  //
+  // Carries id + name because its consumers name the site directly
+  // ("HarvestMath isn't mapped...") and deep-link to that site's own
+  // Connections section, which needs the id.
+  unmappedSites: { id: string; name: string }[];
+  // How many Pinterest accounts are connected. Lets a surface tell
+  // "no accounts yet, go connect one" apart from "accounts exist, this
+  // site just isn't pointed at one" without a second query.
+  pinterestConnectionCount: number;
   // Same idea as textProviderInUse, for the image-provider step --
   // which of the 7 IMAGE_PROVIDERS (sites.functions.ts) actually
   // resolves via resolveImageConnection right now, or null if nothing
@@ -234,9 +279,13 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     const [
       sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes,
       textProviderConnected, imageProviderConnected, googleConnectionsRes,
+      pinterestConnectionsRes,
       textProviderInUse, imageProviderInUse,
     ] = await Promise.all([
-      s.from("sites").select("id, brand_name"),
+      // url + pinterest_connection_id are here for the
+      // pinterest_site_mapping step below; brand_name already served
+      // brand_identity.
+      s.from("sites").select("id, brand_name, url, pinterest_connection_id"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
       s.from("account_onboarding").select("dismissed_onboarding_prompt, completed_at").eq("user_id", context.userId).maybeSingle(),
@@ -248,6 +297,33 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       // hasTextProviderCredential). No per-property validation; that's
       // what the Insights page's own GA4 property picker is for.
       s.from("google_connections").select("id", { count: "exact", head: true }),
+      // "Is there a connection a site could be mapped TO." Deliberately
+      // goes through listPinterestConnectionsForUser rather than a raw
+      // count on pinterest_connections, because that accessor runs
+      // backfillLegacyConnectionIfNeeded first.
+      //
+      // A raw count is wrong here in a way that defeats the whole point
+      // of the mapping step: an account that connected Pinterest through
+      // the onboarding wizard has only the LEGACY `integrations` row
+      // until something calls that accessor. The raw count would be 0,
+      // so this would report "nothing to map to," mark the mapping step
+      // done, and show a fully green checklist -- while every site's
+      // pinterest_connection_id is still NULL and the first publish
+      // fails. Going through the accessor also performs the backfill,
+      // which maps the existing sites, so the answer is true either way
+      // rather than true-for-now.
+      (async () => {
+        const { listPinterestConnectionsForUser } = await import("./pinterest-connections.server");
+        try {
+          return (await listPinterestConnectionsForUser(context.userId)).length;
+        } catch {
+          // Never fail the whole setup-status fetch over this -- a
+          // decrypt/backfill error should degrade to "can't tell", which
+          // reads as "nothing to map to" and stays quiet, not a broken
+          // dashboard.
+          return 0;
+        }
+      })(),
       // Real resolution (not just an existence check), for display only
       // -- see the SetupStatus.textProviderInUse doc comment above.
       // resolveCopyConnection(userId, null) mirrors analyzePage's own
@@ -303,6 +379,23 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     const firstBatch = (imagesRes.count ?? 0) > 0;
     const googleConnected = (googleConnectionsRes.count ?? 0) > 0;
 
+    // Mapping only becomes a real gap once there's something to map TO.
+    // With zero connected accounts every site is trivially unmapped,
+    // and reporting that would just restate pinterest_connected in
+    // noisier words -- and send the user to a picker with no options in
+    // it. So this stays empty (and the step stays "done") until an
+    // account exists.
+    const pinterestConnectionCount = pinterestConnectionsRes;
+    const unmappedSites = pinterestConnectionCount > 0
+      ? sites
+          .filter((r: { pinterest_connection_id: string | null }) => !r.pinterest_connection_id)
+          .map((r: { id: string; brand_name: string | null; url: string | null }) => ({
+            id: r.id,
+            name: siteDisplayName(r),
+          }))
+      : [];
+    const pinterestSiteMapping = unmappedSites.length === 0;
+
     const steps: Record<SetupStepId, boolean> = {
       site_connected: siteConnected,
       brand_identity: brandIdentity,
@@ -310,6 +403,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       image_provider_connected: imageProviderConnected,
       pinterest_connected: pinterestConnected,
       first_batch: firstBatch,
+      pinterest_site_mapping: pinterestSiteMapping,
       google_connected: googleConnected,
     };
 
@@ -323,6 +417,17 @@ export const getSetupStatus = createServerFn({ method: "GET" })
     // step-reachability chain (routes/onboarding.tsx) is what enforces
     // "required to finish the wizard," entirely separate from this.
     const readyToGenerate = REQUIRED_FOR_GENERATION.every((id) => steps[id]);
+    // Deliberately does NOT include pinterest_site_mapping, even though
+    // mapping is a required step. isFullyOnboarded drives two things
+    // that must only ever depend on states the WIZARD can resolve:
+    // PinShell's OnboardingRedirectGuard (which force-redirects into the
+    // wizard from every page but /settings and /onboarding) and the
+    // wizard's own step-6 dot. Mapping happens on the Sites page and
+    // nowhere else -- folding it in here would mean adding a site
+    // silently starts bouncing the user into a wizard whose final screen
+    // says "You're set up", from every page including the Sites page
+    // that would fix it. The nudge surfaces use the step list
+    // (getMissingRequiredSteps) instead, which does include mapping.
     const isFullyOnboarded = readyToGenerate && firstBatch;
 
     return {
@@ -333,6 +438,8 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       dismissedOnboarding: onboardingRes.data?.dismissed_onboarding_prompt ?? false,
       completedAt: onboardingRes.data?.completed_at ?? null,
       firstMissingWizardStep: firstMissing(steps),
+      unmappedSites,
+      pinterestConnectionCount,
       textProviderInUse,
       imageProviderInUse,
     };
