@@ -38,6 +38,20 @@ const TEXT_PROVIDER_TITLES: Record<"openai" | "anthropic", string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
 };
+
+// Same idea, image-provider side -- short names for the 7 IMAGE_PROVIDERS
+// (sites.functions.ts) values resolveImageConnection can return. Falls
+// back to the raw provider id for anything unrecognized rather than a
+// TS exhaustiveness requirement, matching this map's job as display-only.
+const IMAGE_PROVIDER_TITLES: Record<string, string> = {
+  openai: "OpenAI",
+  replicate: "Replicate",
+  fal: "fal.ai",
+  gemini: "Google Gemini",
+  ideogram: "Ideogram",
+  recraft: "Recraft",
+  stability: "Stability AI",
+};
 import { getErrorMessage } from "@/lib/error-message";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -141,17 +155,20 @@ function SetupChecklistCard({
         {SETUP_STEPS.map((s) => {
           const rowDone = status?.steps[s.id] ?? false;
           const isNext = !rowDone && nextStep?.id === s.id;
-          // The one step whose completed row shows WHICH option was
-          // chosen, not just a generic checkmark -- text_provider_connected
-          // is satisfiable by either OpenAI or Anthropic, so "Connect a
-          // text provider" struck through doesn't actually tell an
-          // account which one is live. Every other step here is either
-          // binary (connected/not) or doesn't have this kind of choice,
-          // so this stays a one-off rather than a new field every
-          // SetupStepMeta entry has to carry.
-          const doneLabel = s.id === "text_provider_connected" && rowDone && status?.textProviderInUse
-            ? `Text provider — ${TEXT_PROVIDER_TITLES[status.textProviderInUse]}`
-            : undefined;
+          // The two steps whose completed row shows WHICH option was
+          // chosen, not just a generic checkmark -- both text and image
+          // provider are satisfiable by more than one vendor, so "Connect
+          // a text/image provider" struck through doesn't actually tell
+          // an account which one is live. Every other step here is
+          // either binary (connected/not) or doesn't have this kind of
+          // choice, so this stays a two-off rather than a new field
+          // every SetupStepMeta entry has to carry.
+          let doneLabel: string | undefined;
+          if (s.id === "text_provider_connected" && rowDone && status?.textProviderInUse) {
+            doneLabel = `Text provider — ${TEXT_PROVIDER_TITLES[status.textProviderInUse]}`;
+          } else if (s.id === "image_provider_connected" && rowDone && status?.imageProviderInUse) {
+            doneLabel = `Image provider — ${IMAGE_PROVIDER_TITLES[status.imageProviderInUse] ?? status.imageProviderInUse}`;
+          }
           return (
             <ChecklistRow
               key={s.id}

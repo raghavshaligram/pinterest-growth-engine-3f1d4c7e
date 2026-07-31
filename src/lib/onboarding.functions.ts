@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
 
 // ---------------------------------------------------------------------
 // The single canonical definition of "what does a fully set-up Pinspider
@@ -21,6 +22,7 @@ export const SETUP_STEP_IDS = [
   "site_connected",
   "brand_identity",
   "text_provider_connected",
+  "image_provider_connected",
   "pinterest_connected",
   "first_batch",
   "google_connected",
@@ -61,7 +63,14 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
   {
     id: "text_provider_connected",
     title: "Connect a text provider",
-    description: "Required for page analysis and pin copy -- connect OpenAI or Anthropic. Replicate is a separate, optional extra for image rendering, connected in the same step.",
+    description: "Required for page analysis and pin copy -- connect OpenAI or Anthropic.",
+    optional: false,
+    wizardStep: 3,
+  },
+  {
+    id: "image_provider_connected",
+    title: "Connect an image provider",
+    description: "Required for rendering pin artwork -- pins can't generate images without a connected image provider.",
     optional: false,
     wizardStep: 3,
   },
@@ -92,7 +101,7 @@ export const SETUP_STEPS: readonly SetupStepMeta[] = [
 // images, Generate All) actually needs -- Pinterest is deliberately
 // excluded, matching the spec: you can generate and review pins with no
 // Pinterest connection at all, you just can't auto-publish them.
-const REQUIRED_FOR_GENERATION: readonly SetupStepId[] = ["site_connected", "brand_identity", "text_provider_connected"];
+const REQUIRED_FOR_GENERATION: readonly SetupStepId[] = ["site_connected", "brand_identity", "text_provider_connected", "image_provider_connected"];
 
 export type SetupStatus = {
   steps: Record<SetupStepId, boolean>;
@@ -139,6 +148,11 @@ export type SetupStatus = {
   // generic checkmark); nothing here gates readyToGenerate or any other
   // boolean above.
   textProviderInUse: "openai" | "anthropic" | null;
+  // Same idea as textProviderInUse, for the image-provider step --
+  // which of the 7 IMAGE_PROVIDERS (sites.functions.ts) actually
+  // resolves via resolveImageConnection right now, or null if nothing
+  // does yet. Also purely a display concern.
+  imageProviderInUse: ApiKeyProvider | null;
 };
 
 // Same has_value computation integrations.functions.ts:listIntegrations
@@ -174,6 +188,22 @@ async function hasTextProviderCredential(userId: string): Promise<boolean> {
   return results.some(Boolean);
 }
 
+// Mirrors hasTextProviderCredential exactly, checked against
+// IMAGE_PROVIDERS (sites.functions.ts, 7 entries) instead of
+// COPY_PROVIDERS -- added because generateFirstBatch previously had no
+// gate on this at all: an account could finish onboarding with only a
+// text provider connected, click Generate, and have every queued image
+// job fail silently inside processImageQueueForUser (image-worker.server.ts)
+// while the UI showed a success toast. This existence check is what
+// text_provider_connected already does for text; image_provider_connected
+// (SETUP_STEPS, REQUIRED_FOR_GENERATION) closes the same gap for images.
+async function hasImageProviderCredential(userId: string): Promise<boolean> {
+  const { earliestConnectionForProvider } = await import("./api-key-connections.server");
+  const { IMAGE_PROVIDERS } = await import("./sites.functions");
+  const results = await Promise.all(IMAGE_PROVIDERS.map((provider) => earliestConnectionForProvider(userId, provider)));
+  return results.some(Boolean);
+}
+
 function firstMissing(steps: Record<SetupStepId, boolean>): 1 | 2 | 3 | 4 | 5 | 6 | null {
   // Every step, in wizard order, optional included -- see the
   // firstMissingWizardStep doc comment above for why optional steps
@@ -190,13 +220,18 @@ export const getSetupStatus = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<SetupStatus> => {
     const s = context.supabase;
 
-    const [sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes, textProviderConnected, googleConnectionsRes, textProviderInUse] = await Promise.all([
+    const [
+      sitesRes, integrationsRes, imagesRes, onboardingRes, publishingProfileRes,
+      textProviderConnected, imageProviderConnected, googleConnectionsRes,
+      textProviderInUse, imageProviderInUse,
+    ] = await Promise.all([
       s.from("sites").select("id, brand_name"),
       s.from("integrations").select("provider, status"),
       s.from("pin_images").select("id", { count: "exact", head: true }),
       s.from("account_onboarding").select("dismissed_onboarding_prompt").eq("user_id", context.userId).maybeSingle(),
       s.from("account_publishing_profiles").select("user_id").eq("user_id", context.userId).maybeSingle(),
       hasTextProviderCredential(context.userId),
+      hasImageProviderCredential(context.userId),
       // Existence check only -- same "at least one row" bar every other
       // step here uses (site_connected, text_provider_connected via
       // hasTextProviderCredential). No per-property validation; that's
@@ -215,6 +250,19 @@ export const getSetupStatus = createServerFn({ method: "GET" })
         try {
           const conn = await resolveCopyConnection(context.userId, null);
           return conn.provider === "anthropic" ? "anthropic" as const : "openai" as const;
+        } catch {
+          return null;
+        }
+      })(),
+      // Same idea, image side -- resolveImageConnection(userId, null) is
+      // the exact call image-worker.server.ts makes when it actually
+      // renders. Deliberately not scoped to any one site (no override
+      // id passed), same account-wide question as text.
+      (async () => {
+        const { resolveImageConnection } = await import("./provider-resolution.server");
+        try {
+          const conn = await resolveImageConnection(context.userId, null);
+          return conn.provider;
         } catch {
           return null;
         }
@@ -248,6 +296,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       site_connected: siteConnected,
       brand_identity: brandIdentity,
       text_provider_connected: textProviderConnected,
+      image_provider_connected: imageProviderConnected,
       pinterest_connected: pinterestConnected,
       first_batch: firstBatch,
       google_connected: googleConnected,
@@ -273,6 +322,7 @@ export const getSetupStatus = createServerFn({ method: "GET" })
       dismissedOnboarding: onboardingRes.data?.dismissed_onboarding_prompt ?? false,
       firstMissingWizardStep: firstMissing(steps),
       textProviderInUse,
+      imageProviderInUse,
     };
   });
 
