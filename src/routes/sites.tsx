@@ -773,6 +773,51 @@ export function SiteConnectionsSection({
 // (same rounded-lg border card, same status-dot + label row) minus
 // the "editing" toggle those still have for their own, still-editable
 // settings.
+// Which generation key a site actually resolves to, for one of the two
+// roles. A site may override the account default per role
+// (sites.image_connection_override_id / copy_connection_override_id);
+// with no override it inherits whatever Settings -> Integrations has
+// set as the account default.
+//
+// Shared so the compact line on a site card and the fuller
+// ProviderOverrideCard in the Connections tab can never disagree about
+// what a site is using — the card is a summary of the same answer, not
+// a second calculation of it.
+export type SiteProviderUse = {
+  // "OpenAI" — the model/vendor alone, for tight spaces.
+  provider: string | null;
+  // "OpenAI — production key" — vendor plus which key, when there's room.
+  connection: string | null;
+  // True when this site overrides the account default rather than
+  // inheriting it. Worth surfacing: it's the reason two sites on one
+  // account can generate visibly different pins.
+  overridden: boolean;
+  // Something is configured and resolvable. False means this site
+  // currently has no usable key for this role.
+  resolved: boolean;
+};
+
+export function resolveSiteProvider(
+  kind: "image" | "copy",
+  params: {
+    connections: ApiKeyConnectionSummary[];
+    accountDefaultConnectionId: string | null;
+    overrideConnectionId: string | null;
+  },
+): SiteProviderUse {
+  const labels: Record<string, string> = kind === "image" ? IMAGE_PROVIDER_LABELS : COPY_PROVIDER_LABELS;
+  const { connections, accountDefaultConnectionId, overrideConnectionId } = params;
+  const overridden = Boolean(overrideConnectionId);
+  const active = overridden
+    ? connections.find((c) => c.id === overrideConnectionId)
+    : (accountDefaultConnectionId ? connections.find((c) => c.id === accountDefaultConnectionId) : undefined);
+  if (!active) {
+    return { provider: null, connection: null, overridden, resolved: false };
+  }
+  const provider = labels[active.provider] ?? active.provider;
+  return { provider, connection: `${provider} — ${active.label}`, overridden, resolved: true };
+}
+
 function ProviderOverrideCard({
   kind, accountDefaultConnectionId, connections, currentOverrideConnectionId,
 }: {
@@ -781,21 +826,16 @@ function ProviderOverrideCard({
   connections: ApiKeyConnectionSummary[];
   currentOverrideConnectionId: string | null;
 }) {
-  const labels: Record<string, string> = kind === "image" ? IMAGE_PROVIDER_LABELS : COPY_PROVIDER_LABELS;
   const title = kind === "image" ? "Image generation" : "Copy generation";
-  const connectionLabel = (c: ApiKeyConnectionSummary) => `${labels[c.provider] ?? c.provider} — ${c.label}`;
-
-  const overridden = Boolean(currentOverrideConnectionId);
-  const accountDefaultConnection = accountDefaultConnectionId
-    ? connections.find((c) => c.id === accountDefaultConnectionId)
-    : undefined;
-  const currentOverrideConnection = currentOverrideConnectionId
-    ? connections.find((c) => c.id === currentOverrideConnectionId)
-    : undefined;
-  const defaultLabel = accountDefaultConnection ? connectionLabel(accountDefaultConnection) : undefined;
-  const usingLabel = overridden
-    ? (currentOverrideConnection ? connectionLabel(currentOverrideConnection) : "a key that's since been removed")
-    : (defaultLabel ?? "no key connected yet");
+  const use = resolveSiteProvider(kind, {
+    connections,
+    accountDefaultConnectionId,
+    overrideConnectionId: currentOverrideConnectionId,
+  });
+  const overridden = use.overridden;
+  const defaultLabel = !overridden ? use.connection : undefined;
+  const usingLabel = use.connection
+    ?? (overridden ? "a key that's since been removed" : "no key connected yet");
 
   return (
     <div className="rounded-lg border border-border p-3">
@@ -1125,6 +1165,26 @@ export function SiteCard({
   const hasAnyPinterestConnection = (pinterestConnections?.length ?? 0) > 0;
   const unmapped = !site.pinterest_connection_id;
 
+  // Which image/copy key this site actually generates with. Two sites on
+  // one account can resolve to different models — that's the whole point
+  // of the per-site override — and until now the only way to see it was
+  // to open the site and expand its Connections. Same account-wide
+  // queries the Connections tab uses, so React Query serves every card
+  // on the page from one fetch of each.
+  const { imageConnections, copyConnections } = useApiKeyConnections();
+  const getDefaults = useServerFn(getAccountProviderDefaults);
+  const { data: providerDefaults } = useQuery({ queryKey: ["account-provider-defaults"], queryFn: () => getDefaults() });
+  const imageUse = resolveSiteProvider("image", {
+    connections: imageConnections,
+    accountDefaultConnectionId: providerDefaults?.default_image_connection_id ?? null,
+    overrideConnectionId: site.image_connection_override_id,
+  });
+  const copyUse = resolveSiteProvider("copy", {
+    connections: copyConnections,
+    accountDefaultConnectionId: providerDefaults?.default_copy_connection_id ?? null,
+    overrideConnectionId: site.copy_connection_override_id,
+  });
+
   return (
     <Card id={`site-card-${site.id}`} className="overflow-hidden p-0">
       <div className="h-1.5 w-full" style={{ background: accent }} />
@@ -1179,6 +1239,13 @@ export function SiteCard({
             <span className={`h-1.5 w-1.5 rounded-full ${site.google_connection_id ? "bg-emerald-500" : "bg-neutral-300"}`} />
             Analytics
           </span>
+        </div>
+
+        {/* Which models this site generates with. Vendor only — the key's
+            own label is shown on the detail page, where there's room. */}
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <ModelChip icon={<ImageIcon className="h-3 w-3 shrink-0" />} label="Image" use={imageUse} />
+          <ModelChip icon={<BookOpen className="h-3 w-3 shrink-0" />} label="Copy" use={copyUse} />
         </div>
 
         {!site.style_locked_at && (
@@ -1239,5 +1306,34 @@ export function SiteCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+// One "Image — OpenAI" / "Copy — Anthropic" pill on a site card.
+//
+// Marks an override rather than staying silent about it: an overriding
+// site is deliberately not following the account default, and that is
+// exactly the thing worth noticing when two sites are producing
+// different-looking pins. An unresolved role is called out too — a site
+// with no usable key can't generate at all, which the card previously
+// gave no hint of.
+function ModelChip({ icon, label, use }: { icon: React.ReactNode; label: string; use: SiteProviderUse }) {
+  return (
+    <span
+      className={`flex items-center gap-1.5 ${use.resolved ? "" : "text-amber-700"}`}
+      title={
+        use.resolved
+          ? `${label}: ${use.connection}${use.overridden ? " (overrides the account default)" : " (account default)"}`
+          : `${label}: no key connected for this site yet`
+      }
+    >
+      {icon}
+      <span>
+        {label} <span className="font-medium text-foreground">{use.provider ?? "none"}</span>
+      </span>
+      {use.overridden && (
+        <span className="rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-800">override</span>
+      )}
+    </span>
   );
 }
