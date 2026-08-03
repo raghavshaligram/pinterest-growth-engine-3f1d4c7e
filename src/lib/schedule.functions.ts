@@ -178,12 +178,6 @@ async function buildPlanner(
     .from("boards").select("id, pinterest_connection_id, pinterest_board_id").eq("user_id", userId);
   if (!boards?.length) return { ok: false, reason: "Add at least one board first" };
 
-  // How many Pinterest accounts this user has connected. Decides whether
-  // an untagged board can be trusted for any site -- see the note on
-  // universalBoardIds below.
-  const { count: connectionCount } = await supabaseAdmin
-    .from("pinterest_connections").select("id", { count: "exact", head: true }).eq("user_id", userId);
-  const singleConnectionAccount = (connectionCount ?? 0) <= 1;
 
   // Map each site to the Pinterest connection it actually publishes
   // through, so board selection is scoped the same way
@@ -194,43 +188,41 @@ async function buildPlanner(
     (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
   );
 
-  // Boards never tagged with a connection -- manually added via
-  // upsertBoard ("Add board manually" on the Boards page, which does not
-  // set pinterest_connection_id), or synced before that column existed.
+  // Untagged boards -- added via upsertBoard ("Add board manually" on the
+  // Boards page, which never sets pinterest_connection_id and lets the
+  // Pinterest board id be typed in by hand), or synced before that column
+  // existed.
   //
-  // These used to be treated as usable by ANY site, on a "no assignment
-  // = universal" convention. That is only safe when an untagged board
-  // cannot possibly belong to a different Pinterest account than the one
-  // about to publish. It is NOT safe in general, and the failure is
-  // ugly: the token comes from the site's mapped connection
-  // (getPinterestConnectionForSite) while the board id comes from
-  // boards.pinterest_board_id, nothing checks the two belong together,
-  // and Pinterest answers the pin-create with
+  // These used to count as usable by ANY site, on a "no assignment =
+  // universal" convention. That convention has no way to be true: an
+  // untagged board carrying a real pinterest_board_id came from SOME
+  // Pinterest account, and nothing recorded which. Publishing resolves
+  // the token from the site's own connection
+  // (getPinterestConnectionForSite) and the board id from
+  // boards.pinterest_board_id; if those are different accounts,
+  // Pinterest answers the pin-create with
   //   403 {"code":29,"message":"You are not permitted to access that resource."}
   //
-  // Scoped-first ordering (below) made that rarer but could not prevent
-  // it: findSafeBoard walks the list and skips any board failing the
-  // per-board daily cap or the same-URL/board repost gap, so a page
-  // recently pinned to every scoped board falls straight through onto an
-  // untagged one. Single-pin scheduling hits this far more easily than a
-  // bulk run, because it targets one page rather than spreading across
-  // many.
+  // Counting connections is NOT a sufficient guard, which a first
+  // attempt at this got wrong. A board id typed in by hand can come from
+  // anywhere -- most obviously the user's real Pinterest account while
+  // their only connection is a Sandbox one, since sandbox and production
+  // are separate namespaces with non-interchangeable tokens (see
+  // pinterest-environment.ts). "Only one connection" therefore does not
+  // imply "untagged boards belong to it".
   //
-  // So an untagged board now only qualifies when it cannot be wrong:
-  //   - the account has at most one Pinterest connection, so an untagged
-  //     board must belong to it; or
-  //   - the board has no pinterest_board_id at all, meaning it is never
-  //     sent to Pinterest's API (webhook mode uses it, and api mode
-  //     already fails fast on it -- see publisher.server.ts).
-  // Sandbox makes the general case concrete: sandbox and production are
-  // separate namespaces with non-interchangeable tokens (see
-  // pinterest-environment.ts), so on an account holding both, an
-  // untagged board is a coin flip.
+  // So the rule is possession of proof, not absence of contradiction: a
+  // board is eligible for a mapped site only if it is tagged with that
+  // exact connection, or it has no pinterest_board_id at all and so is
+  // never sent to Pinterest's API (webhook mode uses it; api mode
+  // already fails fast on it -- see publisher.server.ts).
+  //
+  // Legacy untagged boards have a one-click migration: syncPinterestBoards
+  // re-tags on every sync, not just on insert.
   const universalBoardIds = boards
     .filter((b) => {
       const row = b as { pinterest_connection_id: string | null; pinterest_board_id: string | null };
-      if (row.pinterest_connection_id) return false;
-      return singleConnectionAccount || !row.pinterest_board_id;
+      return !row.pinterest_connection_id && !row.pinterest_board_id;
     })
     .map((b) => b.id);
   const scopedCache = new Map<string, string[]>();
