@@ -22,6 +22,12 @@ export type PublishResult =
 
 export interface PinterestClient {
   mode: "api" | "webhook";
+  // Which pinterest_connections row this client publishes through.
+  // Exposed so callers can check that the board they are about to post
+  // to actually belongs to this connection — publisher.server.ts does,
+  // because a scheduled_pins row carries a board_id chosen when it was
+  // created and nothing else re-validates it.
+  connectionId: string;
   publish(input: PublishInput & { userId: string; scheduledPinId: string }): Promise<PublishResult>;
 }
 
@@ -186,6 +192,7 @@ export async function makePinterestClientForSite(params: { siteId: string; userI
   if (conn.publish_mode === "webhook") {
     return {
       mode: "webhook",
+      connectionId: conn.connectionId,
       publish: async (i) => {
         if (!conn.webhook_url) {
           throw new Error(
@@ -199,6 +206,7 @@ export async function makePinterestClientForSite(params: { siteId: string; userI
 
   return {
     mode: "api",
+    connectionId: conn.connectionId,
     publish: async (i) => {
       // accessToken and environment come from the exact same read (see
       // getValidPinterestAccessToken) so they can never drift apart --

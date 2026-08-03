@@ -15,12 +15,13 @@ import {
 } from "lucide-react";
 import type { listScheduled } from "@/lib/schedule.functions";
 import { parseMapSiteError, siteConnectionsLink } from "@/lib/site-mapping";
+import { boardRejectionMessage, type BoardRejection } from "@/lib/board-eligibility";
 
 export type PinDetailRow = Awaited<ReturnType<typeof listScheduled>>[number];
 
 export function PinDetailDialog({
   row, onOpenChange, onUnschedule, onQueue, onReplace, onPublishNow, onDuplicate, onReschedule, onMarkPosted, onUnmarkPosted,
-  unscheduling, queuing, replacing, publishing, marking, targetIsSandbox,
+  onReassignBoard, unscheduling, queuing, replacing, publishing, marking, reassigning, targetIsSandbox,
 }: {
   row: PinDetailRow | null;
   onOpenChange: (v: boolean) => void;
@@ -32,6 +33,10 @@ export function PinDetailDialog({
   onReschedule: (id: string, at: string) => void;
   onMarkPosted: (id: string, pinterestPinId?: string) => void;
   onUnmarkPosted: (id: string) => void;
+  // Optional: only the Schedule screen offers this today. Moves the pin
+  // onto a board its site can actually publish through.
+  onReassignBoard?: (id: string) => void;
+  reassigning?: boolean;
   unscheduling: boolean;
   queuing: boolean;
   replacing: boolean;
@@ -45,6 +50,13 @@ export function PinDetailDialog({
 }) {
   const brief = row?.pin_briefs;
   const page = brief?.pages;
+  // Computed server-side by listScheduled against the site's CURRENT
+  // connection, so it stays true as connections are added or removed
+  // rather than reflecting whatever was true when the row was created.
+  const boardIssue = (row as { board_issue?: BoardRejection | null } | null)?.board_issue ?? null;
+  const boardIssueMessage = boardIssue
+    ? boardRejectionMessage(boardIssue, { boardName: row?.boards?.name })
+    : null;
   const [manualPinId, setManualPinId] = useState("");
   const [newTime, setNewTime] = useState("");
   useEffect(() => { setManualPinId(""); setNewTime(""); }, [row?.id]);
@@ -97,6 +109,29 @@ export function PinDetailDialog({
                   )}
                 </Field>
                 <Field label="Board"><span>{row.boards?.name ?? "—"}</span></Field>
+                {boardIssue && (
+                  // Surfaced on the calendar, not silently repaired: the
+                  // fix means posting to a DIFFERENT Pinterest account
+                  // than this pin currently shows, which is the user's
+                  // call to make, not ours.
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    <p className="flex items-center gap-1.5 font-medium">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />This pin can't publish to that board
+                    </p>
+                    <p className="mt-1">{boardIssueMessage}</p>
+                    {onReassignBoard && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        onClick={() => onReassignBoard(row.id)}
+                        disabled={reassigning}
+                      >
+                        Reassign board
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {row.last_error && <Field label="Last error"><PublishErrorText message={row.last_error} /></Field>}
               </dl>
 

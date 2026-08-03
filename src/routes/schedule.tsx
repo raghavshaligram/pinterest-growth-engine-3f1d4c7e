@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   listScheduled, autoSchedule, runPublisher, rescheduleOrCancel, queuePins,
   deleteAllScheduled, replaceScheduledPin, publishNow, markPosted, duplicateScheduledPin,
-  unscheduleScheduledPin,
+  unscheduleScheduledPin, reassignScheduledPinBoard,
 } from "@/lib/schedule.functions";
 import { useSiteContext } from "@/lib/site-context";
 import { listPinterestConnections } from "@/lib/pinterest-connections.functions";
@@ -20,7 +20,7 @@ import { PIN, PIN_FONT, boardColor } from "@/lib/pin-shell-tokens";
 import { countInRange, startOfWeek, addDays } from "@/lib/schedule-stats";
 import { toast } from "sonner";
 import {
-  ChevronLeft, ChevronRight, Plus, Star, Check, ImageIcon, ChevronDown, Pencil, CalendarOff,
+  ChevronLeft, ChevronRight, Plus, Star, Check, ImageIcon, ChevronDown, Pencil, CalendarOff, AlertTriangle,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -76,6 +76,7 @@ function ScheduleContent() {
   const markPostedFn = useServerFn(markPosted);
   const duplicateFn = useServerFn(duplicateScheduledPin);
   const unscheduleFn = useServerFn(unscheduleScheduledPin);
+  const reassignFn = useServerFn(reassignScheduledPinBoard);
 
   const { data } = useQuery({ queryKey: ["scheduled", selectedSiteId], queryFn: () => list({ data: { siteId: selectedSiteId } }) });
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -143,6 +144,15 @@ function ScheduleContent() {
   const markPostedMut = useMutation({
     mutationFn: (v: { id: string; pinterestPinId?: string; unmark?: boolean }) => markPostedFn({ data: v }),
     onSuccess: (r) => { toast.success(r.unmarked ? "Mark cleared" : "Marked as posted"); invalidate(); setOpen(null); },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  });
+  // Explicit, never automatic: a pin whose board belongs to another
+  // Pinterest account is flagged on the calendar and moved only when the
+  // user says so. Publishing it to a different account than the calendar
+  // showed would be a worse outcome than the failure.
+  const reassignMut = useMutation({
+    mutationFn: (id: string) => reassignFn({ data: { id } }),
+    onSuccess: (r) => { toast.success(r.boardName ? `Moved to ${r.boardName}` : "Board reassigned"); invalidate(); },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
   const duplicateMut = useMutation({
@@ -233,6 +243,8 @@ function ScheduleContent() {
         onPublishNow={(id) => publishNowMut.mutate(id)}
         onDuplicate={(id) => duplicateMut.mutate(id)}
         onReschedule={(id, at) => rescheduleMut.mutate({ id, scheduled_at: at })}
+        onReassignBoard={(id) => reassignMut.mutate(id)}
+        reassigning={reassignMut.isPending}
         onMarkPosted={(id, pid) => markPostedMut.mutate({ id, pinterestPinId: pid })}
         onUnmarkPosted={(id) => markPostedMut.mutate({ id, unmark: true })}
         unscheduling={unscheduleMut.isPending}
@@ -381,6 +393,7 @@ function DayColumn({
 // same two-action pattern as the Dashboard's masonry tiles.
 function DayPinCard({ row, onOpen, onUnschedule }: { row: ScheduledRow; onOpen: () => void; onUnschedule: () => void }) {
   const color = boardColor(row.board_id ?? row.boards?.name ?? null);
+  const boardIssue = (row as { board_issue?: string | null }).board_issue ?? null;
   const hour = new Date(row.scheduled_at).getHours();
   const editable = row.status !== "published" && row.status !== "publishing";
   const isBestTime = editable && BEST_HOURS.includes(hour);
@@ -400,7 +413,17 @@ function DayPinCard({ row, onOpen, onUnschedule }: { row: ScheduledRow; onOpen: 
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
         <span style={{ fontSize: 11, color: PIN.textMuted }}>{time}</span>
-        {row.status === "published" ? (
+        {boardIssue ? (
+          // Visible on the calendar itself, not only inside the detail
+          // dialog: the whole point is that a pin which cannot publish
+          // should say so before publish time.
+          <span
+            title="This pin's board belongs to a different Pinterest account — open it to reassign"
+            style={{ fontSize: 10, fontWeight: 700, color: "#8A5A15", display: "flex", alignItems: "center", gap: 3 }}
+          >
+            <AlertTriangle size={10} />Board
+          </span>
+        ) : row.status === "published" ? (
           <span style={{ fontSize: 10, fontWeight: 700, color: "#1E7B3D", display: "flex", alignItems: "center", gap: 3 }}>
             <Check size={11} />Published
           </span>

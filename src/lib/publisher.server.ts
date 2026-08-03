@@ -69,6 +69,38 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
         );
       }
 
+      // Re-validate ownership at publish time, not just at selection.
+      //
+      // board_id is chosen once when the row is created and then trusted
+      // forever — possibly weeks, during which the site can be remapped
+      // to another account, or the board's own connection can be
+      // disconnected (ON DELETE SET NULL strips its origin tag). Rows
+      // created before eligibility was tightened are in this state right
+      // now. Without this check they reach Pinterest and come back as
+      //   403 {"code":29,"message":"You are not permitted to access that resource."}
+      // which reads like a problem with the user's Pinterest account
+      // rather than a mismatch this app created and can name precisely.
+      //
+      // Scoped to api mode: that is where we know which token is used
+      // and can therefore assert the board is wrong. Webhook mode hands
+      // the pin to the user's own automation, which publishes with
+      // credentials this app never sees, so it is not ours to reject.
+      if (client.mode === "api") {
+        const { boardRejectionReason, boardRejectionMessage } = await import("./board-eligibility");
+        const reason = boardRejectionReason(board, client.connectionId);
+        if (reason) {
+          const { data: siteRow } = await supabaseAdmin
+            .from("sites").select("brand_name, url").eq("id", siteId).maybeSingle();
+          const { siteDisplayName } = await import("./site-mapping");
+          throw new Error(
+            boardRejectionMessage(reason, {
+              boardName: board.name,
+              siteName: siteRow ? siteDisplayName(siteRow) : null,
+            }),
+          );
+        }
+      }
+
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
       // Tag the destination link with UTM params keyed on brief.id so
       // GA4's sessionManualContent dimension can be joined back to a

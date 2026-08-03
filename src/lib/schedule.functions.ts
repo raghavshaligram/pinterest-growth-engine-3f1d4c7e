@@ -5,6 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { SAFETY, buildScheduleState, findSafeBoard, commitPlacement, type ExistingRow } from "@/lib/scheduling-safety.server";
 import { getErrorMessage } from "@/lib/error-message";
+import { boardCanPublishVia, type BoardOwnership } from "@/lib/board-eligibility";
 
 type AppSupabaseClient = SupabaseClient<Database>;
 
@@ -90,7 +91,7 @@ export const listScheduled = createServerFn({ method: "GET" })
     // then narrow to the requested site in-memory using the pages join.
     let query = context.supabase
       .from("scheduled_pins")
-      .select("id, scheduled_at, status, pinterest_pin_id, last_error, brief_id, board_id, image_id, pin_briefs(title, description, hashtags, alt_text, cta, page_id, pages(url, title, site_id)), boards(name, pinterest_board_id), pin_images(storage_path, width, height)")
+      .select("id, scheduled_at, status, pinterest_pin_id, last_error, brief_id, board_id, image_id, pin_briefs(title, description, hashtags, alt_text, cta, page_id, pages(url, title, site_id)), boards(name, pinterest_board_id, pinterest_connection_id), pin_images(storage_path, width, height)")
       .eq("user_id", context.userId)
       .order("scheduled_at", { ascending: true })
       .limit(500);
@@ -110,7 +111,38 @@ export const listScheduled = createServerFn({ method: "GET" })
       const { data: s } = await context.supabase.storage.from("pins").createSignedUrl(p, 3600);
       if (s?.signedUrl) urlMap.set(p, s.signedUrl);
     }));
-    return filtered.map((r) => ({ ...r, image_url: r.pin_images?.storage_path ? urlMap.get(r.pin_images.storage_path) ?? null : null }));
+
+    // Which board each row would actually publish to, checked against
+    // the site's CURRENT connection rather than whatever was true when
+    // the row was created. A row can go stale without anything touching
+    // it: the site gets remapped, or the board's connection is
+    // disconnected and its origin tag is nulled out. The Schedule screen
+    // marks these so a pin that cannot publish says so on the calendar
+    // instead of at publish time — deliberately surfaced rather than
+    // silently repaired, because the fix means posting to a DIFFERENT
+    // Pinterest account than the calendar showed, which is not something
+    // to do on the user's behalf.
+    const { data: siteRows } = await context.supabase
+      .from("sites").select("id, pinterest_connection_id").eq("user_id", context.userId);
+    const siteConnection = new Map<string, string | null>(
+      (siteRows ?? []).map((r) => [r.id, (r as { pinterest_connection_id: string | null }).pinterest_connection_id]),
+    );
+    const { boardRejectionReason } = await import("./board-eligibility");
+
+    return filtered.map((r) => {
+      const siteId = (r as { pin_briefs?: { pages?: { site_id?: string } } }).pin_briefs?.pages?.site_id ?? null;
+      const board = r.boards as { pinterest_connection_id: string | null; pinterest_board_id: string | null } | null;
+      // Published rows are history — whatever they went out on already
+      // worked, and re-litigating it would just badge the past.
+      const boardIssue = board && r.status !== "published"
+        ? boardRejectionReason(board, siteId ? (siteConnection.get(siteId) ?? null) : null)
+        : null;
+      return {
+        ...r,
+        image_url: r.pin_images?.storage_path ? urlMap.get(r.pin_images.storage_path) ?? null : null,
+        board_issue: boardIssue,
+      };
+    });
   });
 
 
@@ -188,42 +220,16 @@ async function buildPlanner(
     (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
   );
 
-  // Untagged boards -- added via upsertBoard ("Add board manually" on the
-  // Boards page, which never sets pinterest_connection_id and lets the
-  // Pinterest board id be typed in by hand), or synced before that column
-  // existed.
+  // Eligibility is defined once, in lib/board-eligibility.ts — the same
+  // predicate the publish-time guard and the Schedule screen's stale-row
+  // flag use, so a board this planner considers safe can never be one
+  // publishing later rejects. See that file for why "the account only
+  // has one connection" is not a valid shortcut.
   //
-  // These used to count as usable by ANY site, on a "no assignment =
-  // universal" convention. That convention has no way to be true: an
-  // untagged board carrying a real pinterest_board_id came from SOME
-  // Pinterest account, and nothing recorded which. Publishing resolves
-  // the token from the site's own connection
-  // (getPinterestConnectionForSite) and the board id from
-  // boards.pinterest_board_id; if those are different accounts,
-  // Pinterest answers the pin-create with
-  //   403 {"code":29,"message":"You are not permitted to access that resource."}
-  //
-  // Counting connections is NOT a sufficient guard, which a first
-  // attempt at this got wrong. A board id typed in by hand can come from
-  // anywhere -- most obviously the user's real Pinterest account while
-  // their only connection is a Sandbox one, since sandbox and production
-  // are separate namespaces with non-interchangeable tokens (see
-  // pinterest-environment.ts). "Only one connection" therefore does not
-  // imply "untagged boards belong to it".
-  //
-  // So the rule is possession of proof, not absence of contradiction: a
-  // board is eligible for a mapped site only if it is tagged with that
-  // exact connection, or it has no pinterest_board_id at all and so is
-  // never sent to Pinterest's API (webhook mode uses it; api mode
-  // already fails fast on it -- see publisher.server.ts).
-  //
-  // Legacy untagged boards have a one-click migration: syncPinterestBoards
-  // re-tags on every sync, not just on insert.
+  // Untagged boards with no pinterest_board_id are the only ones usable
+  // by any site: nothing about them is ever sent to Pinterest's API.
   const universalBoardIds = boards
-    .filter((b) => {
-      const row = b as { pinterest_connection_id: string | null; pinterest_board_id: string | null };
-      return !row.pinterest_connection_id && !row.pinterest_board_id;
-    })
+    .filter((b) => boardCanPublishVia(b as BoardOwnership, null))
     .map((b) => b.id);
   const scopedCache = new Map<string, string[]>();
   const connectionForSite = (siteId: string | null): string | null =>
@@ -234,7 +240,7 @@ async function buildPlanner(
     const cached = scopedCache.get(connectionId);
     if (cached) return cached;
     const scoped = boards
-      .filter((b) => (b as { pinterest_connection_id: string | null }).pinterest_connection_id === connectionId)
+      .filter((b) => (b as BoardOwnership).pinterest_connection_id === connectionId)
       .map((b) => b.id);
     const combined = [...scoped, ...universalBoardIds];
     scopedCache.set(connectionId, combined);
@@ -775,6 +781,83 @@ export const scheduleBrief = createServerFn({ method: "POST" })
   });
 
 
+// Explicitly move one scheduled pin onto a board its site can actually
+// publish through.
+//
+// Deliberately a user action rather than something publishing does by
+// itself. Self-healing is right when a swap is between equivalent
+// auto-assigned boards; it is wrong here, because the reason a swap is
+// needed is that the current board belongs to a DIFFERENT Pinterest
+// account. Silently publishing to a different account than the calendar
+// showed is a worse failure than refusing to publish — especially for a
+// tool built around running several accounts at once, where the whole
+// value is that the calendar reflects reality.
+//
+// Board choice runs through the same buildPlanner/findPlacement the
+// scheduler uses, at the row's existing slot, so the replacement obeys
+// the same anti-ban gates a fresh booking would. The slot itself is
+// never moved.
+export const reassignScheduledPinBoard = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { id: string }) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: row, error: rowErr } = await supabaseAdmin
+      .from("scheduled_pins")
+      .select("id, status, board_id, scheduled_at, pin_briefs(page_id, pages(url, site_id))")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (rowErr) throw rowErr;
+    if (!row) throw new Error("Scheduled pin not found");
+    if (row.status === "published" || row.status === "publishing") {
+      throw new Error("This pin has already published — its board can't be changed.");
+    }
+
+    const brief = row as { pin_briefs?: { page_id?: string; pages?: { url?: string; site_id?: string } } };
+    const siteId = brief.pin_briefs?.pages?.site_id ?? null;
+    const pageUrl = brief.pin_briefs?.pages?.url ?? "";
+    const pageId = brief.pin_briefs?.page_id ?? "";
+    if (!siteId) throw new Error("Could not resolve which site this pin belongs to");
+
+    const built = await buildPlanner(context.userId, SINGLE_PIN_WINDOW, {
+      perPageCap: SAFETY.maxPerPagePerDay,
+    });
+    if (!built.ok) throw new Error(built.reason);
+    const planner = built.planner;
+
+    const boardIds = planner.boardIdsForSite(siteId).filter((id) => id !== row.board_id);
+    if (!boardIds.length) {
+      throw new Error(
+        "No other board belongs to this site's Pinterest account — run \"Sync from Pinterest\" on the Boards page with that account selected.",
+      );
+    }
+
+    // Evaluate at the slot the pin already occupies: this changes the
+    // board, not the timing.
+    const when = new Date(row.scheduled_at).getTime();
+    const found = findSafeBoard(planner.state, planner.limits, {
+      when, pageId, pageUrl, boardIds, boardIdx: 0,
+    });
+    if (!found) {
+      throw new Error(
+        "None of this site's other boards clear the posting-safety limits at this pin's slot (per-board cap, or same-URL repost gap). Reschedule it, or sync more boards.",
+      );
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from("scheduled_pins")
+      .update({ board_id: found.boardId, last_error: null })
+      .eq("id", row.id)
+      .eq("user_id", context.userId);
+    if (updErr) throw updErr;
+
+    const { data: board } = await supabaseAdmin
+      .from("boards").select("name").eq("id", found.boardId).maybeSingle();
+    return { ok: true, boardId: found.boardId, boardName: board?.name ?? null };
+  });
+
 export const rescheduleOrCancel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: { id: string; scheduled_at?: string; cancel?: boolean }) =>
@@ -892,7 +975,7 @@ export const replaceScheduledPin = createServerFn({ method: "POST" })
 
     const { data: row, error: rowErr } = await supabaseAdmin
       .from("scheduled_pins")
-      .select("id, status, brief_id, image_id, pin_briefs(page_id)")
+      .select("id, status, brief_id, image_id, scheduled_at, board_id, pin_briefs(page_id, pages(site_id))")
       .eq("id", data.id)
       .eq("user_id", context.userId)
       .maybeSingle();
@@ -930,9 +1013,36 @@ export const replaceScheduledPin = createServerFn({ method: "POST" })
     const pick = eligible.find((c) => c.page_id && c.page_id !== currentPageId) ?? eligible[0];
     if (!pick || !pick.image_id) throw new Error("No other ready pin available to swap in");
 
+    // Re-select the board too. This used to keep the slot's existing
+    // board on the grounds that only the content was changing — but the
+    // board's eligibility is a property of the SITE and can have gone
+    // stale since (connection disconnected, site remapped), and the
+    // same-URL/board repost gap is keyed on the destination URL, which
+    // the swap has just changed. Keeping the old board silently carried
+    // both problems into the new pin. Falls back to the existing board
+    // if the planner has nothing better, so replace never fails outright.
+    const replaceSiteId = (row as { pin_briefs?: { pages?: { site_id?: string } } }).pin_briefs?.pages?.site_id ?? null;
+    let replaceBoardId = row.board_id;
+    const replaceBuilt = await buildPlanner(context.userId, SINGLE_PIN_WINDOW, { perPageCap: SAFETY.maxPerPagePerDay });
+    if (replaceBuilt.ok && replaceSiteId) {
+      const { data: pickPage } = await supabaseAdmin
+        .from("pages").select("url").eq("id", pick.page_id ?? "").maybeSingle();
+      const boardIds = replaceBuilt.planner.boardIdsForSite(replaceSiteId);
+      const found = boardIds.length
+        ? findSafeBoard(replaceBuilt.planner.state, replaceBuilt.planner.limits, {
+            when: new Date(row.scheduled_at).getTime(),
+            pageId: pick.page_id ?? "",
+            pageUrl: pickPage?.url ?? "",
+            boardIds,
+            boardIdx: 0,
+          })
+        : null;
+      if (found) replaceBoardId = found.boardId;
+    }
+
     const { error: updErr } = await supabaseAdmin
       .from("scheduled_pins")
-      .update({ brief_id: pick.id, image_id: pick.image_id, last_error: null })
+      .update({ brief_id: pick.id, image_id: pick.image_id, board_id: replaceBoardId, last_error: null })
       .eq("id", row.id);
     if (updErr) throw updErr;
 
@@ -958,7 +1068,7 @@ export const duplicateScheduledPin = createServerFn({ method: "POST" })
 
     const { data: row, error: rowErr } = await supabaseAdmin
       .from("scheduled_pins")
-      .select("brief_id, image_id, board_id, scheduled_at")
+      .select("brief_id, image_id, board_id, scheduled_at, pin_briefs(page_id, pages(url, site_id))")
       .eq("id", data.id)
       .eq("user_id", context.userId)
       .maybeSingle();
@@ -966,13 +1076,38 @@ export const duplicateScheduledPin = createServerFn({ method: "POST" })
     if (!row) throw new Error("Scheduled pin not found");
 
     const nextAt = new Date(new Date(row.scheduled_at).getTime() + 24 * 60 * 60 * 1000);
+
+    // Re-select rather than copying row.board_id. Inheriting it meant a
+    // board that can no longer publish (its connection disconnected, or
+    // the site since remapped) propagated into a brand-new row every
+    // time someone duplicated a pin — one bad board quietly becoming
+    // many. Falls back to the original board only when the planner has
+    // nothing to offer, so duplicating never fails outright.
+    const brief = row as { pin_briefs?: { page_id?: string; pages?: { url?: string; site_id?: string } } };
+    const siteId = brief.pin_briefs?.pages?.site_id ?? null;
+    let boardId = row.board_id;
+    const built = await buildPlanner(context.userId, SINGLE_PIN_WINDOW, { perPageCap: SAFETY.maxPerPagePerDay });
+    if (built.ok && siteId) {
+      const boardIds = built.planner.boardIdsForSite(siteId);
+      const found = boardIds.length
+        ? findSafeBoard(built.planner.state, built.planner.limits, {
+            when: nextAt.getTime(),
+            pageId: brief.pin_briefs?.page_id ?? "",
+            pageUrl: brief.pin_briefs?.pages?.url ?? "",
+            boardIds,
+            boardIdx: 0,
+          })
+        : null;
+      if (found) boardId = found.boardId;
+    }
+
     const newId = crypto.randomUUID();
     const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert({
       id: newId,
       user_id: context.userId,
       brief_id: row.brief_id,
       image_id: row.image_id,
-      board_id: row.board_id,
+      board_id: boardId,
       scheduled_at: nextAt.toISOString(),
       status: "draft",
     });
