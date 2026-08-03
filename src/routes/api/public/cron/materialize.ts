@@ -16,7 +16,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { ExistingRow } from "@/lib/scheduling-safety.server";
 import type { Lane } from "@/lib/lane.server";
-import { boardCanPublishVia, type BoardOwnership } from "@/lib/board-eligibility";
+import { boardCanPublishVia, siteSkipMessage, type BoardOwnership, type SiteSkipReason } from "@/lib/board-eligibility";
+import { siteDisplayName } from "@/lib/site-mapping";
 
 const HORIZON_DAYS = 3;
 const HOURS_START = 8;
@@ -57,7 +58,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           // at publish time -- a board synced under one site's connection
           // must never be assignable to a different site's brief.
           const { data: sitesForConn } = await supabaseAdmin
-            .from("sites").select("id, pinterest_connection_id").eq("user_id", uid);
+            .from("sites").select("id, pinterest_connection_id, brand_name, url").eq("user_id", uid);
           const siteConnectionMap = new Map<string, string | null>(
             (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
           );
@@ -87,6 +88,22 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           // one shared index -- each site's own board pool spreads
           // independently.
           const boardIdxBySite = new Map<string, number>();
+
+          // First skip reason per site, same precedence as autoSchedule:
+          // a configuration problem outranks a transient capacity one.
+          const skips = new Map<string, { siteName: string; reason: SiteSkipReason; connectionId: string | null }>();
+          const siteMeta = new Map<string, { name: string; connectionId: string | null }>(
+            (sitesForConn ?? []).map((r) => {
+              const row = r as { id: string; brand_name: string | null; url: string | null; pinterest_connection_id: string | null };
+              return [row.id, { name: siteDisplayName(row), connectionId: row.pinterest_connection_id }];
+            }),
+          );
+          function noteSkip(siteId: string | null, reason: SiteSkipReason) {
+            const key = siteId ?? "unmapped";
+            if (skips.has(key)) return;
+            const meta = (siteId ? siteMeta.get(siteId) : undefined) ?? { name: "This site", connectionId: null };
+            skips.set(key, { siteName: meta.name, reason, connectionId: meta.connectionId });
+          }
 
           type ReadyBrief = {
             id: string;
@@ -171,7 +188,14 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             if (state.usedImageIds.has(img.id)) continue;
 
             const boardIds = boardIdsForSite(siteId);
-            if (!boardIds.length) continue; // this site's connection has no eligible boards yet
+            if (!boardIds.length) {
+              // Recorded and logged, not swallowed. Unattended runs are
+              // exactly where a silently-skipped site stays broken
+              // longest -- nobody is watching a toast at 3am, so this
+              // has to leave a trace the Logs page will show.
+              noteSkip(siteId, "no-eligible-boards");
+              continue;
+            }
             const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") ?? "universal" : "universal";
             let boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
 
@@ -202,14 +226,41 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
               laneCounts[classifyLane(brief.pages ?? {})]++;
               placed = true;
             }
+            if (!placed) noteSkip(siteId, "no-safe-slot");
           }
 
-          if (!scheduled.length) return { scheduled: 0, tier, reason: "no safe slot within tier caps" };
+          // Leave a trace for every skipped site. Unattended runs are
+          // where a silently-skipped site stays broken longest -- there
+          // is no toast at 3am -- so these go to publish_logs, which is
+          // what the Logs page reads. scheduled_pin_id is nullable
+          // precisely for account-level entries like this.
+          const skipped = [...skips.values()];
+          if (skipped.length) {
+            await supabaseAdmin.from("publish_logs").insert(
+              skipped.map((sk) => ({
+                user_id: uid,
+                scheduled_pin_id: null,
+                level: sk.reason === "no-eligible-boards" ? "error" : "info",
+                message: `Nightly auto-fill skipped a site — ${siteSkipMessage(sk.reason, sk.siteName)}`,
+                payload: { reason: sk.reason, connection_id: sk.connectionId },
+              })),
+            );
+          }
+
+          if (!scheduled.length) {
+            const blocking = skipped.find((sk) => sk.reason === "no-eligible-boards") ?? skipped[0];
+            return {
+              scheduled: 0,
+              tier,
+              reason: blocking ? siteSkipMessage(blocking.reason, blocking.siteName) : "no safe slot within tier caps",
+              skipped,
+            };
+          }
           const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert(scheduled);
           if (insErr) throw insErr;
           await supabaseAdmin.from("pin_briefs").update({ status: "scheduled" }).in("id", scheduled.map((s) => s.brief_id));
 
-          return { scheduled: scheduled.length, tier, laneCounts };
+          return { scheduled: scheduled.length, tier, laneCounts, skipped };
         });
 
         return Response.json(out);

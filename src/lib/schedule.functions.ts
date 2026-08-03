@@ -5,7 +5,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { SAFETY, buildScheduleState, findSafeBoard, commitPlacement, type ExistingRow } from "@/lib/scheduling-safety.server";
 import { getErrorMessage } from "@/lib/error-message";
-import { boardCanPublishVia, type BoardOwnership } from "@/lib/board-eligibility";
+import { boardCanPublishVia, type BoardOwnership, type SiteSkipReason } from "@/lib/board-eligibility";
+import { siteDisplayName } from "@/lib/site-mapping";
 
 type AppSupabaseClient = SupabaseClient<Database>;
 
@@ -189,6 +190,8 @@ type Planner = {
   // Stable key for a site's board pool, so per-pool round-robin cursors
   // don't collide across sites sharing one connection.
   boardPoolKey: (siteId: string | null) => string;
+  // Display name + mapped connection for a site, for skip reporting.
+  siteMeta: (siteId: string | null) => { name: string; connectionId: string | null };
   // Absolute ms timestamp for the (day, slot) coordinate, or null past
   // the end of the planning window.
   slotAt: (day: number, slot: number) => number | null;
@@ -215,7 +218,7 @@ async function buildPlanner(
   // through, so board selection is scoped the same way
   // publisher.server.ts already scopes token resolution at publish time.
   const { data: sitesForConn } = await supabaseAdmin
-    .from("sites").select("id, pinterest_connection_id").eq("user_id", userId);
+    .from("sites").select("id, pinterest_connection_id, brand_name, url").eq("user_id", userId);
   const siteConnectionMap = new Map<string, string | null>(
     (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
   );
@@ -247,6 +250,16 @@ async function buildPlanner(
     return combined;
   };
   const boardPoolKey = (siteId: string | null): string => connectionForSite(siteId) ?? "universal";
+
+  // Site display names and connections, so a caller reporting a skipped
+  // site can name it and link to the right place to fix it, without a
+  // second round of queries.
+  const siteMeta = new Map<string, { name: string; connectionId: string | null }>(
+    (sitesForConn ?? []).map((r) => {
+      const row = r as { id: string; brand_name: string | null; url: string | null; pinterest_connection_id: string | null };
+      return [row.id, { name: siteDisplayName(row), connectionId: row.pinterest_connection_id }];
+    }),
+  );
 
   // Existing scheduled/published pins around the planning window --
   // enforce gaps against real history, not just what this run planned.
@@ -293,6 +306,7 @@ async function buildPlanner(
       days: window.days,
       boardIdsForSite,
       boardPoolKey,
+      siteMeta: (siteId) => (siteId ? siteMeta.get(siteId) : undefined) ?? { name: "This site", connectionId: null },
       slotAt,
     },
   };
@@ -407,6 +421,18 @@ export const autoSchedule = createServerFn({ method: "POST" })
     // one left off, so slots already rejected are never re-walked.
     const cursor: PlacementCursor = { day: 0, slot: 0 };
 
+    // First reason each site was skipped. First, not last: "no eligible
+    // boards" is a configuration problem the user must fix, while
+    // "no safe slot" is a transient capacity one, and a site hitting
+    // both should report the actionable one.
+    const skips = new Map<string, { siteId: string | null; siteName: string; reason: SiteSkipReason; connectionId: string | null }>();
+    function noteSkip(siteId: string | null, reason: SiteSkipReason) {
+      const key = siteId ?? "unmapped";
+      if (skips.has(key)) return;
+      const meta = planner.siteMeta(siteId);
+      skips.set(key, { siteId, siteName: meta.name, reason, connectionId: meta.connectionId });
+    }
+
     for (const brief of ordered) {
       const img = brief.pin_images?.[0];
       const pageUrl = (brief as { pages?: { url?: string } }).pages?.url ?? "";
@@ -417,12 +443,22 @@ export const autoSchedule = createServerFn({ method: "POST" })
       if (planner.state.usedImageIds.has(img.id)) continue;
 
       const boardIds = planner.boardIdsForSite(siteId ?? null);
-      if (!boardIds.length) continue; // this site's connection has no eligible boards yet
+      if (!boardIds.length) {
+        // Recorded, not swallowed. A site whose connection has no boards
+        // can never be scheduled, and until this was reported the run
+        // just returned "scheduled N" from the other sites while this
+        // one silently produced nothing, run after run.
+        noteSkip(siteId ?? null, "no-eligible-boards");
+        continue;
+      }
       const boardIdxKey = planner.boardPoolKey(siteId ?? null);
       const boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
 
       const placement = findPlacement(planner, cursor, { pageId, pageUrl, boardIds, boardIdx });
-      if (!placement) continue;
+      if (!placement) {
+        noteSkip(siteId ?? null, "no-safe-slot");
+        continue;
+      }
 
       scheduled.push({
         id: crypto.randomUUID(),
@@ -439,11 +475,27 @@ export const autoSchedule = createServerFn({ method: "POST" })
       boardIdxBySite.set(boardIdxKey, placement.nextBoardIdx);
     }
 
-    if (!scheduled.length) return { scheduled: 0, reason: "No safe slot found within limits (per-day cap, per-board cap, or same-URL gap)" };
+    const skipped = [...skips.values()];
+    if (!scheduled.length) {
+      // Lead with a real cause when there is one, instead of the generic
+      // "no safe slot" that used to mask a site with no boards at all.
+      const { siteSkipMessage } = await import("./board-eligibility");
+      const blocking = skipped.find((sk) => sk.reason === "no-eligible-boards") ?? skipped[0];
+      return {
+        scheduled: 0,
+        reason: blocking
+          ? siteSkipMessage(blocking.reason, blocking.siteName)
+          : "No safe slot found within limits (per-day cap, per-board cap, or same-URL gap)",
+        skipped,
+      };
+    }
     const { error: insErr } = await supabaseAdmin.from("scheduled_pins").insert(scheduled);
     if (insErr) throw insErr;
     await supabaseAdmin.from("pin_briefs").update({ status: "scheduled" }).in("id", scheduled.map((s) => s.brief_id));
-    return { scheduled: scheduled.length };
+    // skipped travels alongside a successful count: a run that schedules
+    // 40 pins for one site while another site silently gets nothing is
+    // exactly the case this exists to surface.
+    return { scheduled: scheduled.length, skipped };
   });
 
 // Manual bulk pipeline: analyze pending pages, generate briefs for analyzed

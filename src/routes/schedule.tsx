@@ -1,7 +1,7 @@
 // Standalone route -- see routes/dashboard.tsx for why this opts out of
 // the shared _authenticated layout (AppShell) and duplicates its
 // beforeLoad auth guard.
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
@@ -26,6 +26,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { getErrorMessage } from "@/lib/error-message";
+import { siteSkipMessage } from "@/lib/board-eligibility";
 import { usePublishErrorToast } from "@/lib/site-mapping-gate";
 
 export const Route = createFileRoute("/schedule")({
@@ -60,6 +61,7 @@ function SchedulePage() {
 
 function ScheduleContent() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { selectedSiteId, sites } = useSiteContext();
   const list = useServerFn(listScheduled);
   const auto = useServerFn(autoSchedule);
@@ -99,7 +101,29 @@ function ScheduleContent() {
 
   const autoMut = useMutation({
     mutationFn: (vars: { days: number; perDay: number }) => auto({ data: { ...vars, hoursStart: 9, hoursEnd: 21 } }),
-    onSuccess: (r) => { toast.success(r.reason ?? `Scheduled ${r.scheduled} pin${r.scheduled === 1 ? "" : "s"}`); invalidate(); },
+    onSuccess: (r) => {
+      toast.success(r.reason ?? `Scheduled ${r.scheduled} pin${r.scheduled === 1 ? "" : "s"}`);
+      // A run can succeed overall and still leave a site with nothing —
+      // most often because none of the boards belong to its Pinterest
+      // account. That used to pass in silence, so the success count read
+      // as "everything is fine" while one site was permanently stuck.
+      // One warning per skipped site, each pointing at its own fix.
+      for (const sk of r.skipped ?? []) {
+        toast.warning(siteSkipMessage(sk.reason, sk.siteName), {
+          duration: 10000,
+          action: sk.reason === "no-eligible-boards"
+            ? {
+                label: "Sync boards",
+                onClick: () => navigate({
+                  to: "/boards",
+                  search: sk.connectionId ? { connection: sk.connectionId } : {},
+                }),
+              }
+            : undefined,
+        });
+      }
+      invalidate();
+    },
     onError: (e) => toast.error(getErrorMessage(e)),
   });
   const pubMut = useMutation({

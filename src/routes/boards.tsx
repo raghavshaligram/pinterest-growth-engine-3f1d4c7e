@@ -26,6 +26,13 @@ import { getErrorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/boards")({
   ssr: false,
+  // ?connection=<id> preselects a Pinterest account in the sync
+  // picker below. Used by the "sync boards for that account" link a
+  // skipped-site warning offers, so the user lands with the right
+  // account already chosen rather than having to know which one.
+  validateSearch: (search: Record<string, unknown>): { connection?: string } => ({
+    connection: typeof search.connection === "string" ? search.connection : undefined,
+  }),
   beforeLoad: async () => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
@@ -72,7 +79,8 @@ function BoardsPage({ search }: { search: string }) {
   // only has one connection, same "don't show a choice of one" pattern
   // used elsewhere (GA4's property picker, the vertical selector). A
   // real dropdown only appears once there's an actual choice to make.
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const { connection: connectionFromUrl } = Route.useSearch();
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(connectionFromUrl ?? null);
   const effectiveConnectionId = selectedConnectionId ?? (connections?.length === 1 ? connections[0].id : null);
 
   const syncMut = useMutation({

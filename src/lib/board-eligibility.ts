@@ -98,3 +98,23 @@ export function boardRejectionMessage(
       return `${board} isn't linked to any connected Pinterest account — most often because the account it was synced from has since been disconnected, or because it was added by hand. Run "Sync from Pinterest" on the Boards page for ${site}'s account, then reassign this pin to one of its boards.`;
   }
 }
+
+// Why a whole SITE produced no scheduled pins on a bulk run.
+//
+// autoSchedule and the nightly materializer both loop over briefs and
+// `continue` past any whose site has nothing to schedule to. That skip
+// used to be silent: the run reported "scheduled N" counting other
+// sites, and a site that could never be scheduled generated no error, no
+// warning and no log line — indefinitely. Tightening board eligibility
+// makes the no-boards case more common, not less, so the skip now has to
+// account for itself.
+export type SiteSkipReason = "no-eligible-boards" | "no-safe-slot";
+
+export function siteSkipMessage(reason: SiteSkipReason, siteName: string): string {
+  switch (reason) {
+    case "no-eligible-boards":
+      return `${siteName}: no board belongs to its Pinterest account, so nothing could be scheduled. Sync boards for that account.`;
+    case "no-safe-slot":
+      return `${siteName}: no slot in the planning window cleared the posting-safety limits, so nothing was scheduled.`;
+  }
+}
