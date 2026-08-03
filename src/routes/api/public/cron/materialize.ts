@@ -46,8 +46,12 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           if (!effective) return { scheduled: 0, reason: "not onboarded" };
           const { tier, limits } = effective;
 
-          const { data: boards } = await supabaseAdmin.from("boards").select("id, pinterest_connection_id").eq("user_id", uid);
+          const { data: boards } = await supabaseAdmin
+            .from("boards").select("id, pinterest_connection_id, pinterest_board_id").eq("user_id", uid);
           if (!boards?.length) return { scheduled: 0, reason: "no boards" };
+          const { count: connectionCount } = await supabaseAdmin
+            .from("pinterest_connections").select("id", { count: "exact", head: true }).eq("user_id", uid);
+          const singleConnectionAccount = (connectionCount ?? 0) <= 1;
 
           // Map each site to the Pinterest connection it actually
           // publishes through, so board selection below is scoped the
@@ -59,12 +63,21 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           const siteConnectionMap = new Map<string, string | null>(
             (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
           );
-          // Boards never tagged with a connection (manually added, or
-          // synced before this column existed) count as usable by any
-          // site -- same "no assignment = universal" convention
-          // boards.site_ids already uses.
+          // Untagged boards (added manually, or synced before this
+          // column existed) only count as usable by any site when they
+          // cannot belong to a different Pinterest account than the one
+          // publishing -- one connection on the account, or no
+          // pinterest_board_id to send to Pinterest at all. Otherwise
+          // the pin-create 403s with code 29. Kept byte-for-byte in step
+          // with buildPlanner in lib/schedule.functions.ts, which is
+          // where this logic really belongs; this copy exists only
+          // because the materializer also owns tier-cap resolution.
           const universalBoardIds = boards
-            .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
+            .filter((b) => {
+              const row = b as { pinterest_connection_id: string | null; pinterest_board_id: string | null };
+              if (row.pinterest_connection_id) return false;
+              return singleConnectionAccount || !row.pinterest_board_id;
+            })
             .map((b) => b.id);
           const scopedBoardIdsCache = new Map<string, string[]>();
           function boardIdsForSite(siteId: string | null): string[] {

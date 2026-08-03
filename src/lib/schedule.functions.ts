@@ -175,8 +175,15 @@ async function buildPlanner(
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const { data: boards } = await supabaseAdmin
-    .from("boards").select("id, pinterest_connection_id").eq("user_id", userId);
+    .from("boards").select("id, pinterest_connection_id, pinterest_board_id").eq("user_id", userId);
   if (!boards?.length) return { ok: false, reason: "Add at least one board first" };
+
+  // How many Pinterest accounts this user has connected. Decides whether
+  // an untagged board can be trusted for any site -- see the note on
+  // universalBoardIds below.
+  const { count: connectionCount } = await supabaseAdmin
+    .from("pinterest_connections").select("id", { count: "exact", head: true }).eq("user_id", userId);
+  const singleConnectionAccount = (connectionCount ?? 0) <= 1;
 
   // Map each site to the Pinterest connection it actually publishes
   // through, so board selection is scoped the same way
@@ -187,21 +194,44 @@ async function buildPlanner(
     (sitesForConn ?? []).map((s) => [s.id, (s as { pinterest_connection_id: string | null }).pinterest_connection_id]),
   );
 
-  // Boards never tagged with a connection (manually added, or synced
-  // before this column existed) are treated as usable by any site --
-  // same "no assignment = universal" convention boards.site_ids already
-  // uses. Boards tagged with a specific connection are only ever
-  // eligible for a site mapped to that exact connection.
+  // Boards never tagged with a connection -- manually added via
+  // upsertBoard ("Add board manually" on the Boards page, which does not
+  // set pinterest_connection_id), or synced before that column existed.
   //
-  // Order matters: scoped-first, universal-fallback-second, and NOT
-  // filter() order over the raw rows, which interleaves them arbitrarily
-  // as returned by the DB. findSafeBoard walks the array from boardIdx
-  // onward, so an untagged universal board could otherwise be tried and
-  // picked ahead of a board actually scoped to this site's own
-  // connection -- and if that universal board belongs to a different
-  // Pinterest account, the pin-create call 403s at publish time.
+  // These used to be treated as usable by ANY site, on a "no assignment
+  // = universal" convention. That is only safe when an untagged board
+  // cannot possibly belong to a different Pinterest account than the one
+  // about to publish. It is NOT safe in general, and the failure is
+  // ugly: the token comes from the site's mapped connection
+  // (getPinterestConnectionForSite) while the board id comes from
+  // boards.pinterest_board_id, nothing checks the two belong together,
+  // and Pinterest answers the pin-create with
+  //   403 {"code":29,"message":"You are not permitted to access that resource."}
+  //
+  // Scoped-first ordering (below) made that rarer but could not prevent
+  // it: findSafeBoard walks the list and skips any board failing the
+  // per-board daily cap or the same-URL/board repost gap, so a page
+  // recently pinned to every scoped board falls straight through onto an
+  // untagged one. Single-pin scheduling hits this far more easily than a
+  // bulk run, because it targets one page rather than spreading across
+  // many.
+  //
+  // So an untagged board now only qualifies when it cannot be wrong:
+  //   - the account has at most one Pinterest connection, so an untagged
+  //     board must belong to it; or
+  //   - the board has no pinterest_board_id at all, meaning it is never
+  //     sent to Pinterest's API (webhook mode uses it, and api mode
+  //     already fails fast on it -- see publisher.server.ts).
+  // Sandbox makes the general case concrete: sandbox and production are
+  // separate namespaces with non-interchangeable tokens (see
+  // pinterest-environment.ts), so on an account holding both, an
+  // untagged board is a coin flip.
   const universalBoardIds = boards
-    .filter((b) => !(b as { pinterest_connection_id: string | null }).pinterest_connection_id)
+    .filter((b) => {
+      const row = b as { pinterest_connection_id: string | null; pinterest_board_id: string | null };
+      if (row.pinterest_connection_id) return false;
+      return singleConnectionAccount || !row.pinterest_board_id;
+    })
     .map((b) => b.id);
   const scopedCache = new Map<string, string[]>();
   const connectionForSite = (siteId: string | null): string | null =>
@@ -667,8 +697,12 @@ export const scheduleBrief = createServerFn({ method: "POST" })
 
     const boardIds = planner.boardIdsForSite(siteId);
     if (!boardIds.length) {
+      // Deliberately specific: the most common cause is boards that were
+      // added manually (so carry no connection) on an account with more
+      // than one Pinterest connection, where guessing would mean handing
+      // back a board the publishing token can't post to.
       throw new Error(
-        "No board is eligible for this site's Pinterest connection yet -- sync boards, or map one to this connection.",
+        "No board belongs to this site's Pinterest account yet — run \"Sync from Pinterest\" on the Boards page with that account selected. Boards added manually aren't tied to an account, so they can't be used when you have more than one connected.",
       );
     }
 
@@ -687,7 +721,7 @@ export const scheduleBrief = createServerFn({ method: "POST" })
     });
     if (!placement) {
       throw new Error(
-        `No slot in the next ${SINGLE_PIN_WINDOW.days} days clears the posting-safety limits (per-day cap, per-board cap, or same-URL repost gap) -- try again once some scheduled pins have gone out.`,
+        `No slot in the next ${SINGLE_PIN_WINDOW.days} days clears the posting-safety limits on this site's ${boardIds.length} eligible board${boardIds.length === 1 ? "" : "s"} (per-day cap, per-board cap, or same-URL repost gap) — this page has likely been pinned to all of them recently. Try again once some scheduled pins have gone out, or sync more boards.`,
       );
     }
 
