@@ -2,10 +2,11 @@
 // (see supabase/migrations/20261003000000_autopilot_schedule.sql), so a daily run needs no one at the keyboard:
 //
 //   stage=analyze  pages that were crawled but not analyzed yet            (analyzePage button)
-//   stage=plan     keeps a rolling 30-day content calendar: ONE page and ONE pin theme per day, staggered so no page
-//                  repeats within PAGE_GAP_DAYS and new blogs / calculators jump the line (see planDays below)
-//   stage=briefs   writes the single pin for each planned day from today to today+2 (Generate pins button, but for
-//                  exactly one pin, in the day's theme)
+//   stage=plan     keeps a rolling 30-day content calendar: pins_per_day pins a day (setting, default 5), each a
+//                  different page and pin theme, staggered so a page does not repeat too soon, and new blogs /
+//                  calculators jump the line
+//   stage=briefs   writes ONE pin per planned slot from today to today+2 (Generate pins button, but for exactly one
+//                  pin, in that slot's theme)
 //   stage=queue    draft slots inside the next HORIZON_DAYS -> queued       (Queue pins button)
 //
 // The other stages already have their own cron endpoints: crawl, images, materialize, publish.
@@ -14,17 +15,25 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const HORIZON_DAYS = 3;
 const PLAN_DAYS = 30;       // length of the rolling calendar
-const PAGE_GAP_DAYS = 21;   // a page is not planned again within this many days
+const MAX_PAGE_GAP_DAYS = 21; // a page is not planned again within this many days (shrinks when the pool is small)
+const DEFAULT_PINS_PER_DAY = 5;
 const NEW_PAGE_DAYS = 14;   // pages first seen in the last N days get priority
 
 type PlanRow = {
-  id: string; user_id: string; plan_date: string; page_id: string; template_id: string | null;
+  id: string; user_id: string; plan_date: string; slot: number; page_id: string; template_id: string | null;
   theme_id: string | null; brief_id: string | null; status: string; last_error: string | null;
 };
 // The autopilot_plan table is newer than the generated Supabase types, so reach it through a loose accessor.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function planTable(db: any) { return db.from("autopilot_plan"); }
 const dayStr = (d: Date) => d.toISOString().slice(0, 10);
+
+// Pins per day comes from autopilot_settings ('pins_per_day'), default 5, clamped to 1..12.
+async function pinsPerDay(db: any): Promise<number> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data } = await db.from("autopilot_settings").select("value").eq("key", "pins_per_day").maybeSingle();
+  const n = Math.round(Number(data?.value));
+  return Number.isFinite(n) && n >= 1 ? Math.min(12, n) : DEFAULT_PINS_PER_DAY;
+}
 
 export const Route = createFileRoute("/api/public/cron/autopilot")({
   server: {
@@ -35,7 +44,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
         if (bad) return bad;
         const url = new URL(request.url);
         const stage = url.searchParams.get("stage");
-        const limit = Math.max(1, Math.min(10, Number(url.searchParams.get("limit")) || 0));
+        const limit = Math.max(1, Math.min(12, Number(url.searchParams.get("limit")) || 0));
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { getErrorMessage } = await import("@/lib/error-message");
 
@@ -73,7 +82,15 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
 
             const { data: rowsRaw } = await planTable(supabaseAdmin).select("*").eq("user_id", uid);
             const rows = (rowsRaw ?? []) as PlanRow[];
-            const taken = new Set(rows.map((r) => r.plan_date));
+            const perDay = await pinsPerDay(supabaseAdmin);
+            // One setting drives everything: the account's daily cap follows it.
+            await supabaseAdmin.from("account_publishing_profiles")
+              .update({ cap_mode: "manual", manual_cap: perDay, current_daily_cap: perDay }).eq("user_id", uid);
+            // Fewer pins per day than before: drop future, not-yet-written slots above the new number.
+            await planTable(supabaseAdmin).delete().eq("user_id", uid).gt("slot", perDay - 1)
+              .gte("plan_date", dayStr(new Date())).is("brief_id", null);
+            const gapDays = Math.max(3, Math.min(MAX_PAGE_GAP_DAYS, Math.floor(cands.length / perDay)));
+            const taken = new Set(rows.map((r) => `${r.plan_date}#${r.slot}`));
             const lastPlanned = new Map<string, number>();   // page -> latest plan date (ms)
             const usedTemplates = new Map<string, Set<string>>();
             for (const r of rows) {
@@ -104,7 +121,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
                 const slot = open.shift();
                 if (!slot) break;
                 const d = new Date(slot.plan_date + "T00:00:00Z");
-                const { theme, template } = chooseTheme(d, n.kind, new Set());
+                const { theme, template } = chooseTheme(new Date(d.getTime() + slot.slot * 86_400_000), n.kind, new Set());
                 const { error } = await planTable(supabaseAdmin)
                   .update({ page_id: n.id, template_id: template, theme_id: theme.id, status: "planned", last_error: null })
                   .eq("id", slot.id);
@@ -119,36 +136,45 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
             for (let i = 0; i < PLAN_DAYS; i++) {
               const date = new Date(today.getTime() + i * 86_400_000);
               const ds = dayStr(date);
-              if (taken.has(ds)) continue;
-              const scored = cands
-                .map((c) => {
-                  const last = lastPlanned.get(c.id);
-                  const sinceDays = last == null ? Infinity : (date.getTime() - last) / 86_400_000;
-                  if (sinceDays < PAGE_GAP_DAYS) return null;
-                  let score = last == null ? 60 : Math.min(60, sinceDays - PAGE_GAP_DAYS);
-                  if (Date.now() - c.createdAt < NEW_PAGE_DAYS * 86_400_000 && last == null) score += 100;
-                  score += seasonalBoost(c.seasonality, date);
-                  const n = recentKinds.length;
-                  if (n >= 2 && recentKinds[n - 1] === c.kind && recentKinds[n - 2] === c.kind) score -= 40;
-                  return { c, score: score + Math.random() * 5 };
-                })
-                .filter((x): x is { c: (typeof cands)[number]; score: number } => x !== null)
-                .sort((a, b) => b.score - a.score);
-              // Few pages and everything is inside the gap: reuse the page that has waited longest (a fresh format
-              // on the same URL is still a fresh pin) rather than leaving the day empty.
-              const pick = scored[0]?.c ?? [...cands].sort((a, b) => (lastPlanned.get(a.id) ?? 0) - (lastPlanned.get(b.id) ?? 0))[0]!;
-              const { theme, template } = chooseTheme(date, pick.kind, usedTemplates.get(pick.id) ?? new Set());
-              inserts.push({ user_id: uid, plan_date: ds, page_id: pick.id, template_id: template, theme_id: theme.id, status: "planned" });
-              lastPlanned.set(pick.id, date.getTime());
-              if (!usedTemplates.has(pick.id)) usedTemplates.set(pick.id, new Set());
-              usedTemplates.get(pick.id)!.add(template);
-              recentKinds.push(pick.kind);
+              const pickedToday = new Set<string>();
+              for (const r of rows) if (r.plan_date === ds) pickedToday.add(r.page_id);
+              for (let slot = 0; slot < perDay; slot++) {
+                if (taken.has(`${ds}#${slot}`)) continue;
+                const scored = cands
+                  .map((c) => {
+                    if (pickedToday.has(c.id)) return null;
+                    const last = lastPlanned.get(c.id);
+                    const sinceDays = last == null ? Infinity : (date.getTime() - last) / 86_400_000;
+                    if (sinceDays < gapDays) return null;
+                    let score = last == null ? 60 : Math.min(60, sinceDays - gapDays);
+                    if (Date.now() - c.createdAt < NEW_PAGE_DAYS * 86_400_000 && last == null) score += 100;
+                    score += seasonalBoost(c.seasonality, date);
+                    const n = recentKinds.length;
+                    if (n >= 2 && recentKinds[n - 1] === c.kind && recentKinds[n - 2] === c.kind) score -= 40;
+                    return { c, score: score + Math.random() * 5 };
+                  })
+                  .filter((x): x is { c: (typeof cands)[number]; score: number } => x !== null)
+                  .sort((a, b) => b.score - a.score);
+                // Pool smaller than the gap allows: reuse the page that has waited longest (a fresh format on the
+                // same URL is still a fresh pin) rather than leaving the slot empty, but never twice in one day.
+                const pick = scored[0]?.c
+                  ?? [...cands].filter((c) => !pickedToday.has(c.id)).sort((a, b) => (lastPlanned.get(a.id) ?? 0) - (lastPlanned.get(b.id) ?? 0))[0];
+                if (!pick) continue;
+                // Each slot of the day gets a different theme: slot 0 is the weekday's theme, then the next ones.
+                const { theme, template } = chooseTheme(new Date(date.getTime() + slot * 86_400_000), pick.kind, usedTemplates.get(pick.id) ?? new Set());
+                inserts.push({ user_id: uid, plan_date: ds, slot, page_id: pick.id, template_id: template, theme_id: theme.id, status: "planned" });
+                pickedToday.add(pick.id);
+                lastPlanned.set(pick.id, date.getTime());
+                if (!usedTemplates.has(pick.id)) usedTemplates.set(pick.id, new Set());
+                usedTemplates.get(pick.id)!.add(template);
+                recentKinds.push(pick.kind);
+              }
             }
             if (inserts.length) {
               const { error } = await planTable(supabaseAdmin).insert(inserts);
               if (error) throw error;
             }
-            return { planned: inserts.length, bumpedNewPages: bumped, pool: cands.length };
+            return { planned: inserts.length, perDay, gapDays, bumpedNewPages: bumped, pool: cands.length };
           });
           return Response.json(out);
         }
@@ -161,7 +187,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
             const to = dayStr(new Date(Date.now() + (HORIZON_DAYS - 1) * 86_400_000));
             const { data: due } = await planTable(supabaseAdmin).select("*")
               .eq("user_id", uid).gte("plan_date", from).lte("plan_date", to)
-              .in("status", ["planned", "error"]).is("brief_id", null).order("plan_date", { ascending: true }).limit(limit || 1);
+              .in("status", ["planned", "error"]).is("brief_id", null).order("plan_date", { ascending: true }).order("slot", { ascending: true }).limit(limit || 1);
             let generated = 0; const errors: string[] = [];
             for (const row of (due ?? []) as PlanRow[]) {
               const theme = PIN_THEMES[row.theme_id ?? ""];

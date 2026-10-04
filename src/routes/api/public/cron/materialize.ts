@@ -20,9 +20,9 @@ import { boardCanPublishVia, siteSkipMessage, type BoardOwnership, type SiteSkip
 import { siteDisplayName } from "@/lib/site-mapping";
 
 const HORIZON_DAYS = 3;
-// Afternoon/evening US time (UTC): the best window for Pinterest saves. With one pin a day it lands in this window.
-const HOURS_START = 19;
-const HOURS_END = 23;
+// US daytime to late evening (UTC), when Pinterest saves peak. Wide enough for ~10 pins a day at the tier's minimum gap.
+const HOURS_START = 12;
+const HOURS_END = 24;
 
 export const Route = createFileRoute("/api/public/cron/materialize")({
   server: {
@@ -122,9 +122,9 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             const from = new Date().toISOString().slice(0, 10);
             const to = new Date(Date.now() + (HORIZON_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: planned } = await (supabaseAdmin as any).from("autopilot_plan").select("brief_id, plan_date")
+            const { data: planned } = await (supabaseAdmin as any).from("autopilot_plan").select("brief_id, plan_date, slot")
               .eq("user_id", uid).gte("plan_date", from).lte("plan_date", to).not("brief_id", "is", null)
-              .order("plan_date", { ascending: true });
+              .order("plan_date", { ascending: true }).order("slot", { ascending: true });
             plannedIds = ((planned ?? []) as { brief_id: string }[]).map((r) => r.brief_id);
             if (!plannedIds.length) return { scheduled: 0, reason: "no planned pin for the next days yet" };
           }
