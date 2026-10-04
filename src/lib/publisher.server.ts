@@ -128,6 +128,7 @@ export async function processDuePinsForUser(userId: string, limit = 25, onlyId?:
         userId,
         scheduledPinId: sp.id,
         boardId: board.pinterest_board_id ?? board.id,
+        boardName: board.name,
         title: brief.title,
         description,
         link: taggedLink,

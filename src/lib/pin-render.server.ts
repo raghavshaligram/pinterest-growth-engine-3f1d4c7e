@@ -27,6 +27,9 @@ export async function renderPinImage(opts: {
   // The other 6 provider branches ignore it for now -- no verified size
   // override exists for them here yet.
   size?: string;
+  // Nano Banana 2 only: a photo from the page itself, given as a visual reference so the pin shows the real
+  // subject. If the model rejects the reference the call is retried without it.
+  referenceImageUrl?: string | null;
 }): Promise<{ imageBytes: Uint8Array; contentType: string; providerPredictionId: string; modelUsed: string }> {
   if (opts.provider === "openai") {
     const { openaiGenerateImage } = await import("./openai-image.server");
@@ -69,7 +72,21 @@ export async function renderPinImage(opts: {
   const { replicatePredict } = await import("./replicate.server");
   const modelUsed = "google/nano-banana-2";
   const input: Record<string, unknown> = { prompt: opts.prompt, aspect_ratio: "2:3" };
-  const pred = await replicatePredict({ token: opts.apiKey, model: modelUsed, input, maxWaitMs: 90_000 });
+  let pred: Awaited<ReturnType<typeof replicatePredict>>;
+  if (opts.referenceImageUrl) {
+    const withRef = {
+      ...input,
+      prompt: `${opts.prompt}\n\nREFERENCE PHOTO: the attached image is a real photo from the page. Use it as the visual subject and colour/style reference for the middle of the pin. Recreate the subject, do not copy any text or logos from it, and keep all text exactly as specified above.`,
+      image_input: [opts.referenceImageUrl],
+    };
+    try { pred = await replicatePredict({ token: opts.apiKey, model: modelUsed, input: withRef, maxWaitMs: 90_000 }); }
+    catch (e) {
+      if (/insufficient credit/i.test(String(e))) throw e;
+      pred = await replicatePredict({ token: opts.apiKey, model: modelUsed, input, maxWaitMs: 90_000 });
+    }
+  } else {
+    pred = await replicatePredict({ token: opts.apiKey, model: modelUsed, input, maxWaitMs: 90_000 });
+  }
   const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
   const imgResp = await fetch(outUrl);
   if (!imgResp.ok) throw new Error(`Replicate output download ${imgResp.status}`);

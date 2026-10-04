@@ -20,8 +20,9 @@ import { boardCanPublishVia, siteSkipMessage, type BoardOwnership, type SiteSkip
 import { siteDisplayName } from "@/lib/site-mapping";
 
 const HORIZON_DAYS = 3;
-const HOURS_START = 8;
-const HOURS_END = 22;
+// Afternoon/evening US time (UTC): the best window for Pinterest saves. With one pin a day it lands in this window.
+const HOURS_START = 19;
+const HOURS_END = 23;
 
 export const Route = createFileRoute("/api/public/cron/materialize")({
   server: {
@@ -111,13 +112,36 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             pages: { url?: string; site_id?: string; created_at?: string; last_crawled_at?: string | null } | null;
             pin_images: { id: string }[] | null;
           };
-          const { data: readyBriefs } = await supabaseAdmin
+          // Autopilot calendar: when the user has a plan (autopilot_plan), only the briefs planned for the next days are
+          // scheduled, in plan order. No plan rows at all means the old behavior (every ready brief).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const planDb = (supabaseAdmin as any).from("autopilot_plan");
+          const { count: planCount } = await planDb.select("id", { count: "exact", head: true }).eq("user_id", uid);
+          let plannedIds: string[] | null = null;
+          if ((planCount ?? 0) > 0) {
+            const from = new Date().toISOString().slice(0, 10);
+            const to = new Date(Date.now() + (HORIZON_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: planned } = await (supabaseAdmin as any).from("autopilot_plan").select("brief_id, plan_date")
+              .eq("user_id", uid).gte("plan_date", from).lte("plan_date", to).not("brief_id", "is", null)
+              .order("plan_date", { ascending: true });
+            plannedIds = ((planned ?? []) as { brief_id: string }[]).map((r) => r.brief_id);
+            if (!plannedIds.length) return { scheduled: 0, reason: "no planned pin for the next days yet" };
+          }
+          let briefQuery = supabaseAdmin
             .from("pin_briefs")
             .select("id, page_id, pages(url, site_id, created_at, last_crawled_at), pin_images(id, storage_path, prompt_hash)")
             .eq("user_id", uid)
             .eq("status", "ready")
             .order("created_at", { ascending: true })
-            .limit(limits.maxPerAccountPerDay * HORIZON_DAYS * 3) as { data: ReadyBrief[] | null };
+            .limit(limits.maxPerAccountPerDay * HORIZON_DAYS * 3);
+          if (plannedIds) briefQuery = briefQuery.in("id", plannedIds);
+          const { data: readyBriefsRaw } = await briefQuery as { data: ReadyBrief[] | null };
+          let readyBriefs = readyBriefsRaw;
+          if (plannedIds && readyBriefs) {
+            const order = new Map(plannedIds.map((id, i) => [id, i]));
+            readyBriefs = [...readyBriefs].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+          }
           if (!readyBriefs?.length) return { scheduled: 0, reason: "no ready briefs" };
 
           const windowEnd = new Date(Date.now() + (HORIZON_DAYS + limits.sameUrlBoardGapDays) * 86_400_000);
@@ -152,7 +176,8 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           }
           const lanesInOrder = (Object.keys(byLane) as Lane[]).sort((a, b) => lanePriority(a) - lanePriority(b));
           const ordered: ReadyBrief[] = [];
-          for (const lane of lanesInOrder) {
+          if (plannedIds) ordered.push(...readyBriefs);
+          else for (const lane of lanesInOrder) {
             const queues = [...byLane[lane].values()];
             while (queues.some((q) => q.length)) {
               for (const q of queues) {

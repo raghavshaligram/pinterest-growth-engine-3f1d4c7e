@@ -1,5 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+// Each run crawls at most this many pages: every URL that is new to us first, then pages whose sitemap lastmod is
+// newer than our last crawl. A newly published blog or calculator is therefore picked up on the next run, and the
+// rest of a big sitemap is not re-fetched every night.
+const CRAWL_CAP = 40;
+
 export const Route = createFileRoute("/api/public/cron/crawl")({
   server: {
     handlers: {
@@ -16,7 +21,15 @@ export const Route = createFileRoute("/api/public/cron/crawl")({
             try {
               const url = site.sitemap_url ?? new URL("/sitemap.xml", site.url).toString();
               const urls = await parseSitemap(url);
-              for (const u of urls.slice(0, 100)) {
+              const { data: known } = await supabaseAdmin
+                .from("pages").select("url, last_crawled_at").eq("site_id", site.id).limit(5000);
+              const lastCrawl = new Map((known ?? []).map((k) => [k.url, k.last_crawled_at ? Date.parse(k.last_crawled_at) : 0]));
+              const fresh = urls.filter((u) => !lastCrawl.has(u.loc));
+              const changed = urls.filter((u) => {
+                const seen = lastCrawl.get(u.loc);
+                return seen !== undefined && !!u.lastmod && Date.parse(u.lastmod) > seen;
+              });
+              for (const u of [...fresh, ...changed].slice(0, CRAWL_CAP)) {
                 try {
                   const page = await crawlPage(u.loc);
                   const { data: existing } = await supabaseAdmin

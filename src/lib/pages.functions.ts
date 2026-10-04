@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
 import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
+import type { PinCoreContext } from "@/lib/briefs.functions";
 
 type PipelineStatus = "images_ready" | "in_progress" | "not_started" | "error";
 
@@ -192,10 +193,7 @@ export const getPage = createServerFn({ method: "GET" })
     return { page, briefs: briefsWithActive };
   });
 
-export const analyzePage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: { pageId: string }) => z.object({ pageId: z.string().uuid() }).parse(i))
-  .handler(async ({ data, context }) => {
+export async function analyzePageCore(context: PinCoreContext, data: { pageId: string }) {
     // Same account-level text-generation connection generateBriefs uses
     // (briefs.functions.ts) -- resolveCopyConnection(userId, null),
     // deliberately passing null instead of a site's
@@ -271,4 +269,9 @@ Headings: ${JSON.stringify(((page.headings as unknown as unknown[]) ?? []).slice
       await markApiKeyConnection(conn.connectionId, "error", msg);
       throw e;
     }
-  });
+}
+
+export const analyzePage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { pageId: string }) => z.object({ pageId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => analyzePageCore(context, data));

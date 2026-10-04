@@ -49,7 +49,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     try {
       const { data: brief, error: briefErr } = await supabaseAdmin
         .from("pin_briefs")
-        .select("*, pages(url, title, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_connection_override_id))")
+        .select("*, pages(url, title, images, analysis, site_id, excluded, sites(url, brand_name, brand_colors, brand_font, vertical, image_connection_override_id))")
         .eq("id", briefId)
         .single();
       // Previously this discarded `error` entirely and always threw the
@@ -62,7 +62,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       if (!brief) throw new Error("brief missing");
       const page = (brief as {
         pages?: {
-          url?: string; title?: string | null; analysis?: unknown; excluded?: boolean;
+          url?: string; title?: string | null; images?: unknown; analysis?: unknown; excluded?: boolean;
           sites?: {
             url?: string; brand_name?: string | null; brand_colors?: unknown; brand_font?: string | null;
             vertical?: SiteVertical | null; image_connection_override_id?: string | null;
@@ -129,11 +129,25 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       provider = resolved.provider;
       connectionId = resolved.connectionId;
 
+      // A real photo from the page, used as a visual reference (Nano Banana 2 only): the first image that is not
+      // a logo, icon, avatar or vector graphic.
+      const referenceImageUrl = (() => {
+        const imgs = Array.isArray(page?.images) ? page!.images as { src?: string }[] : [];
+        for (const im of imgs) {
+          const src = im?.src ?? "";
+          if (!/^https?:\/\//i.test(src)) continue;
+          if (/\.(svg|ico|gif)(\?|$)|logo|icon|avatar|sprite|favicon|badge|button/i.test(src)) continue;
+          return src;
+        }
+        return null;
+      })();
+
       const { renderPinImage } = await import("./pin-render.server");
       const rendered = await renderPinImage({
         provider,
         prompt: themedPrompt,
         apiKey: resolved.apiKey,
+        referenceImageUrl,
       });
       const imageBytes = rendered.imageBytes;
       const contentType = rendered.contentType;

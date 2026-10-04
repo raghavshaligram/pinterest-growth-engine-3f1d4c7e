@@ -9,6 +9,7 @@
 import { pinterestApiBaseUrl, type PinterestEnvironment } from "./pinterest-environment";
 export type PublishInput = {
   boardId: string; // Pinterest board id (native)
+  boardName?: string; // Sent to webhooks so an automation can pick the board by name (no Pinterest API sync needed)
   title: string;
   description: string;
   link: string;
@@ -45,6 +46,7 @@ export async function webhookPublish(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       board_id: input.boardId,
+      board_name: input.boardName ?? null,
       title: input.title,
       description: input.description,
       alt_text: input.altText ?? null,

@@ -4,6 +4,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getErrorMessage } from "@/lib/error-message";
 import { describeColors } from "@/lib/color-naming";
 import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+
+// What the server functions get from requireSupabaseAuth. The same logic also runs from the cron endpoints,
+// which have no user session and pass the service-role client plus the account id.
+export type PinCoreContext = { supabase: SupabaseClient<Database>; userId: string };
 
 export const PIN_STYLES = [
   "problem-solver", "how-to", "checklist", "comparison", "calculator",
@@ -372,6 +378,14 @@ function resolveTemplateId(style?: string | null): TemplateId {
   return "quick_tip_grid";
 }
 
+export function shortHeadline(title: string): string {
+  let h = title.split(/\s[|\u2013-]\s|:\s/)[0]!.trim();
+  if (h.length < 12) h = title;
+  if (h.length <= 60) return h;
+  const cut = h.slice(0, 60);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), 30)).trim();
+}
+
 export function buildThemedPinPrompt(input: {
   title: string;
   cta?: string | null;
@@ -436,6 +450,8 @@ export function buildThemedPinPrompt(input: {
   const palette = colors.length ? describeColors(colors) : flavor.palette_fallback;
   const cta = input.cta || "Read More →";
   const title = input.title.replace(/\s+/g, " ").trim();
+  // On the image the headline must read at phone size: keep the part before a colon or bar and cap it at ~60 characters.
+  const headline = shortHeadline(title);
   const topic = input.topic || input.primaryKeyword || title;
   // brand_font > shape's own typography (tied to the compositional
   // device) > vertical's typography_default (safety net only).
@@ -465,8 +481,13 @@ GLOBAL BRAND RULES:
 - Typography: headline is ${typography}. Text must be large, correctly spelled, fully inside the canvas.
 - Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
+TEXT AND LEGIBILITY (the image model must render text exactly):
+- Render ONLY these strings as text: the headline, the call to action, and the website name. No other words, labels, numbers or captions anywhere.
+- Spell every word exactly as given. The headline is the largest element, bold, high contrast against a solid or lightly tinted band, readable at thumbnail size on a phone, at most 3 short lines.
+- One clear focal point in the main visual, uncluttered, real-looking subject matter and natural light; no stock-photo clichés, no hands with extra fingers, no garbled text on signs, labels or packaging.
+
 LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are internal composition guidance only; never render any numbers, measurements, fractions, or percentages anywhere in the image itself):
-- A compact title band at the very top. Place this exact title text, uppercase when it suits the theme: "${title}".
+- A compact title band at the very top. Place this exact headline text, uppercase when it suits the theme: "${headline}".
 - Below it, the main themed visual, filling the large majority of the canvas: ${middle}
 - A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
 - A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${input.brandHost}".
@@ -480,12 +501,16 @@ QUALITY CONTROL:
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
 }
 
-export const generateBriefs = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: { pageId: string; count?: number }) =>
-    z.object({ pageId: z.string().uuid(), count: z.number().int().min(1).max(30).default(10) }).parse(i),
-  )
-  .handler(async ({ data, context }) => {
+export async function generateBriefsCore(
+  context: PinCoreContext,
+  data: {
+    pageId: string;
+    count: number;
+    // Autopilot: make one pin for a planned day in a chosen format (see pin-themes.ts).
+    template?: string;
+    theme?: { label: string; style: string; angle: string };
+  },
+) {
     const { markApiKeyConnection } = await import("./api-key-connections.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -628,7 +653,9 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
     const freshStyles = shuffle(PIN_STYLES.filter((s) => !recentSet.has(s)));
     const staleStyles = shuffle(PIN_STYLES.filter((s) => recentSet.has(s)));
     const stylesSubset = [...freshStyles, ...staleStyles].slice(0, Math.min(data.count, PIN_STYLES.length));
-    const chosenStyles = stylesSubset.length >= data.count
+    const chosenStyles = data.theme
+      ? Array(data.count).fill(data.theme.style)
+      : stylesSubset.length >= data.count
       ? stylesSubset.slice(0, data.count)
       : [...stylesSubset, ...Array(data.count - stylesSubset.length).fill("how-to")];
 
@@ -663,7 +690,11 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
 - template_id: the single best-fitting visual template for THIS brief's specific content angle, chosen from the template catalog given in the user message (use the id exactly as written). Judge fit by what the brief is actually about, not by its style label -- e.g. a brief that corrects a common misconception belongs in myth_vs_fact regardless of which style tag it also carries.
 - image_prompt: a SHORT description of ONLY the middle visual content specific to this brief (subject matter and mood) -- the chosen template supplies its own composition, typography, palette, and border/URL-bar automatically, so do not describe layout, frame, or text placement yourself.
 The briefs array in your JSON response MUST contain EXACTLY the requested number of items -- never fewer. If you run low on genuinely distinct angles, vary style, intent, or template_id more aggressively rather than returning an incomplete array.
+PIN CRAFT RULES (from Pinterest's creative guidance): one idea per pin; the headline reads in two seconds at phone size, so title-case text of about 8 words or fewer; the keyword leads both the title and the description; promise something specific the page delivers (a number, a step count, a season) and never exaggerate; write for saves, so favour checklists, steps, comparisons and reference cards over vague inspiration; plain words, no jargon, no filler openers.
 If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`;
+      const themeBlock = data.theme
+        ? `\n\nTHEME FOR THIS PIN: "${data.theme.label}". ${data.theme.angle} Use template_id "${data.template ?? ""}" exactly.`
+        : "";
       const user = `Create ${data.count} unique Pinterest pin briefs for this page. You MUST return exactly ${data.count} items in the briefs array -- no fewer. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
 
 Return JSON: { briefs: [{ style, template_id, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
@@ -683,7 +714,7 @@ Topic: ${analysis.topic ?? ""}
 Primary keyword: ${analysis.primary_keyword}
 Secondary: ${JSON.stringify(analysis.secondary_keywords ?? [])}
 Audience: ${analysis.audience ?? ""}
-Category: ${analysis.category ?? ""}${competitiveBlock}`;
+Category: ${analysis.category ?? ""}${competitiveBlock}${themeBlock}`;
 
       let resp = await generateJSON<BriefsResp>({ apiKey: cfg.api_key, model: copyModel, system, user });
 
@@ -711,7 +742,9 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
         // regex rather than crashing the batch -- this is a safety net,
         // not a routing mechanism. Normal path always uses the
         // classifier's own choice.
-        const templateId = validTemplateIds.has(b.template_id)
+        const templateId = data.template && validTemplateIds.has(data.template)
+          ? (data.template as TemplateId)
+          : validTemplateIds.has(b.template_id)
           ? (b.template_id as TemplateId)
           : resolveTemplateId(b.style);
         return {
@@ -779,13 +812,20 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
       // best-effort, not a guarantee). Callers/UI must not assume
       // created === requested silently; pages.$id.tsx surfaces this
       // explicitly in its toast.
-      return { requested: data.count, created: inserted!.length };
+      return { requested: data.count, created: inserted!.length, ids: inserted!.map((r) => r.id as string) };
     } catch (e) {
       const msg = getErrorMessage(e);
       await markApiKeyConnection(copyConnectionId, "error", msg);
       throw e;
     }
-  });
+}
+
+export const generateBriefs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: { pageId: string; count?: number }) =>
+    z.object({ pageId: z.string().uuid(), count: z.number().int().min(1).max(30).default(10) }).parse(i),
+  )
+  .handler(async ({ data, context }) => generateBriefsCore(context, data));
 
 export const listBriefs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
