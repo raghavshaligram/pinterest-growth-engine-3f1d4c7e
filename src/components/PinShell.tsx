@@ -24,7 +24,7 @@ import { HelpMenu } from "@/components/HelpMenu";
 import { useSetupStatus } from "@/lib/onboarding-gate";
 import { useEffect, useState, type ReactNode } from "react";
 
-type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "settings";
+type NavKey = "dashboard" | "schedule" | "boards" | "sites" | "pages" | "pins" | "insights" | "keywords" | "logs" | "autopilot" | "settings";
 
 const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboard; key: NavKey }> = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -39,6 +39,7 @@ const NAV: ReadonlyArray<{ to: string; label: string; icon: typeof LayoutDashboa
   // top-level rail icon rather than living inside either of those.
   { to: "/insights", label: "Insights", icon: BarChart3, key: "insights" },
   { to: "/keywords", label: "Keywords", icon: KeyRound, key: "keywords" },
+  { to: "/autopilot", label: "Autopilot", icon: Calendar, key: "autopilot" },
   { to: "/logs", label: "Logs", icon: ScrollText, key: "logs" },
   { to: "/settings/integrations", label: "Settings", icon: Settings2, key: "settings" },
 ];

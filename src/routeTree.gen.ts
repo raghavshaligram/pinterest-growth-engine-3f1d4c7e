@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AutopilotRouteImport } from './routes/autopilot'
 import { Route as BoardsRouteImport } from './routes/boards'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as InsightsRouteImport } from './routes/insights'
@@ -49,6 +50,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutopilotRoute = AutopilotRouteImport.update({
+  id: '/autopilot',
+  path: '/autopilot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BoardsRoute = BoardsRouteImport.update({
@@ -203,6 +209,7 @@ const ApiPublicPinterestCallbackRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/autopilot': typeof AutopilotRoute
   '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/autopilot': typeof AutopilotRoute
   '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
@@ -269,6 +277,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/autopilot': typeof AutopilotRoute
   '/boards': typeof BoardsRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
@@ -304,6 +313,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/autopilot'
     | '/boards'
     | '/dashboard'
     | '/insights'
@@ -337,6 +347,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/autopilot'
     | '/boards'
     | '/dashboard'
     | '/insights'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/autopilot'
     | '/boards'
     | '/dashboard'
     | '/insights'
@@ -403,6 +415,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  AutopilotRoute: typeof AutopilotRoute
   BoardsRoute: typeof BoardsRoute
   DashboardRoute: typeof DashboardRoute
   InsightsRoute: typeof InsightsRoute
@@ -445,6 +458,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autopilot': {
+      id: '/autopilot'
+      path: '/autopilot'
+      fullPath: '/autopilot'
+      preLoaderRoute: typeof AutopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/boards': {
@@ -670,6 +690,7 @@ const SitesRouteWithChildren = SitesRoute._addFileChildren(SitesRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  AutopilotRoute: AutopilotRoute,
   BoardsRoute: BoardsRoute,
   DashboardRoute: DashboardRoute,
   InsightsRoute: InsightsRoute,
