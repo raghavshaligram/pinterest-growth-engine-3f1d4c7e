@@ -9,107 +9,42 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AutopilotRouteImport } from './routes/autopilot'
-import { Route as BoardsRouteImport } from './routes/boards'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as KeywordsRouteImport } from './routes/keywords'
-import { Route as LearnRouteImport } from './routes/learn'
-import { Route as LogsRouteImport } from './routes/logs'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as PinsRouteImport } from './routes/pins'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as ScheduleRouteImport } from './routes/schedule'
-import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as SitesRouteImport } from './routes/sites'
 import { Route as TermsRouteImport } from './routes/terms'
-import { Route as PagesIndexRouteImport } from './routes/pages.index'
-import { Route as PagesIdRouteImport } from './routes/pages.$id'
-import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as SitesRouteImport } from './routes/sites'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ScheduleRouteImport } from './routes/schedule'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as PinsRouteImport } from './routes/pins'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as LogsRouteImport } from './routes/logs'
+import { Route as LearnRouteImport } from './routes/learn'
+import { Route as KeywordsRouteImport } from './routes/keywords'
+import { Route as InsightsRouteImport } from './routes/insights'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as BoardsRouteImport } from './routes/boards'
+import { Route as AutopilotRouteImport } from './routes/autopilot'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
-import { Route as SitesIdRouteImport } from './routes/sites.$id'
+import { Route as PagesIndexRouteImport } from './routes/pages.index'
 import { Route as SitesStyleSetupRouteImport } from './routes/sites.style-setup'
-import { Route as ApiPublicCronAutopilotRouteImport } from './routes/api/public/cron/autopilot'
-import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
-import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
-import { Route as ApiPublicCronMaterializeRouteImport } from './routes/api/public/cron/materialize'
-import { Route as ApiPublicCronPinterestTokenRefreshRouteImport } from './routes/api/public/cron/pinterest-token-refresh'
-import { Route as ApiPublicCronPublishRouteImport } from './routes/api/public/cron/publish'
-import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
-import { Route as ApiPublicCronTierCheckRouteImport } from './routes/api/public/cron/tier-check'
-import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api/public/google.callback'
+import { Route as SitesIdRouteImport } from './routes/sites.$id'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as PagesIdRouteImport } from './routes/pages.$id'
 import { Route as ApiPublicPinterestCallbackRouteImport } from './routes/api/public/pinterest.callback'
+import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api/public/google.callback'
+import { Route as ApiPublicCronTierCheckRouteImport } from './routes/api/public/cron/tier-check'
+import { Route as ApiPublicCronSerpRouteImport } from './routes/api/public/cron/serp'
+import { Route as ApiPublicCronPublishRouteImport } from './routes/api/public/cron/publish'
+import { Route as ApiPublicCronPinterestTokenRefreshRouteImport } from './routes/api/public/cron/pinterest-token-refresh'
+import { Route as ApiPublicCronMaterializeRouteImport } from './routes/api/public/cron/materialize'
+import { Route as ApiPublicCronImagesRouteImport } from './routes/api/public/cron/images'
+import { Route as ApiPublicCronCrawlRouteImport } from './routes/api/public/cron/crawl'
+import { Route as ApiPublicCronAutopilotRouteImport } from './routes/api/public/cron/autopilot'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutopilotRoute = AutopilotRouteImport.update({
-  id: '/autopilot',
-  path: '/autopilot',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BoardsRoute = BoardsRouteImport.update({
-  id: '/boards',
-  path: '/boards',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InsightsRoute = InsightsRouteImport.update({
-  id: '/insights',
-  path: '/insights',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KeywordsRoute = KeywordsRouteImport.update({
-  id: '/keywords',
-  path: '/keywords',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LearnRoute = LearnRouteImport.update({
-  id: '/learn',
-  path: '/learn',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LogsRoute = LogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsRoute = PinsRouteImport.update({
-  id: '/pins',
-  path: '/pins',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ScheduleRoute = ScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
-  id: '/sitemap.xml',
-  path: '/sitemap.xml',
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitesRoute = SitesRouteImport.update({
@@ -117,24 +52,74 @@ const SitesRoute = SitesRouteImport.update({
   path: '/sites',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PagesIndexRoute = PagesIndexRouteImport.update({
-  id: '/pages/',
-  path: '/pages/',
+const ScheduleRoute = ScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PagesIdRoute = PagesIdRouteImport.update({
-  id: '/pages/$id',
-  path: '/pages/$id',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/settings/integrations',
-  path: '/settings/integrations',
+const PinsRoute = PinsRouteImport.update({
+  id: '/pins',
+  path: '/pins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogsRoute = LogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnRoute = LearnRouteImport.update({
+  id: '/learn',
+  path: '/learn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KeywordsRoute = KeywordsRouteImport.update({
+  id: '/keywords',
+  path: '/keywords',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InsightsRoute = InsightsRouteImport.update({
+  id: '/insights',
+  path: '/insights',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BoardsRoute = BoardsRouteImport.update({
+  id: '/boards',
+  path: '/boards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutopilotRoute = AutopilotRouteImport.update({
+  id: '/autopilot',
+  path: '/autopilot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitesIndexRoute = SitesIndexRouteImport.update({
@@ -142,61 +127,29 @@ const SitesIndexRoute = SitesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SitesRoute,
 } as any)
-const SitesIdRoute = SitesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => SitesRoute,
+const PagesIndexRoute = PagesIndexRouteImport.update({
+  id: '/pages/',
+  path: '/pages/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const SitesStyleSetupRoute = SitesStyleSetupRouteImport.update({
   id: '/style-setup',
   path: '/style-setup',
   getParentRoute: () => SitesRoute,
 } as any)
-const ApiPublicCronAutopilotRoute = ApiPublicCronAutopilotRouteImport.update({
-  id: '/api/public/cron/autopilot',
-  path: '/api/public/cron/autopilot',
+const SitesIdRoute = SitesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SitesRoute,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/settings/integrations',
+  path: '/settings/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
-  id: '/api/public/cron/crawl',
-  path: '/api/public/cron/crawl',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicCronImagesRoute = ApiPublicCronImagesRouteImport.update({
-  id: '/api/public/cron/images',
-  path: '/api/public/cron/images',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicCronMaterializeRoute =
-  ApiPublicCronMaterializeRouteImport.update({
-    id: '/api/public/cron/materialize',
-    path: '/api/public/cron/materialize',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicCronPinterestTokenRefreshRoute =
-  ApiPublicCronPinterestTokenRefreshRouteImport.update({
-    id: '/api/public/cron/pinterest-token-refresh',
-    path: '/api/public/cron/pinterest-token-refresh',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicCronPublishRoute = ApiPublicCronPublishRouteImport.update({
-  id: '/api/public/cron/publish',
-  path: '/api/public/cron/publish',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicCronSerpRoute = ApiPublicCronSerpRouteImport.update({
-  id: '/api/public/cron/serp',
-  path: '/api/public/cron/serp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicCronTierCheckRoute = ApiPublicCronTierCheckRouteImport.update({
-  id: '/api/public/cron/tier-check',
-  path: '/api/public/cron/tier-check',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicGoogleCallbackRoute = ApiPublicGoogleCallbackRouteImport.update({
-  id: '/api/public/google/callback',
-  path: '/api/public/google/callback',
+const PagesIdRoute = PagesIdRouteImport.update({
+  id: '/pages/$id',
+  path: '/pages/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicPinterestCallbackRoute =
@@ -205,6 +158,53 @@ const ApiPublicPinterestCallbackRoute =
     path: '/api/public/pinterest/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicGoogleCallbackRoute = ApiPublicGoogleCallbackRouteImport.update({
+  id: '/api/public/google/callback',
+  path: '/api/public/google/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronTierCheckRoute = ApiPublicCronTierCheckRouteImport.update({
+  id: '/api/public/cron/tier-check',
+  path: '/api/public/cron/tier-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronSerpRoute = ApiPublicCronSerpRouteImport.update({
+  id: '/api/public/cron/serp',
+  path: '/api/public/cron/serp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronPublishRoute = ApiPublicCronPublishRouteImport.update({
+  id: '/api/public/cron/publish',
+  path: '/api/public/cron/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronPinterestTokenRefreshRoute =
+  ApiPublicCronPinterestTokenRefreshRouteImport.update({
+    id: '/api/public/cron/pinterest-token-refresh',
+    path: '/api/public/cron/pinterest-token-refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicCronMaterializeRoute =
+  ApiPublicCronMaterializeRouteImport.update({
+    id: '/api/public/cron/materialize',
+    path: '/api/public/cron/materialize',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicCronImagesRoute = ApiPublicCronImagesRouteImport.update({
+  id: '/api/public/cron/images',
+  path: '/api/public/cron/images',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronCrawlRoute = ApiPublicCronCrawlRouteImport.update({
+  id: '/api/public/cron/crawl',
+  path: '/api/public/cron/crawl',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicCronAutopilotRoute = ApiPublicCronAutopilotRouteImport.update({
+  id: '/api/public/cron/autopilot',
+  path: '/api/public/cron/autopilot',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -446,102 +446,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autopilot': {
-      id: '/autopilot'
-      path: '/autopilot'
-      fullPath: '/autopilot'
-      preLoaderRoute: typeof AutopilotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/boards': {
-      id: '/boards'
-      path: '/boards'
-      fullPath: '/boards'
-      preLoaderRoute: typeof BoardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/insights': {
-      id: '/insights'
-      path: '/insights'
-      fullPath: '/insights'
-      preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/keywords': {
-      id: '/keywords'
-      path: '/keywords'
-      fullPath: '/keywords'
-      preLoaderRoute: typeof KeywordsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/learn': {
-      id: '/learn'
-      path: '/learn'
-      fullPath: '/learn'
-      preLoaderRoute: typeof LearnRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/logs': {
-      id: '/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof LogsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins': {
-      id: '/pins'
-      path: '/pins'
-      fullPath: '/pins'
-      preLoaderRoute: typeof PinsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule': {
-      id: '/schedule'
-      path: '/schedule'
-      fullPath: '/schedule'
-      preLoaderRoute: typeof ScheduleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sitemap.xml': {
-      id: '/sitemap.xml'
-      path: '/sitemap.xml'
-      fullPath: '/sitemap.xml'
-      preLoaderRoute: typeof SitemapDotxmlRouteImport
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sites': {
@@ -551,32 +460,102 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/pages/': {
-      id: '/pages/'
-      path: '/pages'
-      fullPath: '/pages/'
-      preLoaderRoute: typeof PagesIndexRouteImport
+    '/schedule': {
+      id: '/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof ScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/pages/$id': {
-      id: '/pages/$id'
-      path: '/pages/$id'
-      fullPath: '/pages/$id'
-      preLoaderRoute: typeof PagesIdRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/integrations': {
-      id: '/settings/integrations'
-      path: '/settings/integrations'
-      fullPath: '/settings/integrations'
-      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+    '/pins': {
+      id: '/pins'
+      path: '/pins'
+      fullPath: '/pins'
+      preLoaderRoute: typeof PinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs': {
+      id: '/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/keywords': {
+      id: '/keywords'
+      path: '/keywords'
+      fullPath: '/keywords'
+      preLoaderRoute: typeof KeywordsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/insights': {
+      id: '/insights'
+      path: '/insights'
+      fullPath: '/insights'
+      preLoaderRoute: typeof InsightsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/boards': {
+      id: '/boards'
+      path: '/boards'
+      fullPath: '/boards'
+      preLoaderRoute: typeof BoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autopilot': {
+      id: '/autopilot'
+      path: '/autopilot'
+      fullPath: '/autopilot'
+      preLoaderRoute: typeof AutopilotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sites/': {
@@ -586,12 +565,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesIndexRouteImport
       parentRoute: typeof SitesRoute
     }
-    '/sites/$id': {
-      id: '/sites/$id'
-      path: '/$id'
-      fullPath: '/sites/$id'
-      preLoaderRoute: typeof SitesIdRouteImport
-      parentRoute: typeof SitesRoute
+    '/pages/': {
+      id: '/pages/'
+      path: '/pages'
+      fullPath: '/pages/'
+      preLoaderRoute: typeof PagesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/sites/style-setup': {
       id: '/sites/style-setup'
@@ -600,60 +579,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesStyleSetupRouteImport
       parentRoute: typeof SitesRoute
     }
-    '/api/public/cron/autopilot': {
-      id: '/api/public/cron/autopilot'
-      path: '/api/public/cron/autopilot'
-      fullPath: '/api/public/cron/autopilot'
-      preLoaderRoute: typeof ApiPublicCronAutopilotRouteImport
+    '/sites/$id': {
+      id: '/sites/$id'
+      path: '/$id'
+      fullPath: '/sites/$id'
+      preLoaderRoute: typeof SitesIdRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/settings/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/cron/crawl': {
-      id: '/api/public/cron/crawl'
-      path: '/api/public/cron/crawl'
-      fullPath: '/api/public/cron/crawl'
-      preLoaderRoute: typeof ApiPublicCronCrawlRouteImport
+    '/pages/$id': {
+      id: '/pages/$id'
+      path: '/pages/$id'
+      fullPath: '/pages/$id'
+      preLoaderRoute: typeof PagesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/cron/images': {
-      id: '/api/public/cron/images'
-      path: '/api/public/cron/images'
-      fullPath: '/api/public/cron/images'
-      preLoaderRoute: typeof ApiPublicCronImagesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/materialize': {
-      id: '/api/public/cron/materialize'
-      path: '/api/public/cron/materialize'
-      fullPath: '/api/public/cron/materialize'
-      preLoaderRoute: typeof ApiPublicCronMaterializeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/pinterest-token-refresh': {
-      id: '/api/public/cron/pinterest-token-refresh'
-      path: '/api/public/cron/pinterest-token-refresh'
-      fullPath: '/api/public/cron/pinterest-token-refresh'
-      preLoaderRoute: typeof ApiPublicCronPinterestTokenRefreshRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/publish': {
-      id: '/api/public/cron/publish'
-      path: '/api/public/cron/publish'
-      fullPath: '/api/public/cron/publish'
-      preLoaderRoute: typeof ApiPublicCronPublishRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/serp': {
-      id: '/api/public/cron/serp'
-      path: '/api/public/cron/serp'
-      fullPath: '/api/public/cron/serp'
-      preLoaderRoute: typeof ApiPublicCronSerpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/cron/tier-check': {
-      id: '/api/public/cron/tier-check'
-      path: '/api/public/cron/tier-check'
-      fullPath: '/api/public/cron/tier-check'
-      preLoaderRoute: typeof ApiPublicCronTierCheckRouteImport
+    '/api/public/pinterest/callback': {
+      id: '/api/public/pinterest/callback'
+      path: '/api/public/pinterest/callback'
+      fullPath: '/api/public/pinterest/callback'
+      preLoaderRoute: typeof ApiPublicPinterestCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/google/callback': {
@@ -663,11 +614,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGoogleCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/pinterest/callback': {
-      id: '/api/public/pinterest/callback'
-      path: '/api/public/pinterest/callback'
-      fullPath: '/api/public/pinterest/callback'
-      preLoaderRoute: typeof ApiPublicPinterestCallbackRouteImport
+    '/api/public/cron/tier-check': {
+      id: '/api/public/cron/tier-check'
+      path: '/api/public/cron/tier-check'
+      fullPath: '/api/public/cron/tier-check'
+      preLoaderRoute: typeof ApiPublicCronTierCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/serp': {
+      id: '/api/public/cron/serp'
+      path: '/api/public/cron/serp'
+      fullPath: '/api/public/cron/serp'
+      preLoaderRoute: typeof ApiPublicCronSerpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/publish': {
+      id: '/api/public/cron/publish'
+      path: '/api/public/cron/publish'
+      fullPath: '/api/public/cron/publish'
+      preLoaderRoute: typeof ApiPublicCronPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/pinterest-token-refresh': {
+      id: '/api/public/cron/pinterest-token-refresh'
+      path: '/api/public/cron/pinterest-token-refresh'
+      fullPath: '/api/public/cron/pinterest-token-refresh'
+      preLoaderRoute: typeof ApiPublicCronPinterestTokenRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/materialize': {
+      id: '/api/public/cron/materialize'
+      path: '/api/public/cron/materialize'
+      fullPath: '/api/public/cron/materialize'
+      preLoaderRoute: typeof ApiPublicCronMaterializeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/images': {
+      id: '/api/public/cron/images'
+      path: '/api/public/cron/images'
+      fullPath: '/api/public/cron/images'
+      preLoaderRoute: typeof ApiPublicCronImagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/crawl': {
+      id: '/api/public/cron/crawl'
+      path: '/api/public/cron/crawl'
+      fullPath: '/api/public/cron/crawl'
+      preLoaderRoute: typeof ApiPublicCronCrawlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cron/autopilot': {
+      id: '/api/public/cron/autopilot'
+      path: '/api/public/cron/autopilot'
+      fullPath: '/api/public/cron/autopilot'
+      preLoaderRoute: typeof ApiPublicCronAutopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

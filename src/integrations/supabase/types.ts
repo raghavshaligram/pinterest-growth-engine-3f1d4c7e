@@ -77,6 +77,42 @@ export type Database = {
         }
         Relationships: []
       }
+      account_provider_defaults: {
+        Row: {
+          default_copy_connection_id: string | null
+          default_image_connection_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          default_copy_connection_id?: string | null
+          default_image_connection_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          default_copy_connection_id?: string | null
+          default_image_connection_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_provider_defaults_default_copy_connection_id_fkey"
+            columns: ["default_copy_connection_id"]
+            isOneToOne: false
+            referencedRelation: "api_key_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_provider_defaults_default_image_connection_id_fkey"
+            columns: ["default_image_connection_id"]
+            isOneToOne: false
+            referencedRelation: "api_key_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_publishing_profiles: {
         Row: {
           cap_mode: string
@@ -119,27 +155,6 @@ export type Database = {
         }
         Relationships: []
       }
-      account_provider_defaults: {
-        Row: {
-          default_copy_connection_id: string | null
-          default_image_connection_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          default_copy_connection_id?: string | null
-          default_image_connection_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          default_copy_connection_id?: string | null
-          default_image_connection_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       api_key_connections: {
         Row: {
           config_ciphertext: string
@@ -176,6 +191,75 @@ export type Database = {
           status?: Database["public"]["Enums"]["integration_status"]
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      autopilot_plan: {
+        Row: {
+          brief_id: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          page_id: string
+          plan_date: string
+          status: string
+          template_id: string | null
+          theme_id: string | null
+          user_id: string
+        }
+        Insert: {
+          brief_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          page_id: string
+          plan_date: string
+          status?: string
+          template_id?: string | null
+          theme_id?: string | null
+          user_id: string
+        }
+        Update: {
+          brief_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          page_id?: string
+          plan_date?: string
+          status?: string
+          template_id?: string | null
+          theme_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "autopilot_plan_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "pin_briefs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "autopilot_plan_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      autopilot_settings: {
+        Row: {
+          key: string
+          value: string
+        }
+        Insert: {
+          key: string
+          value: string
+        }
+        Update: {
+          key?: string
+          value?: string
         }
         Relationships: []
       }
@@ -278,6 +362,7 @@ export type Database = {
           id: string
           last_error: string | null
           last_used_at: string | null
+          pinterest_migrated_at: string | null
           provider: Database["public"]["Enums"]["integration_provider"]
           status: Database["public"]["Enums"]["integration_status"]
           updated_at: string
@@ -289,6 +374,7 @@ export type Database = {
           id?: string
           last_error?: string | null
           last_used_at?: string | null
+          pinterest_migrated_at?: string | null
           provider: Database["public"]["Enums"]["integration_provider"]
           status?: Database["public"]["Enums"]["integration_status"]
           updated_at?: string
@@ -300,6 +386,7 @@ export type Database = {
           id?: string
           last_error?: string | null
           last_used_at?: string | null
+          pinterest_migrated_at?: string | null
           provider?: Database["public"]["Enums"]["integration_provider"]
           status?: Database["public"]["Enums"]["integration_status"]
           updated_at?: string
@@ -592,36 +679,42 @@ export type Database = {
       pinterest_connections: {
         Row: {
           connected_at: string
+          environment: string
           id: string
           label: string
           pinterest_username: string | null
           publish_mode: string
           refresh_token_expires_at: string | null
           token_ciphertext: string
+          token_source: string
           updated_at: string
           user_id: string
           webhook_url: string | null
         }
         Insert: {
           connected_at?: string
+          environment?: string
           id?: string
           label?: string
           pinterest_username?: string | null
           publish_mode?: string
           refresh_token_expires_at?: string | null
           token_ciphertext: string
+          token_source?: string
           updated_at?: string
           user_id: string
           webhook_url?: string | null
         }
         Update: {
           connected_at?: string
+          environment?: string
           id?: string
           label?: string
           pinterest_username?: string | null
           publish_mode?: string
           refresh_token_expires_at?: string | null
           token_ciphertext?: string
+          token_source?: string
           updated_at?: string
           user_id?: string
           webhook_url?: string | null
@@ -805,14 +898,19 @@ export type Database = {
           brand_font: string | null
           brand_name: string | null
           brand_notes: string | null
+          copy_connection_override_id: string | null
           created_at: string
+          display_mode: string
           ga4_property_id: string | null
           ga4_property_label: string | null
-          image_connection_override_id: string | null
-          copy_connection_override_id: string | null
           google_connection_id: string | null
           id: string
+          image_connection_override_id: string | null
+          logo_placement: string
+          logo_url: string | null
+          name_mode: string
           pinterest_connection_id: string | null
+          pinterest_hashtags_enabled: boolean
           recent_styles: Json
           settings: Json
           site_type: Database["public"]["Enums"]["site_type"]
@@ -831,14 +929,19 @@ export type Database = {
           brand_font?: string | null
           brand_name?: string | null
           brand_notes?: string | null
+          copy_connection_override_id?: string | null
           created_at?: string
+          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
-          image_connection_override_id?: string | null
-          copy_connection_override_id?: string | null
           google_connection_id?: string | null
           id?: string
+          image_connection_override_id?: string | null
+          logo_placement?: string
+          logo_url?: string | null
+          name_mode?: string
           pinterest_connection_id?: string | null
+          pinterest_hashtags_enabled?: boolean
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
@@ -857,14 +960,19 @@ export type Database = {
           brand_font?: string | null
           brand_name?: string | null
           brand_notes?: string | null
+          copy_connection_override_id?: string | null
           created_at?: string
+          display_mode?: string
           ga4_property_id?: string | null
           ga4_property_label?: string | null
-          image_connection_override_id?: string | null
-          copy_connection_override_id?: string | null
           google_connection_id?: string | null
           id?: string
+          image_connection_override_id?: string | null
+          logo_placement?: string
+          logo_url?: string | null
+          name_mode?: string
           pinterest_connection_id?: string | null
+          pinterest_hashtags_enabled?: boolean
           recent_styles?: Json
           settings?: Json
           site_type?: Database["public"]["Enums"]["site_type"]
@@ -879,10 +987,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "sites_copy_connection_override_id_fkey"
+            columns: ["copy_connection_override_id"]
+            isOneToOne: false
+            referencedRelation: "api_key_connections"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sites_google_connection_id_fkey"
             columns: ["google_connection_id"]
             isOneToOne: false
             referencedRelation: "google_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sites_image_connection_override_id_fkey"
+            columns: ["image_connection_override_id"]
+            isOneToOne: false
+            referencedRelation: "api_key_connections"
             referencedColumns: ["id"]
           },
           {
@@ -899,7 +1021,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      autopilot_call: { Args: { p_path: string }; Returns: undefined }
     }
     Enums: {
       brief_status:
@@ -909,7 +1031,17 @@ export type Database = {
         | "scheduled"
         | "archived"
         | "failed"
-      integration_provider: "openai" | "replicate" | "apify" | "pinterest"
+      integration_provider:
+        | "openai"
+        | "replicate"
+        | "apify"
+        | "pinterest"
+        | "fal"
+        | "gemini"
+        | "ideogram"
+        | "recraft"
+        | "stability"
+        | "anthropic"
       integration_status: "unconfigured" | "ok" | "error"
       job_kind:
         | "crawl"
@@ -945,12 +1077,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -974,11 +1106,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -999,11 +1131,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1024,11 +1156,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1041,11 +1173,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1065,7 +1197,18 @@ export const Constants = {
         "archived",
         "failed",
       ],
-      integration_provider: ["openai", "replicate", "apify", "pinterest"],
+      integration_provider: [
+        "openai",
+        "replicate",
+        "apify",
+        "pinterest",
+        "fal",
+        "gemini",
+        "ideogram",
+        "recraft",
+        "stability",
+        "anthropic",
+      ],
       integration_status: ["unconfigured", "ok", "error"],
       job_kind: [
         "crawl",
