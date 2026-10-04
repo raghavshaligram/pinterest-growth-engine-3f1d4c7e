@@ -215,9 +215,16 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
         if (stage === "queue") {
           const horizon = new Date(Date.now() + HORIZON_DAYS * 24 * 3600 * 1000).toISOString();
           const out = await forEachUser(async (uid) => {
+            // Only pins that belong to the autopilot plan are queued. Drafts made by hand (or by an older run) are
+            // left alone: promoting them is how a backlog could be published all at once.
+            const { data: planned } = await planTable(supabaseAdmin).select("brief_id")
+              .eq("user_id", uid).not("brief_id", "is", null);
+            const briefIds = ((planned ?? []) as { brief_id: string }[]).map((r) => r.brief_id);
+            if (!briefIds.length) return { queued: 0, reason: "no planned pins" };
             const { data, error } = await supabaseAdmin
               .from("scheduled_pins").update({ status: "queued" })
-              .eq("user_id", uid).eq("status", "draft").lte("scheduled_at", horizon).select("id");
+              .eq("user_id", uid).eq("status", "draft").lte("scheduled_at", horizon)
+              .in("brief_id", briefIds).select("id");
             if (error) throw error;
             return { queued: data?.length ?? 0 };
           });

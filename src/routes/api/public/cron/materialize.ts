@@ -50,7 +50,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           const { tier, limits } = effective;
 
           const { data: boards } = await supabaseAdmin
-            .from("boards").select("id, pinterest_connection_id, pinterest_board_id").eq("user_id", uid);
+            .from("boards").select("id, name, description, category, keywords, topics, pinterest_connection_id, pinterest_board_id").eq("user_id", uid);
           if (!boards?.length) return { scheduled: 0, reason: "no boards" };
 
           // Map each site to the Pinterest connection it actually
@@ -84,6 +84,30 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             scopedBoardIdsCache.set(connectionId, combined);
             return combined;
           }
+          // Topic match: how well a board fits a page, from the words in the board's name, description, category and
+          // keywords against the page's topic, keywords and category. Best match first; the rotation below only
+          // decides between boards that fit equally well (or not at all).
+          const STOP = new Set(["the","and","for","with","how","what","your","you","are","can","from","that","this","guide","tips","ideas","best","calculator"]);
+          const words = (...parts: (string | string[] | null | undefined)[]) => new Set(
+            parts.flat().filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)),
+          );
+          const stem = (w: string) => w.replace(/(ing|es|s)$/, "");
+          const boardWords = new Map(boards.map((b) => {
+            const r = b as unknown as { name?: string; description?: string | null; category?: string | null; keywords?: string[]; topics?: string[] };
+            return [b.id, new Set([...words(r.name, r.description, r.category, r.keywords, r.topics)].map(stem))] as const;
+          }));
+          function rankBoards(ids: string[], analysis: unknown): string[] {
+            const a = (analysis ?? {}) as { topic?: string; primary_keyword?: string; secondary_keywords?: string[]; category?: string };
+            const pw = new Set([...words(a.topic, a.primary_keyword, a.secondary_keywords, a.category)].map(stem));
+            if (!pw.size) return ids;
+            const scored = ids.map((id, i) => {
+              let n = 0;
+              for (const w of boardWords.get(id) ?? []) if (pw.has(w)) n++;
+              return { id, n, i };
+            });
+            return scored.sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.id);
+          }
+
           // Round-robin cursor kept per eligible board set (keyed by
           // connection, "universal" for unconnected sites) rather than
           // one shared index -- each site's own board pool spreads
@@ -109,7 +133,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           type ReadyBrief = {
             id: string;
             page_id: string | null;
-            pages: { url?: string; site_id?: string; created_at?: string; last_crawled_at?: string | null } | null;
+            pages: { url?: string; site_id?: string; created_at?: string; last_crawled_at?: string | null; analysis?: unknown } | null;
             pin_images: { id: string }[] | null;
           };
           // Autopilot calendar: when the user has a plan (autopilot_plan), only the briefs planned for the next days are
@@ -130,7 +154,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           }
           let briefQuery = supabaseAdmin
             .from("pin_briefs")
-            .select("id, page_id, pages(url, site_id, created_at, last_crawled_at), pin_images(id, storage_path, prompt_hash)")
+            .select("id, page_id, pages(url, site_id, created_at, last_crawled_at, analysis), pin_images(id, storage_path, prompt_hash)")
             .eq("user_id", uid)
             .eq("status", "ready")
             .order("created_at", { ascending: true })
@@ -212,7 +236,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             if (!img || !pageUrl) continue;
             if (state.usedImageIds.has(img.id)) continue;
 
-            const boardIds = boardIdsForSite(siteId);
+            const boardIds = rankBoards(boardIdsForSite(siteId), brief.pages?.analysis);
             if (!boardIds.length) {
               // Recorded and logged, not swallowed. Unattended runs are
               // exactly where a silently-skipped site stays broken
@@ -233,7 +257,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
               slot++;
               if (slot >= slotsPerDay) { slot = 0; day++; }
 
-              const found = findSafeBoard(state, limits, { when, pageId, pageUrl, boardIds, boardIdx });
+              const found = findSafeBoard(state, limits, { when, pageId, pageUrl, boardIds, boardIdx: 0 });
               if (!found) continue;
 
               scheduled.push({
