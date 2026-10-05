@@ -169,7 +169,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         // locally-minted "openai:<timestamp>" id, not a real prediction
         // id -- the actual provider is recorded in meta.provider below).
         replicate_prediction_id: providerPredictionId,
-        meta: { model: modelUsed, provider, content_type: contentType },
+        meta: { model: modelUsed, provider, content_type: contentType, visual_variant: (await import("./briefs.functions")).pickVisualVariant(brief.title) },
       });
       await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
       await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);

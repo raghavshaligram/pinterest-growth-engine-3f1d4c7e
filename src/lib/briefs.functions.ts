@@ -197,7 +197,7 @@ const SHAPE_REGISTRY: ShapeRegistry = {
     definition_card: {
       visual_description: `THEME FAMILY: DEFINITION CARD PIN. Dictionary/glossary-entry layout: the term itself set in large bold type as a headword at the top, directly followed by one clear definition block in smaller body-weight type immediately below it -- a two-tier text hierarchy, term then definition, not a single unbroken statement -- plus exactly one supporting icon positioned to the side of the definition block. Clean reference-card feel, explanatory in tone rather than a punchy claim.`,
       default_middle_prompt: (topic) =>
-        `A dictionary-style definition card for ${topic}: the term as a large bold headword, one clear definition sentence in smaller body type directly below it, and exactly one supporting icon beside the definition -- minimal text overlay beyond the headword and definition themselves, let the two-tier hierarchy carry the explanation. No card grid, no numbered list.`,
+        `A dictionary-style definition card for ${topic}: the term as a large bold headword, one very short definition line (8 words at most) in smaller body type directly below it, and exactly one supporting icon beside the definition -- minimal text overlay beyond the headword and definition themselves, let the two-tier hierarchy carry the explanation. No card grid, no numbered list.`,
       typography_direction: "bold serif headword over clean sans-serif definition body text",
       content_fit: "best for glossary/definition-style content explaining what a term means.",
     },
@@ -386,6 +386,18 @@ export function shortHeadline(title: string): string {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), 30)).trim();
 }
 
+// A/B test of the pin's look, decided per title so a re-render keeps the same look:
+//   photo   - a real-looking photograph fills the pin, short text sits on it (what Pinterest's own guidance favours:
+//             authentic, relatable imagery with a short, large headline);
+//   graphic - the template's designed layout (cards, rows, steps), but with a hard cap on words.
+// image-worker stores the variant in pin_images.meta so saves and clicks can be compared per variant later.
+export type VisualVariant = "photo" | "graphic";
+export function pickVisualVariant(title: string): VisualVariant {
+  let h = 0;
+  for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % 2 === 0 ? "photo" : "graphic";
+}
+
 export function buildThemedPinPrompt(input: {
   title: string;
   cta?: string | null;
@@ -423,6 +435,8 @@ export function buildThemedPinPrompt(input: {
    */
   visualThemeHint?: string | null;
   trendSignal?: string | null;
+  /** Forces a look; by default it is chosen per title (see pickVisualVariant). */
+  variant?: VisualVariant | null;
 }) {
   // general_content, not garden_content -- that's the DB trigger's own
   // neutral default for website sites now (tg_sites_default_vertical),
@@ -431,6 +445,7 @@ export function buildThemedPinPrompt(input: {
   const vertical: SiteVertical = input.vertical ?? "general_content";
   const generationMode: GenerationMode = "illustrated";
   const templateId = input.templateId ?? resolveTemplateId(input.style);
+  const variant: VisualVariant = input.variant ?? pickVisualVariant(input.title);
 
   // Shape (compositional mechanism) and flavor (genre/palette/
   // typography-fallback) are resolved independently now -- any shape is
@@ -473,6 +488,8 @@ export function buildThemedPinPrompt(input: {
 
   return `Create a vertical 2:3 Pinterest pin, 1000x1500. STRICTLY FOLLOW THIS LOCKED THEME — do not invent a new layout.
 
+${variant === "photo" ? `LOOK: PHOTO-LED PIN (this overrides any "illustrated", "no photorealism" or "icon" wording in the composition guidance below). The main visual is ONE realistic, natural-light photograph of the real subject (${topic}) in a believable garden, kitchen-garden, soil or plant setting, shot like a good home-gardening magazine photo: a clear focal subject, shallow depth of field, rich natural colour. It fills the whole canvas edge to edge. The headline sits on a solid or darkened band at the top, and any list items, steps or labels are a few short words in clean pills or tags laid over the photo, not separate illustrated cards. No cartoon art, no clip-art, no flat vector icons.` : `LOOK: DESIGNED GRAPHIC PIN. Follow the template layout below, but with bold, saturated, high-contrast colour (not pale pastels) and very little text. Any illustration is bold, simple and large, never tiny clip-art in a corner.`}
+
 COMPOSITION GUIDANCE (internal art direction only -- describes the intended visual style and layout; never render this description, or any part of it, as literal text on the pin): ${shape.visual_description}
 
 GLOBAL BRAND RULES:
@@ -482,14 +499,16 @@ GLOBAL BRAND RULES:
 - Keep the entire design clean, bright, Pinterest-native${genreSuffix}.
 
 TEXT AND LEGIBILITY (the image model must render text exactly):
-- Render ONLY these strings as text: the headline, the call to action, and the website name. No other words, labels, numbers or captions anywhere.
+- TEXT BUDGET: at most 12 words on the whole pin. No sentences, no paragraphs, no definitions or explanations printed on the image; the page explains it, the pin only makes people want to click. List items, steps and labels are 1 to 3 words each.
+- Render ONLY these strings as text (plus the short 1 to 3 word labels the layout needs): the headline, the call to action, and the website name. No other words, numbers or captions anywhere.
+- Use a large, bold, simple sans-serif for the headline (no script or decorative fonts). It must stay readable when the pin is shrunk to a phone-feed thumbnail.
 - Spell every word exactly as given. The headline is the largest element, bold, high contrast against a solid or lightly tinted band, readable at thumbnail size on a phone, at most 3 short lines.
 - One clear focal point in the main visual, uncluttered, real-looking subject matter and natural light; no stock-photo clichés, no hands with extra fingers, no garbled text on signs, labels or packaging.
 
 LOCKED LAYOUT (top to bottom, in this exact order -- these zone descriptions are internal composition guidance only; never render any numbers, measurements, fractions, or percentages anywhere in the image itself):
 - A compact title band at the very top. Place this exact headline text, uppercase when it suits the theme: "${headline}".
 - Below it, the main themed visual, filling the large majority of the canvas: ${middle}
-- A slim CTA band directly below the main visual and directly above the URL bar. This is a MANDATORY, non-optional zone -- unlike the main visual, it must render identically regardless of how busy or photo-heavy that visual is. It is a solid-color pill or full-width bar (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
+- A compact rounded CTA pill (small, not a giant button) near the bottom, above the URL bar, sized so the headline stays the dominant text. This is a MANDATORY, non-optional zone -- it must render identically regardless of how busy or photo-heavy the main visual is. It is a solid-color pill (never floating text with no background behind it, and never a color swatch/stripe), using a palette color with strong, deliberate contrast against its own background so the text reads clearly even at small pin-thumbnail size, containing this exact CTA text: "${cta}".
 - A thin, full-width solid brand-color URL bar flush to the very bottom edge, containing only centered light-colored small sans text: "${input.brandHost}".
 - No logo, no wordmark, no tagline, no social handle, no extra URL, no watermark.
 
@@ -560,7 +579,10 @@ export async function generateBriefsCore(
     // not "Try It Free". Model can override per-brief in its returned intent.
     const haystack = `${page.url} ${page.title ?? ""} ${analysis.topic ?? ""} ${analysis.category ?? ""}`.toLowerCase();
     const defaultIntent: "informational" | "tool" | "list" | "commercial" =
-      /calculator|calc|\/tool|estimator/.test(haystack) ? "tool"
+      // A site-wide title suffix such as "HarvestMath: garden calculators" must not make every blog post a "tool":
+      // blog posts are informational, only calculator pages (by URL) get the tool CTAs.
+      /\/calculators\/|\/tools?\/|estimator/.test(page.url.toLowerCase()) ? "tool"
+      : /\/blog\//.test(page.url.toLowerCase()) && !/\bvs\b|versus|compare|comparison|best\s+\d|top\s+\d/.test(haystack) ? "informational"
       : /\bvs\b|versus|compare|comparison|best\s+\d|top\s+\d|listicle/.test(haystack) ? "list"
       : /pricing|signup|sign-up|trial|buy|checkout|plans/.test(haystack) ? "commercial"
       : "informational";

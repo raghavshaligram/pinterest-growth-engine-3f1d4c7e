@@ -84,8 +84,19 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
             const rows = (rowsRaw ?? []) as PlanRow[];
             const perDay = await pinsPerDay(supabaseAdmin);
             // One setting drives everything: the account's daily cap follows it.
-            await supabaseAdmin.from("account_publishing_profiles")
-              .update({ cap_mode: "manual", manual_cap: perDay, current_daily_cap: perDay }).eq("user_id", uid);
+            // The scheduler skips accounts that never completed the onboarding prompt (no profile row). Autopilot
+            // creates a "warming" profile when there is none, so a hands-off setup does not stall on that prompt.
+            const { data: profile } = await supabaseAdmin
+              .from("account_publishing_profiles").select("user_id").eq("user_id", uid).maybeSingle();
+            if (profile) {
+              await supabaseAdmin.from("account_publishing_profiles")
+                .update({ cap_mode: "manual", manual_cap: perDay, current_daily_cap: perDay }).eq("user_id", uid);
+            } else {
+              await supabaseAdmin.from("account_publishing_profiles").insert({
+                user_id: uid, self_reported_age_bucket: "warming", reconciled_tier: "warming",
+                cap_mode: "manual", manual_cap: perDay, current_daily_cap: perDay,
+              });
+            }
             // Fewer pins per day than before: drop future, not-yet-written slots above the new number.
             await planTable(supabaseAdmin).delete().eq("user_id", uid).gt("slot", perDay - 1)
               .gte("plan_date", dayStr(new Date())).is("brief_id", null);
