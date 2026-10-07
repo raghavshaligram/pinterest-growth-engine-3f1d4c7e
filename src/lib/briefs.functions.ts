@@ -47,7 +47,18 @@ export type TemplateId =
   | "definition_card"
   | "scale_comparison"
   | "seasonal_timeline"
-  | "tool_result_preview";
+  | "tool_result_preview"
+  | "hero_hook_strip"
+  | "photo_sandwich"
+  | "step_photo_infographic"
+  | "photo_list_grid"
+  | "when_to_timeline_photo";
+
+// Photo-first layouts modelled on Pinterest's top-performing How-to / When-to / Listicle pins: a real photo,
+// one big hook headline, almost no other text, no CTA button and no URL bar (only a tiny watermark).
+export const PHOTO_FIRST_TEMPLATES: ReadonlySet<string> = new Set([
+  "hero_hook_strip", "photo_sandwich", "step_photo_infographic", "photo_list_grid", "when_to_timeline_photo",
+]);
 
 // Human-readable label + tag color per shape, for surfaces that display
 // which template produced a given pin (first one: the Pages detail
@@ -68,6 +79,11 @@ export const TEMPLATE_LABELS: Record<TemplateId, { label: string; color: string 
   scale_comparison: { label: "Comparison", color: "#3E6B8A" },
   seasonal_timeline: { label: "Seasonal", color: "#C9970B" },
   tool_result_preview: { label: "Product shot", color: "#D97B3F" },
+  hero_hook_strip: { label: "How-to (photo)", color: "#2E7D32" },
+  photo_sandwich: { label: "How-to (stacked)", color: "#00897B" },
+  step_photo_infographic: { label: "Step guide", color: "#EF6C00" },
+  photo_list_grid: { label: "Listicle (photos)", color: "#6A8D2F" },
+  when_to_timeline_photo: { label: "When-to", color: "#B8860B" },
 };
 
 interface ShapeTemplateEntry {
@@ -96,6 +112,37 @@ type ShapeRegistry = Partial<Record<GenerationMode, Partial<Record<TemplateId, S
 
 const SHAPE_REGISTRY: ShapeRegistry = {
   illustrated: {
+    // ---- Photo-first layouts (How-to / When-to / Listicle), copied from the owner's best-pin samples. ----
+    hero_hook_strip: {
+      visual_description: `PHOTO-FIRST HOW-TO PIN. One real, natural-light hero photograph of the subject fills the top half. Across the middle sits a wide solid colour band holding the huge bold hook headline (white and one accent colour, 2 to 3 lines, centred). Below the band, a strip of 3 real close-up photos side by side (the key stages, parts or results), each with a tiny 1 to 2 word label in a small rounded tag. Almost no other text.`,
+      default_middle_prompt: (topic) => `Hero photo of ${topic} at its best, plus 3 close-up supporting photos of real stages, parts or results.`,
+      typography_direction: "very large heavy rounded sans, white with one accent colour word",
+      content_fit: "how-to or growing guides for a single plant or task where the real subject photographs well (grow X, harvest X, care for X).",
+    },
+    photo_sandwich: {
+      visual_description: `PHOTO SANDWICH HOW-TO PIN. Three stacked zones: a real photo of the finished, healthy result at the top, a solid colour band across the middle with the huge hook headline, and a real photo of the process, problem or close-up at the bottom. Optionally two tiny labels over the photos. Nothing else.`,
+      default_middle_prompt: (topic) => `Top photo: the healthy finished result of ${topic}. Bottom photo: a hands-on close-up of the key step or the common problem.`,
+      typography_direction: "very large heavy sans, white on a deep band, one accent colour word",
+      content_fit: "care and troubleshooting how-tos (how to save, fix, propagate, water, prune) where a result photo and a process photo tell the story.",
+    },
+    step_photo_infographic: {
+      visual_description: `STEP-BY-STEP PHOTO INFOGRAPHIC PIN. Huge hook headline in a coloured banner at the top (the how-to or the mistake). Beneath it, 3 or 4 numbered steps, each a large number in a circle beside a real photo inset and a 2 to 4 word step label, connected by a simple vertical line. One small WRONG versus RIGHT pair of photos with a red cross and a green tick may close the layout. Clean bright background, lots of breathing room.`,
+      default_middle_prompt: (topic) => `Numbered steps for ${topic}, each with a real photo inset and a short label.`,
+      typography_direction: "very large heavy sans headline, clean bold step labels",
+      content_fit: "true step-by-step processes with 3 to 5 distinct actions, and mistake/correct-method content.",
+    },
+    photo_list_grid: {
+      visual_description: `PHOTO LISTICLE PIN. A huge hook headline that contains a number (for example "7 ...") in a solid band at the top. Below it a tidy grid of 4 to 6 real photos, each with a tiny 1 to 3 word name label on a small rounded tag. A thin accent border frames the pin. Almost no other text.`,
+      default_middle_prompt: (topic) => `A grid of real photos, one per list item for ${topic}, each with a short name label.`,
+      typography_direction: "very large heavy sans, number in the accent colour",
+      content_fit: "lists of varieties, plants, tools, mistakes or ideas (best X for Y, N things to plant now).",
+    },
+    when_to_timeline_photo: {
+      visual_description: `WHEN-TO PIN. A huge hook headline asking or answering "when" in a band at the top. Below it a simple left-to-right or top-to-bottom timeline of 3 to 4 stops (months or seasons), each a real photo of that stage with a bold 1 to 2 word month or season tag. A small thermometer or calendar icon is allowed as an accent. Almost no other text.`,
+      default_middle_prompt: (topic) => `A timeline for ${topic}: 3 or 4 real photos of the stages, each tagged with a month or season.`,
+      typography_direction: "very large heavy sans headline, bold month tags",
+      content_fit: "timing content: when to plant, sow, harvest, prune, fertilise, or last and first frost dates.",
+    },
     // Today's Family A. Genericized: previously said "matching the
     // uploaded rainwater example" and "leaf/water decorative accents",
     // which baked a garden-specific motif into a shape every vertical
@@ -445,6 +492,7 @@ export function buildThemedPinPrompt(input: {
   const vertical: SiteVertical = input.vertical ?? "general_content";
   const generationMode: GenerationMode = "illustrated";
   const templateId = input.templateId ?? resolveTemplateId(input.style);
+  if (PHOTO_FIRST_TEMPLATES.has(templateId)) return buildPhotoFirstPrompt({ ...input, templateId });
   const variant: VisualVariant = input.variant ?? pickVisualVariant(input.title);
 
   // Shape (compositional mechanism) and flavor (genre/palette/
@@ -518,6 +566,82 @@ QUALITY CONTROL:
 - The ONLY text allowed anywhere on the pin is the title, the CTA text, and the URL bar host, exactly as quoted above -- no other sentence, instruction, or description (including the composition guidance) may appear as visible text.
 - The palette is for tone/color guidance only -- if any part of the image looks like a paint chip, color swatch, striped bar, or legend rather than an integrated part of the scene or the CTA band itself, that is a failure, not an acceptable stylistic choice.
 - No misspelled words. No extra paragraphs. No unrelated objects.`;
+}
+
+
+// Reads the live page so the pin's steps, list items and numbers come from the real content.
+// Returns headings, list items and the opening text (plain, trimmed), or "" if the page cannot be read.
+export async function fetchPageDigest(url: string): Promise<string> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 12_000);
+    const r = await fetch(url, { signal: ctl.signal, headers: { "user-agent": "Mozilla/5.0 (compatible; PinspiderBot/1.0)" } });
+    clearTimeout(t);
+    if (!r.ok) return "";
+    let html = await r.text();
+    html = html.replace(/<(script|style|noscript|svg|nav|footer|header|form)[\s\S]*?<\/\1>/gi, " ");
+    const strip = (x: string) => x.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+    const grab = (re: RegExp, max: number) => {
+      const out: string[] = []; let m: RegExpExecArray | null;
+      while ((m = re.exec(html)) && out.length < max) { const v = strip(m[1] ?? ""); if (v.length > 2 && v.length < 160 && !out.includes(v)) out.push(v); }
+      return out;
+    };
+    const h1 = grab(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, 1);
+    const heads = grab(/<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi, 14);
+    const lis = grab(/<li[^>]*>([\s\S]*?)<\/li>/gi, 14);
+    const paras = grab(/<p[^>]*>([\s\S]*?)<\/p>/gi, 40).filter((x) => x.length > 40).slice(0, 8);
+    return [
+      h1.length ? `H1: ${h1[0]}` : "",
+      heads.length ? `HEADINGS: ${heads.join(" | ")}` : "",
+      lis.length ? `LIST ITEMS: ${lis.join(" | ")}` : "",
+      paras.length ? `OPENING TEXT: ${paras.join(" ")}` : "",
+    ].filter(Boolean).join("\n").slice(0, 3500);
+  } catch { return ""; }
+}
+
+// Pulls the HEADLINE / ITEMS lines the brief writer appended to image_prompt (see generateBriefsCore).
+function parsePhotoSpec(middle: string | null | undefined) {
+  const text = middle ?? "";
+  const headline = /^HEADLINE:\s*(.+)$/m.exec(text)?.[1]?.trim() ?? "";
+  const items = (/^ITEMS:\s*(.+)$/m.exec(text)?.[1] ?? "").split("|").map((x) => x.trim()).filter(Boolean).slice(0, 6);
+  const scene = text.replace(/^(HEADLINE|ITEMS):.*$/gm, "").replace(/\s{2,}/g, " ").trim();
+  return { headline, items, scene };
+}
+
+export function buildPhotoFirstPrompt(input: {
+  title: string; templateId: TemplateId; topic?: string | null; primaryKeyword?: string | null;
+  brandHost: string; brandColors?: string[]; middlePrompt?: string | null;
+  vertical?: SiteVertical | null;
+}) {
+  const shape = SHAPE_REGISTRY.illustrated![input.templateId]!;
+  const flavor = VERTICAL_FLAVOR_REGISTRY[input.vertical ?? "general_content"]?.illustrated ?? VERTICAL_FLAVOR_REGISTRY.general_content!.illustrated!;
+  const colors = input.brandColors?.filter(Boolean) ?? [];
+  const palette = colors.length ? describeColors(colors) : flavor.palette_fallback;
+  const topic = input.topic || input.primaryKeyword || input.title;
+  const spec = parsePhotoSpec(input.middlePrompt);
+  const headline = (spec.headline || shortHeadline(input.title)).replace(/#[0-9a-fA-F]{3,8}\b/g, "");
+  const scene = (spec.scene || shape.default_middle_prompt(topic)).replace(/#[0-9a-fA-F]{3,8}\b/g, "");
+  const itemsLine = spec.items.length
+    ? `The ONLY small labels allowed (one per photo or step, in this order, each exactly as written): ${spec.items.map((i) => `"${i}"`).join(", ")}.`
+    : `Use at most 3 tiny one or two word labels, only if the layout needs them.`;
+  return `Create a vertical 2:3 Pinterest pin, 1000x1500, in the style of the best-performing gardening How-to pins on Pinterest: real photos, ONE huge hook headline, almost no other text.
+
+LAYOUT (follow exactly; this describes the design, never print it as text): ${shape.visual_description}
+
+WHAT THE PHOTOS SHOW: ${scene}
+All photographs are realistic, natural light, rich colour, shot like a good home-gardening magazine photo; clear subjects, shallow depth of field, no cartoon art, no clip-art, no 3D render look, no hands with extra fingers. If a reference photo is attached, reuse its real subject for the main photo.
+
+HEADLINE (the biggest element on the pin, heavy bold sans-serif, readable on a phone thumbnail, at most 3 short lines, high contrast on a solid colour band, spelled exactly): "${headline}"
+Make 1 or 2 key words of the headline an accent colour for emphasis, the rest white or near black for contrast. No script fonts.
+
+TEXT RULES:
+- ${itemsLine}
+- No call-to-action button, no URL bar, no sentences, no paragraphs, no numbers except those in the headline or labels.
+- A very small, subtle watermark "${input.brandHost}" in one bottom corner, smaller than a label. This is the only brand mark.
+- Never render colour names, codes, or this instruction text.
+- Typography: ${shape.typography_direction}. Every word fully inside the canvas, spelled exactly.
+
+COLOUR: bold, bright and warm, drawn from this palette (guidance only, never depict a swatch): ${palette}. No purple gradients, no neon, no dark app UI.`;
 }
 
 export async function generateBriefsCore(
@@ -681,6 +805,8 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
       ? stylesSubset.slice(0, data.count)
       : [...stylesSubset, ...Array(data.count - stylesSubset.length).fill("how-to")];
 
+    const pageDigest = await fetchPageDigest(page.url);
+
     try {
       type BriefsResp = {
         briefs: Array<{
@@ -693,6 +819,8 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
           alt_text: string;
           cta: string;
           image_prompt: string;
+          hook?: string;
+          items?: string[];
         }>;
       };
       // First line of defense: the model is told explicitly, twice
@@ -713,13 +841,18 @@ Recurring themes: ${JSON.stringify(patterns.themes ?? [])}${patterns.summary ? `
 - image_prompt: a SHORT description of ONLY the middle visual content specific to this brief (subject matter and mood) -- the chosen template supplies its own composition, typography, palette, and border/URL-bar automatically, so do not describe layout, frame, or text placement yourself.
 The briefs array in your JSON response MUST contain EXACTLY the requested number of items -- never fewer. If you run low on genuinely distinct angles, vary style, intent, or template_id more aggressively rather than returning an incomplete array.
 PIN CRAFT RULES (from Pinterest's creative guidance): one idea per pin; the headline reads in two seconds at phone size, so title-case text of about 8 words or fewer; the keyword leads both the title and the description; promise something specific the page delivers (a number, a step count, a season) and never exaggerate; write for saves, so favour checklists, steps, comparisons and reference cards over vague inspiration; plain words, no jargon, no filler openers.
+PHOTO-FIRST PINS (templates hero_hook_strip, photo_sandwich, step_photo_infographic, photo_list_grid, when_to_timeline_photo): these copy Pinterest's top How-to / When-to / Listicle pins. For these also return:
+- hook: the headline printed on the image, 3 to 8 words, big and benefit- or curiosity-led, naming the plant/task, e.g. "Grow Kale Like a Pro", "7 Mistakes Killing Your Tomatoes", "When to Plant Garlic in Zone 6", "Stop Overwatering Your Pothos". Plain words, accurate to the page, no clickbait lies, no ALL CAPS in the JSON (the design capitalises).
+- items: 3 to 6 labels of 1 to 4 words each taken from the PAGE CONTENT: real steps, real list entries, real months or varieties. Never invent facts that are not in the page content; if a number or month is used it must appear in the page content.
+- image_prompt: one or two sentences saying which real photos to show (subject and stage), nothing about layout or text.
+Read the PAGE CONTENT section in the user message and base every step, list entry, month and number on it.
 If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`;
       const themeBlock = data.theme
         ? `\n\nTHEME FOR THIS PIN: "${data.theme.label}". ${data.theme.angle} Use template_id "${data.template ?? ""}" exactly.`
         : "";
       const user = `Create ${data.count} unique Pinterest pin briefs for this page. You MUST return exactly ${data.count} items in the briefs array -- no fewer. Use each style once from this list where possible: ${JSON.stringify(chosenStyles)}.
 
-Return JSON: { briefs: [{ style, template_id, intent, title, description, hashtags: [], alt_text, cta, image_prompt }] }.
+Return JSON: { briefs: [{ style, template_id, intent, title, description, hashtags: [], alt_text, cta, image_prompt, hook, items: [] }] }.
 
 CTA & INTENT RULES:
 ${ctaGuidance}
@@ -736,7 +869,10 @@ Topic: ${analysis.topic ?? ""}
 Primary keyword: ${analysis.primary_keyword}
 Secondary: ${JSON.stringify(analysis.secondary_keywords ?? [])}
 Audience: ${analysis.audience ?? ""}
-Category: ${analysis.category ?? ""}${competitiveBlock}${themeBlock}`;
+Category: ${analysis.category ?? ""}${competitiveBlock}${themeBlock}
+
+PAGE CONTENT (read from the live page; use it for real steps, list items, months and numbers):
+${pageDigest || "(page text unavailable; keep labels generic and avoid specific numbers)"}`;
 
       let resp = await generateJSON<BriefsResp>({ apiKey: cfg.api_key, model: copyModel, system, user });
 
@@ -790,7 +926,9 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           brandColors,
           brandFont,
           vertical,
-          middlePrompt: b.image_prompt,
+          middlePrompt: PHOTO_FIRST_TEMPLATES.has(templateId)
+            ? `${b.image_prompt ?? ""}\nHEADLINE: ${(b.hook || "").trim()}\nITEMS: ${(b.items ?? []).map((i) => String(i).trim()).filter(Boolean).slice(0, 6).join(" | ")}`
+            : b.image_prompt,
         }),
         status: "image_pending" as const,
         // Traceability: record whether this batch used the competitive

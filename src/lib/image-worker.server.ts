@@ -97,7 +97,9 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       // classified into. Only legacy briefs generated before this
       // column existed have no stored value -- those fall back to the
       // narrower style-label regex inside buildThemedPinPrompt itself.
-      const themedPrompt = briefRow.image_prompt_edited_at
+      // Photo-first layouts store the finished prompt in image_prompt, so it is used as-is.
+      const { PHOTO_FIRST_TEMPLATES } = await import("./briefs.functions");
+      const themedPrompt = briefRow.image_prompt_edited_at || PHOTO_FIRST_TEMPLATES.has(briefRow.template_id ?? "")
         ? brief.image_prompt
         : buildThemedPinPrompt({
             title: brief.title,
@@ -131,15 +133,17 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
 
       // A real photo from the page, used as a visual reference (Nano Banana 2 only): the first image that is not
       // a logo, icon, avatar or vector graphic.
-      const referenceImageUrl = (() => {
+      const referenceImageUrls = (() => {
         const imgs = Array.isArray(page?.images) ? page!.images as { src?: string }[] : [];
+        const out: string[] = [];
         for (const im of imgs) {
           const src = im?.src ?? "";
           if (!/^https?:\/\//i.test(src)) continue;
           if (/\.(svg|ico|gif)(\?|$)|logo|icon|avatar|sprite|favicon|badge|button/i.test(src)) continue;
-          return src;
+          if (!out.includes(src)) out.push(src);
+          if (out.length >= 3) break;
         }
-        return null;
+        return out;
       })();
 
       const { renderPinImage } = await import("./pin-render.server");
@@ -147,7 +151,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         provider,
         prompt: themedPrompt,
         apiKey: resolved.apiKey,
-        referenceImageUrl,
+        referenceImageUrls,
       });
       const imageBytes = rendered.imageBytes;
       const contentType = rendered.contentType;
@@ -169,7 +173,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         // locally-minted "openai:<timestamp>" id, not a real prediction
         // id -- the actual provider is recorded in meta.provider below).
         replicate_prediction_id: providerPredictionId,
-        meta: { model: modelUsed, provider, content_type: contentType, visual_variant: (await import("./briefs.functions")).pickVisualVariant(brief.title) },
+        meta: { model: modelUsed, provider, content_type: contentType, visual_variant: PHOTO_FIRST_TEMPLATES.has(briefRow.template_id ?? "") ? "photo_first" : (await import("./briefs.functions")).pickVisualVariant(brief.title), template_id: briefRow.template_id ?? null, reference_images: referenceImageUrls.length },
       });
       await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
       await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);

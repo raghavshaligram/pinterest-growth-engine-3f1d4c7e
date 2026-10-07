@@ -23,52 +23,42 @@ export type PinTheme = {
 };
 
 export const PIN_THEMES: Record<string, PinTheme> = {
-  quick_answer: {
-    id: "quick_answer", label: "Quick answer", style: "quick-tip",
-    angle: "One direct question people search for, answered in a single memorable line. The pin states the question as the headline and promises the answer on the page. Specific beats vague.",
-    templates: { blog: ["definition_card", "quote_stat_card"], calculator: ["tool_result_preview", "definition_card"] },
+  how_to: {
+    id: "how_to", label: "How-to", style: "how-to",
+    angle: "A how-to pin for the task this page teaches. Real photos, one big hook headline naming the plant or task and the benefit (e.g. 'Grow Kale Like a Pro'). Labels are the page's real steps or stages.",
+    templates: { blog: ["hero_hook_strip", "photo_sandwich", "step_photo_infographic"], calculator: ["step_photo_infographic", "hero_hook_strip"] },
   },
   how_to_steps: {
     id: "how_to_steps", label: "Step by step", style: "how-to",
-    angle: "A short numbered how-to (3 to 5 steps) for the task this page helps with. The headline names the task and the number of steps. Save-worthy: someone should want to keep it for later.",
-    templates: { blog: ["step_by_step", "problem_solution_headline"], calculator: ["step_by_step", "tool_result_preview"] },
+    angle: "A numbered step guide (3 or 4 steps) with a real photo per step, using the page's own steps (for a calculator: measure, enter, read the result, then plant). Headline names the task and the payoff.",
+    templates: { blog: ["step_photo_infographic", "photo_sandwich"], calculator: ["step_photo_infographic"] },
   },
-  mistakes_myths: {
-    id: "mistakes_myths", label: "Mistakes and myths", style: "mistakes-to-avoid",
-    angle: "A common mistake or myth gardeners believe about this topic, set against what is actually true. Curiosity headline, no clickbait.",
-    templates: { blog: ["myth_vs_fact", "problem_solution_headline"], calculator: ["myth_vs_fact", "scale_comparison"] },
+  when_to: {
+    id: "when_to", label: "When-to", style: "seasonal",
+    angle: "A when-to pin: when to plant, sow, harvest, prune or feed for this topic, with 3 or 4 real months or seasons from the page. Headline starts with 'When to' or states the best time.",
+    templates: { blog: ["when_to_timeline_photo", "hero_hook_strip"], calculator: ["when_to_timeline_photo", "step_photo_infographic"] },
   },
-  tips_grid: {
-    id: "tips_grid", label: "Tips at a glance", style: "listicle",
-    angle: "A scannable list of 4 to 6 short tips or facts from the page. Headline carries the number and the keyword.",
-    templates: { blog: ["quick_tip_grid"], calculator: ["quick_tip_grid", "scale_comparison"] },
+  listicle: {
+    id: "listicle", label: "Listicle", style: "listicle",
+    angle: "A numbered listicle: the headline carries a number (5, 7, 9) and the topic, the labels are real list entries from the page (varieties, mistakes, tips, plants).",
+    templates: { blog: ["photo_list_grid", "hero_hook_strip"], calculator: ["photo_list_grid", "step_photo_infographic"] },
   },
-  compare_before_after: {
-    id: "compare_before_after", label: "Compare or before and after", style: "comparison",
-    angle: "A visual comparison: before and after, right and wrong, or two options side by side, taken from the page's own content.",
-    templates: { blog: ["editorial_before_after", "scale_comparison"], calculator: ["scale_comparison", "tool_result_preview"] },
-  },
-  seasonal_now: {
-    id: "seasonal_now", label: "Do this now (seasonal)", style: "seasonal",
-    angle: "What to do at this time of year for this topic, framed as a timeline or checklist. Mention the season in the headline so it ranks for seasonal searches.",
-    templates: { blog: ["seasonal_timeline", "quick_tip_grid"], calculator: ["seasonal_timeline", "tool_result_preview"] },
-  },
-  save_for_later: {
-    id: "save_for_later", label: "Save for later reference", style: "infographic",
-    angle: "A compact reference card (a chart, a formula or a cheat sheet) people will save and come back to. The headline says what it is.",
-    templates: { blog: ["definition_card", "quote_stat_card"], calculator: ["tool_result_preview", "quote_stat_card"] },
+  mistakes: {
+    id: "mistakes", label: "Mistakes to avoid", style: "mistakes-to-avoid",
+    angle: "A numbered 'mistakes' listicle or wrong-versus-right guide drawn from the page. Headline like '7 Mistakes Killing Your Tomatoes'. Honest, specific, no clickbait lies.",
+    templates: { blog: ["photo_list_grid", "step_photo_infographic"], calculator: ["step_photo_infographic", "photo_list_grid"] },
   },
 };
 
-// Sunday = 0 ... Saturday = 6 (UTC).
+// Sunday = 0 ... Saturday = 6 (UTC). How-to, When-to and Listicle lead because they are Pinterest's top formats.
 export const WEEKDAY_THEMES: string[] = [
-  "save_for_later",       // Sun
-  "quick_answer",         // Mon
-  "how_to_steps",         // Tue
-  "mistakes_myths",       // Wed
-  "tips_grid",            // Thu
-  "compare_before_after", // Fri
-  "seasonal_now",         // Sat
+  "listicle",      // Sun
+  "how_to",        // Mon
+  "when_to",       // Tue
+  "listicle",      // Wed
+  "how_to_steps",  // Thu
+  "when_to",       // Fri
+  "mistakes",      // Sat
 ];
 
 export function pageKindFor(url: string): PageKind | null {

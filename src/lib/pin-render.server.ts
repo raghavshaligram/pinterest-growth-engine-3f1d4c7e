@@ -30,6 +30,7 @@ export async function renderPinImage(opts: {
   // Nano Banana 2 only: a photo from the page itself, given as a visual reference so the pin shows the real
   // subject. If the model rejects the reference the call is retried without it.
   referenceImageUrl?: string | null;
+  referenceImageUrls?: string[];
 }): Promise<{ imageBytes: Uint8Array; contentType: string; providerPredictionId: string; modelUsed: string }> {
   if (opts.provider === "openai") {
     const { openaiGenerateImage } = await import("./openai-image.server");
@@ -73,11 +74,12 @@ export async function renderPinImage(opts: {
   const modelUsed = "google/nano-banana-2";
   const input: Record<string, unknown> = { prompt: opts.prompt, aspect_ratio: "2:3" };
   let pred: Awaited<ReturnType<typeof replicatePredict>>;
-  if (opts.referenceImageUrl) {
+  const refs = opts.referenceImageUrls?.length ? opts.referenceImageUrls : opts.referenceImageUrl ? [opts.referenceImageUrl] : [];
+  if (refs.length) {
     const withRef = {
       ...input,
-      prompt: `${opts.prompt}\n\nREFERENCE PHOTO: the attached image is a real photo from the page. Use it as the visual subject and colour/style reference for the middle of the pin. Recreate the subject, do not copy any text or logos from it, and keep all text exactly as specified above.`,
-      image_input: [opts.referenceImageUrl],
+      prompt: `${opts.prompt}\n\nREFERENCE PHOTO: the attached image(s) are real photos from the page. Use them as the real subject and colour/style reference for the photos on the pin. Recreate the subject, do not copy any text or logos from it, and keep all text exactly as specified above.`,
+      image_input: refs,
     };
     try { pred = await replicatePredict({ token: opts.apiKey, model: modelUsed, input: withRef, maxWaitMs: 90_000 }); }
     catch (e) {
