@@ -87,7 +87,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
           // Topic match: how well a board fits a page, from the words in the board's name, description, category and
           // keywords against the page's topic, keywords and category. Best match first; the rotation below only
           // decides between boards that fit equally well (or not at all).
-          const STOP = new Set(["the","and","for","with","how","what","your","you","are","can","from","that","this","guide","tips","ideas","best","calculator"]);
+          const STOP = new Set(["the","and","for","with","how","what","your","you","are","can","from","that","this","guide","tips","ideas","best","calculator","calculators","garden","gardens","gardening","home","free","tool","tools","printable","printables","guides","plant","plants","care","growing","grow","need","help","more","real","numbers","built","easy","use"]);
           const words = (...parts: (string | string[] | null | undefined)[]) => new Set(
             parts.flat().filter(Boolean).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)),
           );
@@ -96,6 +96,12 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             const r = b as unknown as { name?: string; description?: string | null; category?: string | null; keywords?: string[]; topics?: string[] };
             return [b.id, new Set([...words(r.name, r.description, r.category, r.keywords, r.topics)].map(stem))] as const;
           }));
+          // The board name and keywords count three times as much as the description, so a board called
+          // "Mulching Tips" beats one that only mentions mulch in passing.
+          const boardNameWords = new Map(boards.map((b) => {
+            const r = b as unknown as { name?: string; keywords?: string[]; topics?: string[] };
+            return [b.id, new Set([...words(r.name, r.keywords, r.topics)].map(stem))] as const;
+          }));
           function rankBoards(ids: string[], analysis: unknown): string[] {
             const a = (analysis ?? {}) as { topic?: string; primary_keyword?: string; secondary_keywords?: string[]; category?: string };
             const pw = new Set([...words(a.topic, a.primary_keyword, a.secondary_keywords, a.category)].map(stem));
@@ -103,6 +109,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             const scored = ids.map((id, i) => {
               let n = 0;
               for (const w of boardWords.get(id) ?? []) if (pw.has(w)) n++;
+              for (const w of boardNameWords.get(id) ?? []) if (pw.has(w)) n += 3;
               return { id, n, i };
             });
             return scored.sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.id);

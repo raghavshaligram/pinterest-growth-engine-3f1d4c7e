@@ -76,7 +76,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
               const kind = pageKindFor(p.url);
               const a = p.analysis as { primary_keyword?: string; seasonality?: string } | null;
               if (!kind || !a?.primary_keyword) return [];
-              return [{ id: p.id, kind, createdAt: new Date(p.created_at).getTime(), seasonality: a.seasonality }];
+              return [{ id: p.id, url: p.url, kind, createdAt: new Date(p.created_at).getTime(), seasonality: a.seasonality }];
             });
             if (!cands.length) return { planned: 0, reason: "no analyzed blog or calculator pages yet" };
 
@@ -132,7 +132,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
                 const slot = open.shift();
                 if (!slot) break;
                 const d = new Date(slot.plan_date + "T00:00:00Z");
-                const { theme, template } = chooseTheme(new Date(d.getTime() + slot.slot * 86_400_000), n.kind, new Set());
+                const { theme, template } = chooseTheme(new Date(d.getTime() + slot.slot * 86_400_000), n.kind, new Set(), n.url);
                 const { error } = await planTable(supabaseAdmin)
                   .update({ page_id: n.id, template_id: template, theme_id: theme.id, status: "planned", last_error: null })
                   .eq("id", slot.id);
@@ -172,7 +172,7 @@ export const Route = createFileRoute("/api/public/cron/autopilot")({
                   ?? [...cands].filter((c) => !pickedToday.has(c.id)).sort((a, b) => (lastPlanned.get(a.id) ?? 0) - (lastPlanned.get(b.id) ?? 0))[0];
                 if (!pick) continue;
                 // Each slot of the day gets a different theme: slot 0 is the weekday's theme, then the next ones.
-                const { theme, template } = chooseTheme(new Date(date.getTime() + slot * 86_400_000), pick.kind, usedTemplates.get(pick.id) ?? new Set());
+                const { theme, template } = chooseTheme(new Date(date.getTime() + slot * 86_400_000), pick.kind, usedTemplates.get(pick.id) ?? new Set(), pick.url);
                 inserts.push({ user_id: uid, plan_date: ds, slot, page_id: pick.id, template_id: template, theme_id: theme.id, status: "planned" });
                 pickedToday.add(pick.id);
                 lastPlanned.set(pick.id, date.getTime());

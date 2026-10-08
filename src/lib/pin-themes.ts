@@ -26,27 +26,27 @@ export const PIN_THEMES: Record<string, PinTheme> = {
   how_to: {
     id: "how_to", label: "How-to", style: "how-to",
     angle: "A how-to pin for the task this page teaches. Real photos, one big hook headline naming the plant or task and the benefit (e.g. 'Grow Kale Like a Pro'). Labels are the page's real steps or stages.",
-    templates: { blog: ["hero_hook_strip", "photo_sandwich", "step_photo_infographic"], calculator: ["step_photo_infographic", "hero_hook_strip"] },
+    templates: { blog: ["hero_hook_strip", "photo_sandwich", "step_photo_infographic"], calculator: ["hero_hook_strip", "photo_sandwich"] },
   },
   how_to_steps: {
     id: "how_to_steps", label: "Step by step", style: "how-to",
     angle: "A numbered step guide (3 or 4 steps) with a real photo per step, using the page's own steps (for a calculator: measure, enter, read the result, then plant). Headline names the task and the payoff.",
-    templates: { blog: ["step_photo_infographic", "photo_sandwich"], calculator: ["step_photo_infographic"] },
+    templates: { blog: ["step_photo_infographic", "photo_sandwich"], calculator: ["photo_sandwich", "hero_hook_strip"] },
   },
   when_to: {
     id: "when_to", label: "When-to", style: "seasonal",
     angle: "A when-to pin: when to plant, sow, harvest, prune or feed for this topic, with 3 or 4 real months or seasons from the page. Headline starts with 'When to' or states the best time.",
-    templates: { blog: ["when_to_timeline_photo", "hero_hook_strip"], calculator: ["when_to_timeline_photo", "step_photo_infographic"] },
+    templates: { blog: ["when_to_timeline_photo", "hero_hook_strip"], calculator: ["when_to_timeline_photo", "hero_hook_strip"] },
   },
   listicle: {
     id: "listicle", label: "Listicle", style: "listicle",
     angle: "A numbered listicle: the headline carries a number (5, 7, 9) and the topic, the labels are real list entries from the page (varieties, mistakes, tips, plants).",
-    templates: { blog: ["photo_list_grid", "hero_hook_strip"], calculator: ["photo_list_grid", "step_photo_infographic"] },
+    templates: { blog: ["photo_list_grid", "hero_hook_strip"], calculator: ["hero_hook_strip", "photo_list_grid"] },
   },
   mistakes: {
     id: "mistakes", label: "Mistakes to avoid", style: "mistakes-to-avoid",
     angle: "A numbered 'mistakes' listicle or wrong-versus-right guide drawn from the page. Headline like '7 Mistakes Killing Your Tomatoes'. Honest, specific, no clickbait lies.",
-    templates: { blog: ["photo_list_grid", "step_photo_infographic"], calculator: ["step_photo_infographic", "photo_list_grid"] },
+    templates: { blog: ["photo_list_grid", "photo_sandwich"], calculator: ["photo_sandwich", "hero_hook_strip"] },
   },
 };
 
@@ -70,8 +70,10 @@ export function pageKindFor(url: string): PageKind | null {
 // Pick the theme for a date and the template for a page: the weekday's theme, using the first of its preferred
 // templates that this page has not already used; if all are used, fall back to the first (a new image on the same
 // layout is still a fresh pin) so the calendar never stalls.
-export function chooseTheme(date: Date, kind: PageKind, usedTemplates: Set<string>): { theme: PinTheme; template: TemplateId } {
-  const theme = PIN_THEMES[WEEKDAY_THEMES[date.getUTCDay()]!]!;
+export function chooseTheme(date: Date, kind: PageKind, usedTemplates: Set<string>, url = ""): { theme: PinTheme; template: TemplateId } {
+  let theme = PIN_THEMES[WEEKDAY_THEMES[date.getUTCDay()]!]!;
+  // Diagnosis and problem pages (why are my leaves yellow, mistakes) are not a "when to" topic: use a how-to layout.
+  if (theme.id === "when_to" && /why-|problem|yellow|brown|wilting|holes|diagnos|mistake|dying|rot|disease|pest/.test(url.toLowerCase())) theme = PIN_THEMES.how_to!;
   const prefs = theme.templates[kind];
   const template = prefs.find((t) => !usedTemplates.has(t)) ?? prefs[0]!;
   return { theme, template };
