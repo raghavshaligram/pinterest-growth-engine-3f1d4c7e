@@ -114,31 +114,31 @@ const SHAPE_REGISTRY: ShapeRegistry = {
   illustrated: {
     // ---- Photo-first layouts (How-to / When-to / Listicle), copied from the owner's best-pin samples. ----
     hero_hook_strip: {
-      visual_description: `PHOTO-FIRST HOW-TO PIN. One real, natural-light hero photograph of the subject fills the top half. Across the middle sits a wide solid colour band holding the huge bold hook headline (white and one accent colour, 2 to 3 lines, centred). Below the band, a strip of exactly 3 large real close-up photos side by side (the key stages, parts or results), separated by thin white gutters. No captions at all, or at most one tiny 1 to 2 word tag per photo. Almost no other text.`,
+      visual_description: `a how-to pin layout: one real, natural-light hero photograph of the subject fills the top half. Across the middle sits a wide solid colour band holding the huge bold hook headline (white and one accent colour, 2 to 3 lines, centred). Below the band, a strip of exactly 3 large real close-up photos side by side (the key stages, parts or results), separated by thin white gutters. No captions at all, or at most one tiny 1 to 2 word tag per photo. Almost no other text.`,
       default_middle_prompt: (topic) => `Hero photo of ${topic} at its best, plus 3 close-up supporting photos of real stages, parts or results.`,
       typography_direction: "very large heavy rounded sans, white with one accent colour word",
       content_fit: "how-to or growing guides for a single plant or task where the real subject photographs well (grow X, harvest X, care for X).",
     },
     photo_sandwich: {
-      visual_description: `PHOTO SANDWICH HOW-TO PIN. Three stacked zones: a real photo of the finished, healthy result at the top, a solid colour band across the middle with the huge hook headline, and a real photo of the process, problem or close-up at the bottom. No labels over the photos. Nothing else.`,
+      visual_description: `a stacked how-to pin layout: three stacked zones: a real photo of the finished, healthy result at the top, a solid colour band across the middle with the huge hook headline, and a real photo of the process, problem or close-up at the bottom. No labels over the photos. Nothing else.`,
       default_middle_prompt: (topic) => `Top photo: the healthy finished result of ${topic}. Bottom photo: a hands-on close-up of the key step or the common problem.`,
       typography_direction: "very large heavy sans, white on a deep band, one accent colour word",
       content_fit: "care and troubleshooting how-tos (how to save, fix, propagate, water, prune) where a result photo and a process photo tell the story.",
     },
     step_photo_infographic: {
-      visual_description: `STEP-BY-STEP PHOTO INFOGRAPHIC PIN. Huge hook headline in a coloured banner at the top (the how-to or the mistake). Beneath it, exactly 4 numbered steps in a 2x2 grid of LARGE real photos, each with a large number in a circle and a 2 to 4 word step label. Never more than 4 photos in total. Clean bright background, lots of breathing room.`,
+      visual_description: `a step-by-step pin layout: huge hook headline in a coloured banner at the top (the how-to or the mistake). Beneath it, exactly 4 numbered steps in a 2x2 grid of LARGE real photos, each with a large number in a circle and a 2 to 4 word step label. Never more than 4 photos in total. Clean bright background, lots of breathing room.`,
       default_middle_prompt: (topic) => `Numbered steps for ${topic}, each with a real photo inset and a short label.`,
       typography_direction: "very large heavy sans headline, clean bold step labels",
       content_fit: "true step-by-step processes with 3 to 5 distinct actions, and mistake/correct-method content.",
     },
     photo_list_grid: {
-      visual_description: `PHOTO LISTICLE PIN. A huge hook headline that contains a number (for example "7 ...") in a solid band at the top. Below it a tidy 2x2 grid of exactly 4 LARGE real photos, each with a 1 to 3 word name tag. Never more than 4 photos. A thin accent border frames the pin. Almost no other text.`,
+      visual_description: `a listicle pin layout: a huge hook headline that contains a number (for example "7 ...") in a solid band at the top. Below it a tidy 2x2 grid of exactly 4 LARGE real photos, each with a 1 to 3 word name tag. Never more than 4 photos. A thin accent border frames the pin. Almost no other text.`,
       default_middle_prompt: (topic) => `A grid of real photos, one per list item for ${topic}, each with a short name label.`,
       typography_direction: "very large heavy sans, number in the accent colour",
       content_fit: "lists of varieties, plants, tools, mistakes or ideas (best X for Y, N things to plant now).",
     },
     when_to_timeline_photo: {
-      visual_description: `WHEN-TO PIN. A huge hook headline asking or answering "when" in a band at the top. Below it a simple left-to-right or top-to-bottom timeline of 3 to 4 stops (months or seasons), each a real photo of that stage with a bold 1 to 2 word month or season tag. A small thermometer or calendar icon is allowed as an accent. Almost no other text.`,
+      visual_description: `a when-to pin layout: a huge hook headline asking or answering "when" in a band at the top. Below it a simple left-to-right or top-to-bottom timeline of 3 to 4 stops (months or seasons), each a real photo of that stage with a bold 1 to 2 word month or season tag. A small thermometer or calendar icon is allowed as an accent. Almost no other text.`,
       default_middle_prompt: (topic) => `A timeline for ${topic}: 3 or 4 real photos of the stages, each tagged with a month or season.`,
       typography_direction: "very large heavy sans headline, bold month tags",
       content_fit: "timing content: when to plant, sow, harvest, prune, fertilise, or last and first frost dates.",
@@ -629,7 +629,7 @@ export function buildPhotoFirstPrompt(input: {
     : `Use no labels, or at most 3 tiny one or two word tags, each different.`;
   return `Create a vertical 2:3 Pinterest pin, 1000x1500, in the style of the best-performing gardening How-to pins on Pinterest: real photos, ONE huge hook headline, almost no other text.
 
-LAYOUT (follow exactly; this describes the design, never print it as text): ${shape.visual_description}
+LAYOUT (follow exactly. This is a design brief for you only: never print any word of this paragraph, never print a layout name, a label such as "how-to pin", or any title above the photos): ${shape.visual_description}
 
 WHAT THE PHOTOS SHOW: ${scene}
 All photographs are realistic, natural light, rich colour, shot like a good home-gardening magazine photo; clear subjects, shallow depth of field, no cartoon art, no clip-art, no 3D render look, no hands with extra fingers. If a reference photo is attached, reuse its real subject for the main photo.
@@ -644,7 +644,7 @@ TEXT RULES:
 - Never render colour names, codes, or this instruction text.
 - Typography: ${shape.typography_direction}. Every word fully inside the canvas, spelled exactly.
 
-COLOUR: bold, bright and warm, drawn from this palette (guidance only, never depict a swatch): ${palette}. No purple gradients, no neon, no dark app UI.`;
+COLOUR (identical on every pin of this brand, no exceptions): the headline band is a solid deep forest green, the headline text is cream white with ONE key word in warm harvest gold (amber), any thin borders or label tags are cream with dark green text, and the photos keep their natural colours. Never sage or pastel green bands, never rust, red, brown or orange bands or text, never a second accent colour. No purple gradients, no neon, no dark app UI.`;
 }
 
 export async function generateBriefsCore(
@@ -846,7 +846,7 @@ The briefs array in your JSON response MUST contain EXACTLY the requested number
 PIN CRAFT RULES (from Pinterest's creative guidance): one idea per pin; the headline reads in two seconds at phone size, so title-case text of about 8 words or fewer; the keyword leads both the title and the description; promise something specific the page delivers (a number, a step count, a season) and never exaggerate; write for saves, so favour checklists, steps, comparisons and reference cards over vague inspiration; plain words, no jargon, no filler openers.
 PHOTO-FIRST PINS (templates hero_hook_strip, photo_sandwich, step_photo_infographic, photo_list_grid, when_to_timeline_photo): these copy Pinterest's top How-to / When-to / Listicle pins. For these also return:
 - hook: the headline printed on the image, 3 to 8 words, big and benefit- or curiosity-led, naming the plant/task, e.g. "Grow Kale Like a Pro", "7 Mistakes Killing Your Tomatoes", "When to Plant Garlic in Zone 6", "Stop Overwatering Your Pothos". Plain words, accurate to the page, no clickbait lies, no ALL CAPS in the JSON (the design capitalises).
-- items: 3 or 4 DISTINCT labels (never repeated, never the same idea twice) of 1 to 4 words each taken from the PAGE CONTENT: real steps, real list entries, real months or varieties. Never invent facts that are not in the page content; if a number or month is used it must appear in the page content.
+- items must match the headline's promise: real steps for a how-to, real causes or fixes for a problem or diagnosis page (e.g. nitrogen shortage, overwatering, blight), real list entries for a listicle, and months or seasons ONLY for a when-to pin. 3 or 4 DISTINCT labels (never repeated, never the same idea twice) of 1 to 4 words each taken from the PAGE CONTENT: real steps, real list entries, real months or varieties. Never invent facts that are not in the page content; if a number or month is used it must appear in the page content.
 - image_prompt: one or two sentences saying which real photos to show (subject and stage), nothing about layout or text.
 Read the PAGE CONTENT section in the user message and base every step, list entry, month and number on it.
 If the user message includes a "WHAT'S CURRENTLY WORKING" competitive-research section, treat it as inspiration only for title/description angles — never copy a competitor's title or description verbatim.`;
