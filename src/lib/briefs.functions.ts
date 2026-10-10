@@ -630,6 +630,7 @@ PHOTOGRAPHY: ${scene} All photographs are realistic, vivid, sharp, natural light
 HEADLINE (the only text on the pin, spelled exactly, in capitals): "${headline}"
 - It is HUGE: letters at least 8% of the canvas height, filling most of the width, 2 to 5 short lines, with at least 8% margin from the top and bottom edges and 5% from the sides, so nothing (especially a leading number) is cropped or touches an edge.
 - Heavy condensed bold sans-serif, never script or thin fonts. Maximum contrast against the photo.
+- ALIGNMENT: every line of the headline is horizontally centred on the same vertical centre line of the pin, with identical left and right padding inside any box, band or badge. No line is indented, shifted or offset, no staggered lines, one consistent font size per line pair, even line spacing. Box or band is centred and sized to hug the text with equal padding on all sides.
 
 TEXT RULES: render ONLY the headline above (the scene description may mention seasons, months, stages or items: show them as pictures only, NEVER print them as words) and a very small, subtle "${input.brandHost}" in one bottom corner. No other words, numbers, captions, labels, buttons, bars, icons, sentences or logos anywhere. Never print colour names or codes.
 
