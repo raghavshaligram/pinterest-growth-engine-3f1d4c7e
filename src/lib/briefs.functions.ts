@@ -628,10 +628,10 @@ LAYOUT (a design brief for you only: never print any word of this paragraph, nev
 PHOTOGRAPHY: ${scene} All photographs are realistic, vivid, sharp, natural light, rich saturated colour, shot like a professional gardening magazine photo: a clear focal subject, shallow depth of field, no cartoon art, no clip-art, no 3D render look, no collage of many small pictures, no hands with extra fingers. If a reference photo is attached, reuse its real subject.
 
 HEADLINE (the only text on the pin, spelled exactly, in capitals): "${headline}"
-- It is HUGE: letters at least 8% of the canvas height, filling most of the width, 2 to 5 short lines, with at least 5% margin from every edge so nothing is cropped.
+- It is HUGE: letters at least 8% of the canvas height, filling most of the width, 2 to 5 short lines, with at least 8% margin from the top and bottom edges and 5% from the sides, so nothing (especially a leading number) is cropped or touches an edge.
 - Heavy condensed bold sans-serif, never script or thin fonts. Maximum contrast against the photo.
 
-TEXT RULES: render ONLY the headline above and a very small, subtle "${input.brandHost}" in one bottom corner. No other words, numbers, captions, labels, buttons, bars, icons, sentences or logos anywhere. Never print colour names or codes.
+TEXT RULES: render ONLY the headline above (the scene description may mention seasons, months, stages or items: show them as pictures only, NEVER print them as words) and a very small, subtle "${input.brandHost}" in one bottom corner. No other words, numbers, captions, labels, buttons, bars, icons, sentences or logos anywhere. Never print colour names or codes.
 
 STYLE: bright, warm, high-contrast and scroll-stopping. Accent colour for the key word: bright lime-yellow (or deep green on a white badge). No purple, no neon pink, no dark app UI.`;
 }
@@ -919,7 +919,7 @@ IMPORTANT -- RETRY: your previous response returned only ${resp.briefs.length} o
           brandFont,
           vertical,
           middlePrompt: PHOTO_FIRST_TEMPLATES.has(templateId)
-            ? `${b.image_prompt ?? ""}\nHEADLINE: ${(b.hook || "").trim()}\nITEMS: ${(b.items ?? []).map((i) => String(i).trim()).filter(Boolean).slice(0, 6).join(" | ")}`
+            ? `${b.image_prompt ?? ""}\nHEADLINE: ${(b.hook || "").trim()}`
             : b.image_prompt,
         }),
         status: "image_pending" as const,
