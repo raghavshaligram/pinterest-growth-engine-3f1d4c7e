@@ -202,6 +202,7 @@ export type Database = {
           last_error: string | null
           page_id: string
           plan_date: string
+          slot: number
           status: string
           template_id: string | null
           theme_id: string | null
@@ -214,6 +215,7 @@ export type Database = {
           last_error?: string | null
           page_id: string
           plan_date: string
+          slot?: number
           status?: string
           template_id?: string | null
           theme_id?: string | null
@@ -226,6 +228,7 @@ export type Database = {
           last_error?: string | null
           page_id?: string
           plan_date?: string
+          slot?: number
           status?: string
           template_id?: string | null
           theme_id?: string | null
@@ -321,6 +324,140 @@ export type Database = {
             columns: ["pinterest_connection_id"]
             isOneToOne: false
             referencedRelation: "pinterest_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carousel_posts: {
+        Row: {
+          caption: string | null
+          created_at: string
+          design: string
+          error: string | null
+          hashtags: string | null
+          id: string
+          page_id: string | null
+          page_url: string | null
+          publish_result: Json | null
+          published_at: string | null
+          scheduled_for: string | null
+          site_id: string | null
+          site_url: string | null
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          design?: string
+          error?: string | null
+          hashtags?: string | null
+          id?: string
+          page_id?: string | null
+          page_url?: string | null
+          publish_result?: Json | null
+          published_at?: string | null
+          scheduled_for?: string | null
+          site_id?: string | null
+          site_url?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          design?: string
+          error?: string | null
+          hashtags?: string | null
+          id?: string
+          page_id?: string | null
+          page_url?: string | null
+          publish_result?: Json | null
+          published_at?: string | null
+          scheduled_for?: string | null
+          site_id?: string | null
+          site_url?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_posts_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "carousel_posts_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carousel_slides: {
+        Row: {
+          alt_text: string | null
+          body: string | null
+          carousel_id: string
+          created_at: string
+          error: string | null
+          heading: string
+          id: string
+          image_path: string | null
+          kind: string
+          number: number | null
+          photo_path: string | null
+          photo_prompt: string | null
+          position: number
+          user_id: string
+        }
+        Insert: {
+          alt_text?: string | null
+          body?: string | null
+          carousel_id: string
+          created_at?: string
+          error?: string | null
+          heading: string
+          id?: string
+          image_path?: string | null
+          kind: string
+          number?: number | null
+          photo_path?: string | null
+          photo_prompt?: string | null
+          position: number
+          user_id: string
+        }
+        Update: {
+          alt_text?: string | null
+          body?: string | null
+          carousel_id?: string
+          created_at?: string
+          error?: string | null
+          heading?: string
+          id?: string
+          image_path?: string | null
+          kind?: string
+          number?: number | null
+          photo_path?: string | null
+          photo_prompt?: string | null
+          position?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_slides_carousel_id_fkey"
+            columns: ["carousel_id"]
+            isOneToOne: false
+            referencedRelation: "carousel_posts"
             referencedColumns: ["id"]
           },
         ]
