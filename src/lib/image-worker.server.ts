@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
 import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
-import type { ImageProvider } from "@/lib/sites.functions";
+import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -43,7 +43,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     // Declared here (not inside the try block) so the catch block below
     // can report a failure against whichever connection was actually
     // in play, even if the failure happened after resolution.
-    let provider: ImageProvider = "openai";
+    let provider: ApiKeyProvider = "openai";
     let connectionId: string | null = null;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
@@ -128,7 +128,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
 
       const { resolveImageConnection } = await import("./provider-resolution.server");
       const resolved = await resolveImageConnection(userId, page?.sites?.image_connection_override_id);
-      provider = resolved.provider as ImageProvider;
+      provider = resolved.provider;
       connectionId = resolved.connectionId;
 
       // A real photo from the page, used as a visual reference (Nano Banana 2 only): the first image that is not
@@ -147,21 +147,47 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       })();
 
       const { renderPinImage } = await import("./pin-render.server");
-      const rendered = await renderPinImage({
-        provider,
-        prompt: themedPrompt,
-        apiKey: resolved.apiKey,
-        referenceImageUrls,
-      });
-      const imageBytes = rendered.imageBytes;
-      const contentType = rendered.contentType;
-      const providerPredictionId = rendered.providerPredictionId;
-      const modelUsed = rendered.modelUsed;
-
-      const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
-      const path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext}`;
-      const up = await supabaseAdmin.storage.from("pins").upload(path, imageBytes, { contentType, upsert: true });
-      if (up.error) throw up.error;
+      // pin_design = "code": the image model makes a text-free photo and the render-pin edge function sets the headline
+      // (same look as the Instagram cover). Anything else keeps the model drawing the whole pin.
+      const { data: designRow } = await (supabaseAdmin as any).from("autopilot_settings").select("value").eq("key", "pin_design").maybeSingle(); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const codeDesign = (designRow?.value as string | undefined) === "code";
+      const ext0 = "png";
+      let imageBytes: Uint8Array;
+      let contentType: string;
+      let providerPredictionId: string;
+      let modelUsed: string;
+      let path: string;
+      if (codeDesign) {
+        const full = String(themedPrompt ?? "");
+        const headline = (/HEADLINE[^\n]*?:\s*"([^"\n]+)"/.exec(full)?.[1] ?? "").trim()
+          || (await import("./briefs.functions")).shortHeadline(brief.title);
+        const scene = (/PHOTOGRAPHY:\s*([\s\S]*?)\s+All photographs are/.exec(full)?.[1] ?? "").trim()
+          || `A vivid close-up photo of ${analysis.topic || analysis.primary_keyword || brief.title}.`;
+        const photoPrompt = `${scene}\nPhotorealistic editorial garden photograph, vertical 2:3, natural daylight, shallow depth of field, rich true-to-life colour, one clear subject in the lower two thirds with calm space above it. No text, no letters, no numbers, no logos, no watermark, no people, no hands.`;
+        const r = await renderPinImage({ provider: provider as never, prompt: photoPrompt, apiKey: resolved.apiKey, referenceImageUrls });
+        imageBytes = r.imageBytes; contentType = r.contentType; providerPredictionId = r.providerPredictionId; modelUsed = r.modelUsed;
+        const pext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
+        const photoPath = `${userId}/pinphotos/${brief.id}-${promptHash.slice(0, 8)}.${pext}`;
+        const pu = await supabaseAdmin.storage.from("pins").upload(photoPath, imageBytes, { contentType, upsert: true });
+        if (pu.error) throw pu.error;
+        path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext0}`;
+        const base = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (!base || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing");
+        const resp = await fetch(`${base}/functions/v1/render-pin`, {
+          method: "POST", headers: { Authorization: `Bearer ${key}`, apikey: key, "content-type": "application/json" },
+          body: JSON.stringify({ photo_path: photoPath, headline, brand: brandHost, out_path: path }),
+        });
+        if (!resp.ok) throw new Error(`render-pin failed ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+        contentType = "image/png";
+      } else {
+        const rendered = await renderPinImage({ provider: provider as never, prompt: themedPrompt, apiKey: resolved.apiKey, referenceImageUrls });
+        imageBytes = rendered.imageBytes; contentType = rendered.contentType;
+        providerPredictionId = rendered.providerPredictionId; modelUsed = rendered.modelUsed;
+        const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
+        path = `${userId}/${brief.id}-${promptHash.slice(0, 8)}.${ext}`;
+        const up = await supabaseAdmin.storage.from("pins").upload(path, imageBytes, { contentType, upsert: true });
+        if (up.error) throw up.error;
+      }
 
       await supabaseAdmin.from("pin_images").insert({
         user_id: userId,
@@ -173,7 +199,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         // locally-minted "openai:<timestamp>" id, not a real prediction
         // id -- the actual provider is recorded in meta.provider below).
         replicate_prediction_id: providerPredictionId,
-        meta: { model: modelUsed, provider, content_type: contentType, visual_variant: PHOTO_FIRST_TEMPLATES.has(briefRow.template_id ?? "") ? "photo_first" : (await import("./briefs.functions")).pickVisualVariant(brief.title), template_id: briefRow.template_id ?? null, reference_images: referenceImageUrls.length },
+        meta: { model: modelUsed, provider, content_type: contentType, design: codeDesign ? "code" : "ai", visual_variant: PHOTO_FIRST_TEMPLATES.has(briefRow.template_id ?? "") ? "photo_first" : (await import("./briefs.functions")).pickVisualVariant(brief.title), template_id: briefRow.template_id ?? null, reference_images: referenceImageUrls.length },
       });
       await supabaseAdmin.from("pin_briefs").update({ status: "ready" }).eq("id", brief.id);
       await supabaseAdmin.from("jobs").update({ status: "done" }).eq("id", job.id);

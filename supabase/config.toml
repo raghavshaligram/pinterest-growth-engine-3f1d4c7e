@@ -2,3 +2,6 @@ project_id = "nglirfhptuctfeebrtap"
 
 [functions.render-carousel]
 verify_jwt = true
+
+[functions.render-pin]
+verify_jwt = true
