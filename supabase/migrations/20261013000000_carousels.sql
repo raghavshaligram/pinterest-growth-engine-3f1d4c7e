@@ -37,6 +37,7 @@ create table if not exists public.carousel_slides (
   image_path text,
   alt_text text,
   error text,
+  locked_at timestamptz,
   created_at timestamptz not null default now(),
   unique (carousel_id, position)
 );
@@ -58,9 +59,9 @@ insert into public.autopilot_settings (key, value) values
   ('carousel_image_quality', 'high')
 on conflict (key) do nothing;
 
--- Schedules (UTC). brief 03:20, build every 10 min, publish hourly 12:05-15:05 (17:35-20:35 IST).
+-- Schedules (UTC). brief 03:20, build every 2 min, publish hourly 12:05-15:05 (17:35-20:35 IST).
 select cron.schedule('carousel-brief',   '20 3 * * *',   $$select public.autopilot_call('/api/public/cron/carousels?stage=brief')$$);
-select cron.schedule('carousel-build',   '*/10 * * * *', $$select public.autopilot_call('/api/public/cron/carousels?stage=build')$$);
+select cron.schedule('carousel-build',   '*/2 * * * *', $$select public.autopilot_call('/api/public/cron/carousels?stage=build')$$);
 select cron.schedule('carousel-publish', '5 12-15 * * *', $$select public.autopilot_call('/api/public/cron/carousels?stage=publish')$$);
 
 notify pgrst, 'reload schema';

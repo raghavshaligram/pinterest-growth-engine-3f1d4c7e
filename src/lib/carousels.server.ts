@@ -96,13 +96,36 @@ export async function writeCarouselForUser(userId: string, opts?: { pageId?: str
   const draft = (await (gen as any)({ apiKey: copy.apiKey, model, system: SYSTEM, user })) as Draft;
   if (!draft?.items?.length || !draft.cover?.heading) throw new Error("model returned an unusable carousel");
 
+  // Second pass: a fresh proofreading call, because the writer's own slips (affect/effect, missing words) slip through.
+  // It may only fix spelling, grammar and punctuation. Failure here is not fatal: the original draft is kept.
+  try {
+    const fixed = (await (gen as any)({
+      apiKey: copy.apiKey, model,
+      system: "You are a strict proofreader. Fix ONLY spelling, grammar, wrong word choice (for example affect vs effect, its vs it's, then vs than) and punctuation. Never change meaning, numbers, units, names or length by more than a word. No em dashes or en dashes. Return the same JSON structure you were given.",
+      user: JSON.stringify({ title: draft.title, caption: draft.caption, cover: { heading: draft.cover.heading, subline: draft.cover.subline }, items: draft.items.map((i) => ({ heading: i.heading, body: i.body })), outro: { heading: draft.outro?.heading, body: draft.outro?.body } }),
+    })) as { title?: string; caption?: string; cover?: { heading?: string; subline?: string }; items?: { heading?: string; body?: string }[]; outro?: { heading?: string; body?: string } };
+    if (fixed?.items?.length === draft.items.length) {
+      draft.title = fixed.title || draft.title; draft.caption = fixed.caption || draft.caption;
+      draft.cover.heading = fixed.cover?.heading || draft.cover.heading; draft.cover.subline = fixed.cover?.subline ?? draft.cover.subline;
+      draft.items = draft.items.map((it, i) => ({ ...it, heading: fixed.items![i]?.heading || it.heading, body: fixed.items![i]?.body || it.body }));
+      if (draft.outro) { draft.outro.heading = fixed.outro?.heading || draft.outro.heading; draft.outro.body = fixed.outro?.body ?? draft.outro.body; }
+    }
+  } catch { /* keep the original draft */ }
+
+  // Fact guard: every number used on a slide must also appear in the page text. Anything else is flagged for the reviewer.
+  const norm = (t: string) => t.replace(/,/g, "");
+  const pageNums = new Set((norm(text).match(/\d+(?:\.\d+)?/g) ?? []));
+  const slideText = [draft.title, draft.cover.heading, draft.cover.subline, ...draft.items.flatMap((i) => [i.heading, i.body]), draft.outro?.heading, draft.outro?.body].filter(Boolean).join(" ");
+  const unseen = Array.from(new Set((norm(slideText).match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !pageNums.has(n)))).filter((n) => !(Number(n) >= 1 && Number(n) <= 7 && draft.items.length >= Number(n)));
+  const warning = unseen.length ? `Check: these numbers are not in the blog post, verify before approving: ${unseen.join(", ")}` : null;
+
   const clean = (s: string | undefined | null) => (s ?? "").replace(/[–—]/g, ",").replace(/\s+/g, " ").trim();
   const items = draft.items.slice(0, 7);
   const tags = (draft.hashtags ?? []).map((t) => "#" + String(t).replace(/^#/, "").replace(/\s+/g, "").toLowerCase()).slice(0, 8);
   const design = (await getSetting(db, "carousel_design", "openai")) === "code" ? "code" : "openai";
   const { data: post, error } = await posts(db).insert({
     design, user_id: userId, site_id: page.site_id, page_id: page.id, page_url: page.url, site_url: page.site_url,
-    title: clean(draft.title) || clean(draft.cover.heading), caption: clean(draft.caption).replace(/ Full guide/, "\n\nFull guide"), hashtags: tags.join(" "), status: "photos",
+    title: clean(draft.title) || clean(draft.cover.heading), caption: clean(draft.caption).replace(/ Full guide/, "\n\nFull guide"), hashtags: tags.join(" "), status: "photos", error: warning,
   }).select("id").single();
   if (error) throw error;
   const rows = [
@@ -122,8 +145,8 @@ const PHOTO_WRAP = (p: string) =>
   `${p}\nPhotorealistic editorial photograph, natural daylight, shallow depth of field, rich true-to-life colour. The subject sits in the centre of the frame with calm space around it. No text, no letters, no numbers, no logos, no watermark, no people, no hands.`;
 
 // OpenAI draws the whole slide, text included. One shared style block keeps every slide in a carousel consistent.
-// Output is 2:3; Instagram wants 4:5, so the renderer centre-crops about 8% off the top and bottom: keep text out of that zone.
-const OPENAI_STYLE = `Instagram carousel slide, portrait. Style: bright, airy, natural-light garden photograph filling the whole slide as a softly blurred background, warm and true-to-life colour. Text is set in a clean, friendly rounded sans-serif, dark forest green (#1f4d2b) on soft frosted translucent white rounded cards, with a few lime-yellow (#d9e84a) accents. Every line of text is perfectly spelled, crisp and horizontally centred or neatly left-aligned inside its card with even padding. Keep all text and badges at least 11% away from the top and bottom edges and 6% from the sides. Use exactly the words given below and no other words, numbers, labels, logos or watermarks.`;
+// Drawn as 4:5 (1024x1280) when the model allows it. Keep all text well inside the edges.
+const OPENAI_STYLE = `Instagram carousel slide, portrait. Style: bright, airy, natural-light garden photograph filling the whole slide as a softly blurred background, warm and true-to-life colour. Text is set in a clean, friendly rounded sans-serif, dark forest green (#1f4d2b) on soft frosted translucent white rounded cards, with a few lime-yellow (#d9e84a) accents. Every line of text is perfectly spelled, crisp and horizontally centred or neatly left-aligned inside its card with even padding. Keep every piece of text, badge and card at least 7% away from all four edges so nothing touches or is cut by the edge. Use exactly the words given below and no other words, numbers, labels, logos or watermarks.`;
 
 function openaiSlidePrompt(s: { kind: string; number: number | null; heading: string; body: string | null; photo_prompt: string | null }, total: number, host: string): string {
   const scene = s.photo_prompt ? `Background photo: ${s.photo_prompt}` : "Background photo: a bright, softly blurred garden scene.";
@@ -140,7 +163,14 @@ async function makePhotos(db: Db, userId: string, limit: number) {
   const { data: pend } = await posts(db).select("id, page_id, site_id, design, site_url").eq("user_id", userId).eq("status", "photos").order("created_at").limit(2);
   let done = 0;
   for (const post of pend ?? []) {
-    const { data: todo } = await slides(db).select("*").eq("carousel_id", post.id).is("photo_path", null).not("photo_prompt", "is", null).order("position").limit(limit - done);
+    const { data: cand } = await slides(db).select("id").eq("carousel_id", post.id).is("photo_path", null).not("photo_prompt", "is", null).order("position").limit(limit - done);
+    // Claim them: a slide already claimed in the last 4 minutes is being drawn by another run, so skip it.
+    let todo: any[] = [];
+    if (cand?.length) {
+      const cutoff = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+      const claimed = await slides(db).update({ locked_at: new Date().toISOString() }).in("id", cand.map((c: any) => c.id)).or(`locked_at.is.null,locked_at.lt.${cutoff}`).select("*");
+      todo = (claimed.data ?? []).sort((a: any, b: any) => a.position - b.position);
+    }
     if (todo?.length && post.design === "openai") {
       const { earliestConnectionForProvider } = await import("./api-key-connections.server");
       const conn = await earliestConnectionForProvider(userId, "openai");
@@ -149,15 +179,21 @@ async function makePhotos(db: Db, userId: string, limit: number) {
       const quality = ((await getSetting(db, "carousel_image_quality", "high")) as "low" | "medium" | "high");
       const { count: total } = await slides(db).select("id", { count: "exact", head: true }).eq("carousel_id", post.id);
       const host = String(post.site_url ?? "harvestmath.com").replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
-      await Promise.all(todo.map(async (s: any) => {
+      // Four OpenAI calls at a time keeps us inside the account's images-per-minute limit.
+      for (let i = 0; i < todo.length; i += 4) await Promise.all(todo.slice(i, i + 4).map(async (s: any) => {
         try {
-          const r = await openaiGenerateImage({ apiKey: conn.apiKey, prompt: openaiSlidePrompt(s, total ?? 1, host), size: "1024x1536", quality });
+          const prompt = openaiSlidePrompt(s, total ?? 1, host);
+          // Ask for a true 4:5 canvas (what Instagram wants) so nothing is cropped. If the model rejects that size,
+          // fall back to 2:3; the renderer then fits the whole image inside 4:5 instead of cropping it.
+          let r: Awaited<ReturnType<typeof openaiGenerateImage>>;
+          try { r = await openaiGenerateImage({ apiKey: conn.apiKey, model: "gpt-image-2", prompt, size: "1024x1280", quality }); }
+          catch { r = await openaiGenerateImage({ apiKey: conn.apiKey, model: "gpt-image-1", prompt, size: "1024x1536", quality }); }
           const path = `${userId}/carousels/${post.id}/raw-${String(s.position).padStart(2, "0")}-${Date.now()}.png`;
           const up = await db.storage.from("pins").upload(path, r.imageBytes, { contentType: r.contentType, upsert: true });
           if (up.error) throw up.error;
-          await slides(db).update({ photo_path: path, image_path: null, error: null }).eq("id", s.id);
+          await slides(db).update({ photo_path: path, image_path: null, error: null, locked_at: null }).eq("id", s.id);
         } catch (e) {
-          await slides(db).update({ error: getErrorMessage(e) }).eq("id", s.id);
+          await slides(db).update({ error: getErrorMessage(e), locked_at: null }).eq("id", s.id);
         }
       }));
       done += todo.length;
@@ -176,7 +212,7 @@ async function makePhotos(db: Db, userId: string, limit: number) {
           const path = `${userId}/carousels/${post.id}/photo-${String(s.position).padStart(2, "0")}-${Date.now()}.${ext}`;
           const up = await db.storage.from("pins").upload(path, r.imageBytes, { contentType: r.contentType, upsert: true });
           if (up.error) throw up.error;
-          await slides(db).update({ photo_path: path, image_path: null, error: null }).eq("id", s.id);
+          await slides(db).update({ photo_path: path, image_path: null, error: null, locked_at: null }).eq("id", s.id);
         } catch (e) {
           await slides(db).update({ error: getErrorMessage(e) }).eq("id", s.id);
         }
@@ -230,8 +266,8 @@ export async function buildCarouselsForUser(userId: string) {
   };
   let photos = 0, rendered = 0;
   try { photos = await makePhotos(db, userId, 4); } catch (e) { photos = await fail("photos", e); }
-  try { rendered = await renderSlides(db, userId, 4); } catch (e) { rendered = await fail("rendering", e); }
-  if (photos || rendered) await posts(db).update({ error: null }).eq("user_id", userId).in("status", ["photos", "rendering", "review"]).not("error", "is", null);
+  try { rendered = await renderSlides(db, userId, 8); } catch (e) { rendered = await fail("rendering", e); }
+  if (photos || rendered) await posts(db).update({ error: null }).eq("user_id", userId).in("status", ["photos", "rendering", "review"]).not("error", "is", null).not("error", "like", "Check:%");
   const { count: waiting } = await posts(db).select("id", { count: "exact", head: true }).eq("user_id", userId).in("status", ["photos", "rendering"]);
   return { photos, rendered, waiting: waiting ?? 0 };
 }
