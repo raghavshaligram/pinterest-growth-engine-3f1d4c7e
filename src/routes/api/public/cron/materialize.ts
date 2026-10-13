@@ -77,7 +77,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
             if (!connectionId) return universalBoardIds;
             const cached = scopedBoardIdsCache.get(connectionId);
             if (cached) return cached;
-            const scoped = boards
+            const scoped = (boards ?? [])
               .filter((b) => (b as BoardOwnership).pinterest_connection_id === connectionId)
               .map((b) => b.id);
             const combined = [...scoped, ...universalBoardIds];
@@ -252,7 +252,7 @@ export const Route = createFileRoute("/api/public/cron/materialize")({
               noteSkip(siteId, "no-eligible-boards");
               continue;
             }
-            const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") ?? "universal" : "universal";
+            const boardIdxKey = siteId ? (siteConnectionMap.get(siteId) ?? "universal") : "universal";
             let boardIdx = boardIdxBySite.get(boardIdxKey) ?? 0;
 
             let placed = false;

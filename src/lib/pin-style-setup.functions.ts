@@ -46,7 +46,8 @@ export const generateStyleSamples = createServerFn({ method: "POST" })
     } catch {
       throw new Error("No image generation provider is connected yet -- add one in Settings > Integrations before previewing pin style.");
     }
-    const { provider, apiKey } = resolved;
+    const { apiKey } = resolved;
+    const provider = resolved.provider as Parameters<typeof renderPinImage>[0]["provider"];
 
     const brandHost = new URL(site.url).hostname.replace(/^www\./, "");
     const brandDisplay = site.brand_name || brandHost;
