@@ -57,7 +57,7 @@ function CarouselsPage() {
   });
   const build = useMutation({
     mutationFn: () => buildFn(),
-    onSuccess: () => { toast.success("Build step ran"); refresh(); },
+    onSuccess: (r) => { toast.message(`Build step ran: ${r.photos} slide images made, ${r.rendered} slides rendered, ${r.waiting} carousels still waiting. Any problem shows on the carousel.`); refresh(); },
     onError: (e) => toast.error((e as Error).message),
   });
   return (

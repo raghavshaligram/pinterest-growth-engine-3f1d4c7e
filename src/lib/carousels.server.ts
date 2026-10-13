@@ -44,7 +44,10 @@ async function pickPage(db: Db, userId: string): Promise<{ id: string; url: stri
     .eq("user_id", userId).eq("excluded", false).eq("status", "active").not("analysis", "is", null)
     .order("last_crawled_at", { ascending: false }).limit(400);
   const host = (await getSetting(db, "carousel_site_host", "harvestmath.com")).toLowerCase();
-  const cand = (pages ?? []).filter((p: any) => String(p.sites?.url ?? "").toLowerCase().includes(host) && !usedIds.has(p.id) && !/\/(calculators?|tools?|about|contact|privacy|terms)(\/|$)/i.test(p.url));
+  // Hub and index pages are lists of other posts, not a single article to turn into a carousel.
+  const skip = (await getSetting(db, "carousel_skip_urls", "plant-problem-diagnosis,/blog/$,/clusters/")).split(",").map((x) => x.trim()).filter(Boolean);
+  const skipped = (url: string) => skip.some((k) => (k.endsWith("$") ? new RegExp(k).test(url) : url.includes(k)));
+  const cand = (pages ?? []).filter((p: any) => String(p.sites?.url ?? "").toLowerCase().includes(host) && !usedIds.has(p.id) && !skipped(p.url) && !/\/(calculators?|tools?|about|contact|privacy|terms)(\/|$)/i.test(p.url));
   if (!cand.length) return null;
   const score = (p: any) => (/\/blog\//i.test(p.url) ? 2 : 0) + (/\b(\d+|best|ways|mistakes|tips|ideas|mistake|signs|plants?)\b/i.test(p.title ?? "") ? 1 : 0) + Math.random() * 0.5;
   cand.sort((a: any, b: any) => score(b) - score(a));
@@ -217,9 +220,20 @@ async function renderSlides(db: Db, userId: string, limit: number) {
 
 export async function buildCarouselsForUser(userId: string) {
   const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
-  const photos = await makePhotos(db, userId, 4);
-  const rendered = await renderSlides(db, userId, 4);
-  return { photos, rendered };
+  // A failure used to vanish into the cron response and the page just said "Not rendered yet". Now it is written
+  // onto the carousel so the Carousels page shows the reason.
+  const fail = async (status: string, e: unknown) => {
+    const msg = getErrorMessage(e);
+    await posts(db).update({ error: msg, updated_at: new Date().toISOString() }).eq("user_id", userId).eq("status", status);
+    await log(db, userId, "error", `build failed (${status}): ${msg}`);
+    return 0;
+  };
+  let photos = 0, rendered = 0;
+  try { photos = await makePhotos(db, userId, 4); } catch (e) { photos = await fail("photos", e); }
+  try { rendered = await renderSlides(db, userId, 4); } catch (e) { rendered = await fail("rendering", e); }
+  if (photos || rendered) await posts(db).update({ error: null }).eq("user_id", userId).in("status", ["photos", "rendering", "review"]).not("error", "is", null);
+  const { count: waiting } = await posts(db).select("id", { count: "exact", head: true }).eq("user_id", userId).in("status", ["photos", "rendering"]);
+  return { photos, rendered, waiting: waiting ?? 0 };
 }
 
 /* ------------------------------ 3. approve + publish ------------------------------ */

@@ -1,1 +1,4 @@
 project_id = "nglirfhptuctfeebrtap"
+
+[functions.render-carousel]
+verify_jwt = true
