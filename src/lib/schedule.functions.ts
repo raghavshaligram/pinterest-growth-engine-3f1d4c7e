@@ -75,10 +75,15 @@ async function runPublishNow(
     .eq("id", scheduledPinId)
     .maybeSingle();
 
-  if (result.fail > 0) {
+  // processDuePinsForUser resolves to a union where the summary counters
+  // are absent on the nothing-processed path -- normalize them here so
+  // the publishNow result keeps its full numeric shape.
+  const ok = result.ok ?? 0;
+  const fail = result.fail ?? 0;
+  if (fail > 0) {
     throw new Error(row?.last_error || "Publish failed");
   }
-  return { ...result, pinterestPinId: row?.pinterest_pin_id ?? null };
+  return { processed: result.processed, ok, fail, exported: result.exported ?? 0, pinterestPinId: row?.pinterest_pin_id ?? null };
 }
 
 export const listScheduled = createServerFn({ method: "GET" })

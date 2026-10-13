@@ -216,7 +216,7 @@ export async function listPinterestConnectionsForUser(userId: string): Promise<P
       label: row.label,
       pinterest_username: row.pinterest_username,
       connected_at: row.connected_at,
-      publish_mode: row.publish_mode,
+      publish_mode: row.publish_mode as "api" | "webhook",
       webhook_url: row.webhook_url,
       environment: row.environment as PinterestEnvironment,
       token_source: row.token_source as "oauth" | "manual",

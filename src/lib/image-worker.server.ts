@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { getErrorMessage } from "@/lib/error-message";
 import type { SiteVertical, TemplateId } from "@/lib/briefs.functions";
-import type { ApiKeyProvider } from "@/lib/api-key-connections.server";
+import type { ImageProvider } from "@/lib/sites.functions";
 
 export async function processImageQueueForUser(userId: string, limit = 5, opts?: { pageId?: string; briefId?: string }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -43,7 +43,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
     // Declared here (not inside the try block) so the catch block below
     // can report a failure against whichever connection was actually
     // in play, even if the failure happened after resolution.
-    let provider: ApiKeyProvider = "openai";
+    let provider: ImageProvider = "openai";
     let connectionId: string | null = null;
     await supabaseAdmin.from("jobs").update({ status: "running", attempts: job.attempts + 1 }).eq("id", job.id);
     try {
@@ -128,7 +128,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
 
       const { resolveImageConnection } = await import("./provider-resolution.server");
       const resolved = await resolveImageConnection(userId, page?.sites?.image_connection_override_id);
-      provider = resolved.provider;
+      provider = resolved.provider as ImageProvider;
       connectionId = resolved.connectionId;
 
       // A real photo from the page, used as a visual reference (Nano Banana 2 only): the first image that is not

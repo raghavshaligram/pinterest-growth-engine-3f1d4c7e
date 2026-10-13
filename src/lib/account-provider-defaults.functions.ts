@@ -67,13 +67,18 @@ export const setAccountProviderDefault = createServerFn({ method: "POST" })
     const allowedProviders = data.kind === "image" ? IMAGE_PROVIDERS : COPY_PROVIDERS;
     await verifyConnectionOwnership(data.connectionId, context.userId, allowedProviders);
 
-    const column = data.kind === "image" ? "default_image_connection_id" : "default_copy_connection_id";
-    // RLS-scoped (context.supabase), not supabaseAdmin -- the table's
-    // own "own row" policy already permits this upsert, same pattern
-    // upsertSite uses for sites.
+    const column: "default_image_connection_id" | "default_copy_connection_id" =
+      data.kind === "image" ? "default_image_connection_id" : "default_copy_connection_id";
     const { error } = await context.supabase
       .from("account_provider_defaults")
-      .upsert({ user_id: context.userId, [column]: data.connectionId }, { onConflict: "user_id" });
+      .upsert(
+        { user_id: context.userId, [column]: data.connectionId } as {
+          user_id: string;
+          default_image_connection_id?: string;
+          default_copy_connection_id?: string;
+        },
+        { onConflict: "user_id" },
+      );
     if (error) throw error;
     return { ok: true };
   });
