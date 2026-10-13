@@ -414,6 +414,7 @@ export type Database = {
           id: string
           image_path: string | null
           kind: string
+          locked_at: string | null
           number: number | null
           photo_path: string | null
           photo_prompt: string | null
@@ -430,6 +431,7 @@ export type Database = {
           id?: string
           image_path?: string | null
           kind: string
+          locked_at?: string | null
           number?: number | null
           photo_path?: string | null
           photo_prompt?: string | null
@@ -446,6 +448,7 @@ export type Database = {
           id?: string
           image_path?: string | null
           kind?: string
+          locked_at?: string | null
           number?: number | null
           photo_path?: string | null
           photo_prompt?: string | null
