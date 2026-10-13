@@ -42,13 +42,14 @@ function toDataUri(bytes: Uint8Array, type: string): string {
   return `data:${type};base64,${btoa(bin)}`;
 }
 
-function tree(photo: string | null, headline: string, brand: string): N {
+function tree(photo: string | null, headline: string, brand: string, subline = ""): N {
   const size = fit(headline, 112, 64, 11, 4);
   return el("div", { width: W, height: H, position: "relative", flexDirection: "column", background: "#2c6b3d", fontFamily: "Montserrat", overflow: "hidden" }, [
     photo ? { type: "img", props: { src: photo, style: { position: "absolute", left: 0, top: 0, width: W, height: H, objectFit: "cover" } } } : null,
     el("div", { position: "absolute", left: 0, top: 0, width: W, height: H, background: "linear-gradient(180deg, rgba(255,255,255,0.0) 60%, rgba(10,30,15,0.5) 100%)" }),
     el("div", { position: "absolute", left: 56, right: 56, top: 150, flexDirection: "column", alignItems: "center", background: FROST, borderRadius: 48, padding: "52px 40px" },
-      el("div", { color: GREEN, fontSize: size, fontWeight: 800, lineHeight: 1.06, textAlign: "center", justifyContent: "center", textTransform: "uppercase" }, headline)),
+      [el("div", { color: GREEN, fontSize: size, fontWeight: 800, lineHeight: 1.06, textAlign: "center", justifyContent: "center", textTransform: "uppercase" }, headline),
+       subline ? el("div", { marginTop: 28, background: LIME, color: INK, fontSize: 44, fontWeight: 800, padding: "12px 34px", borderRadius: 40, textTransform: "uppercase" }, subline) : null]),
     el("div", { position: "absolute", left: 0, right: 0, bottom: 70, justifyContent: "center" },
       el("div", { background: LIME, color: INK, fontSize: 30, fontWeight: 800, padding: "14px 34px", borderRadius: 40, letterSpacing: 2 }, brand.toUpperCase())),
   ]);
@@ -56,7 +57,7 @@ function tree(photo: string | null, headline: string, brand: string): N {
 
 Deno.serve(async (req) => {
   try {
-    const { photo_path, headline, brand, out_path } = await req.json();
+    const { photo_path, headline, subline, brand, out_path } = await req.json();
     if (!photo_path || !headline || !out_path) throw new Error("photo_path, headline, out_path required");
     const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const dl = await db.storage.from("pins").download(photo_path);
@@ -64,7 +65,7 @@ Deno.serve(async (req) => {
     const photo = toDataUri(new Uint8Array(await dl.data.arrayBuffer()), dl.data.type || "image/png");
     const host = String(brand ?? "").replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
     const fonts = await init();
-    const svg = await satori(tree(photo, String(headline).trim(), host), { width: W, height: H, fonts });
+    const svg = await satori(tree(photo, String(headline).trim(), host, String(subline ?? "").trim()), { width: W, height: H, fonts });
     const png = new Resvg(svg, { fitTo: { mode: "width", value: W } }).render().asPng();
     const up = await db.storage.from("pins").upload(out_path, png, { contentType: "image/png", upsert: true });
     if (up.error) throw up.error;

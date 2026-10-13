@@ -161,6 +161,10 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         const full = String(themedPrompt ?? "");
         const headline = (/HEADLINE[^\n]*?:\s*"([^"\n]+)"/.exec(full)?.[1] ?? "").trim()
           || (await import("./briefs.functions")).shortHeadline(brief.title);
+        // Safety net: if the headline never names the subject, show the topic in a small lime pill under it.
+        const topicRaw = String(analysis.topic || analysis.primary_keyword || "").replace(/\s+/g, " ").trim();
+        const topicWords = topicRaw.toLowerCase().split(" ").filter((w) => w.length > 3);
+        const subline = topicRaw && topicRaw.length <= 32 && !topicWords.some((w) => headline.toLowerCase().includes(w.replace(/s$/, ""))) ? topicRaw : "";
         const scene = (/PHOTOGRAPHY:\s*([\s\S]*?)\s+All photographs are/.exec(full)?.[1] ?? "").trim()
           || `A vivid close-up photo of ${analysis.topic || analysis.primary_keyword || brief.title}.`;
         const photoPrompt = `${scene}\nPhotorealistic editorial garden photograph, vertical 2:3, natural daylight, shallow depth of field, rich true-to-life colour, one clear subject in the lower two thirds with calm space above it. No text, no letters, no numbers, no logos, no watermark, no people, no hands.`;
@@ -175,7 +179,7 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
         if (!base || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing");
         const resp = await fetch(`${base}/functions/v1/render-pin`, {
           method: "POST", headers: { Authorization: `Bearer ${key}`, apikey: key, "content-type": "application/json" },
-          body: JSON.stringify({ photo_path: photoPath, headline, brand: brandHost, out_path: path }),
+          body: JSON.stringify({ photo_path: photoPath, headline, subline, brand: brandHost, out_path: path }),
         });
         if (!resp.ok) throw new Error(`render-pin failed ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
         contentType = "image/png";
