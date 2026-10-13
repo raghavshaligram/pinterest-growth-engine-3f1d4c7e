@@ -115,7 +115,9 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
             middlePrompt: brief.image_prompt,
           });
 
-      const promptHash = createHash("sha1").update(themedPrompt + (payload.force ? `:${Date.now()}` : "")).digest("hex");
+      const { data: designRow } = await (supabaseAdmin as any).from("autopilot_settings").select("value").eq("key", "pin_design").maybeSingle(); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const codeDesign = (designRow?.value as string | undefined) === "code";
+      const promptHash = createHash("sha1").update(themedPrompt + (codeDesign ? ":code" : "") + (payload.force ? `:${Date.now()}` : "")).digest("hex");
       if (!payload.force) {
         const { data: existing } = await supabaseAdmin
           .from("pin_images").select("id").eq("prompt_hash", promptHash).maybeSingle();
@@ -149,8 +151,6 @@ export async function processImageQueueForUser(userId: string, limit = 5, opts?:
       const { renderPinImage } = await import("./pin-render.server");
       // pin_design = "code": the image model makes a text-free photo and the render-pin edge function sets the headline
       // (same look as the Instagram cover). Anything else keeps the model drawing the whole pin.
-      const { data: designRow } = await (supabaseAdmin as any).from("autopilot_settings").select("value").eq("key", "pin_design").maybeSingle(); // eslint-disable-line @typescript-eslint/no-explicit-any
-      const codeDesign = (designRow?.value as string | undefined) === "code";
       const ext0 = "png";
       let imageBytes: Uint8Array;
       let contentType: string;
